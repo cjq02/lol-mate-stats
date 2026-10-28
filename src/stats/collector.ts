@@ -13,6 +13,7 @@ import type {
 } from '../types.js';
 import { mapLimit, round, toNumber, truncate } from '../util.js';
 import type { ChampionSummary, LcuApi } from '../lcu/api.js';
+import { LcuError } from '../lcu/http.js';
 import { analyzeGame } from './analyze.js';
 import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
 import { summarize } from './rating.js';
@@ -56,6 +57,8 @@ export class ReportCollector {
   private readonly rankCache = new Map<string, { at: number; rank: RankInfo | null }>();
   private championMap: Map<number, ChampionSummary> | null = null;
   private championMapAt = 0;
+  /** 战绩服务 5xx 时短暂冷却，避免每 3 秒重复轰炸 */
+  private historyCooldownUntil = 0;
 
   constructor(
     private readonly api: LcuApi,
@@ -227,13 +230,12 @@ export class ReportCollector {
       this.reportCache.set(cacheKey, { at: Date.now(), report });
       return report;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       return {
         ...base,
         loading: false,
         rating: null,
         labels: [],
-        error: `读取战绩失败：${truncate(message, 120)}`,
+        error: historyErrorMessage(error),
       };
     }
   }
@@ -381,12 +383,11 @@ export class ReportCollector {
       this.reportCache.set(cacheKey, { at: Date.now(), report });
       return report;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       return {
         ...base,
         rating: null,
         labels: [],
-        error: `读取战绩失败：${truncate(message, 120)}`,
+        error: historyErrorMessage(error),
       };
     }
   }
@@ -492,9 +493,13 @@ export class ReportCollector {
     summoner: SummonerInfo,
     context?: GameContext,
   ): Promise<RawGame[]> {
-    // 需要按当前模式过滤时，多取一些候选场次，避免只剩两三场
+    if (Date.now() < this.historyCooldownUntil) {
+      throw new Error('战绩服务暂时不可用，稍后自动重试');
+    }
+
+    // 需要按当前模式过滤时多取一些候选，再在拉详情前先按队列筛掉其它模式
     const count = context
-      ? Math.min(30, Math.max(this.options.recent * 3, this.options.recent))
+      ? Math.min(20, Math.max(this.options.recent * 2, this.options.recent))
       : this.options.recent;
     let games: RawGame[] = [];
     let lastError: unknown = null;
@@ -504,14 +509,16 @@ export class ReportCollector {
         games = await this.api.getMatchListByPuuid(summoner.puuid, count);
       } catch (error) {
         lastError = error;
+        if (isHistoryBusy(error)) this.historyCooldownUntil = Date.now() + 30_000;
       }
     }
 
-    if (!games.length && summoner.accountId) {
+    if (!games.length && !lastError && summoner.accountId) {
       try {
         games = await this.api.getMatchListByAccount(summoner.accountId, count);
       } catch (error) {
         lastError = error;
+        if (isHistoryBusy(error)) this.historyCooldownUntil = Date.now() + 30_000;
       }
     }
 
@@ -519,8 +526,18 @@ export class ReportCollector {
       if (lastError) throw lastError;
       throw new Error('没有读取到对局记录（可能隐藏了战绩，或为新号）');
     }
+    this.historyCooldownUntil = 0;
 
-    games = games.slice(0, count);
+    // 拉详情前先按队列筛掉其它模式，避免为了 10 场大乱斗去请求几十场对局详情
+    if (context) {
+      const group = currentQueueGroup(context.queueId, context.mode);
+      games = games.filter(
+        (game) => gameQueueGroup(toNumber(game.queueId), 'UNKNOWN') === group,
+      );
+    }
+
+    games = games.slice(0, this.options.recent);
+    if (!games.length) return [];
 
     // v3 matchlist 只给概要，需要再拉详情；v1 product 一般已包含详情
     const detailed = await mapLimit(games, 4, async (game) => {
@@ -577,6 +594,21 @@ function reportCacheKey(summonerId: number, context?: GameContext): string {
 function contextLabel(context?: GameContext): string {
   if (!context) return '近期对局';
   return queueGroupName(currentQueueGroup(context.queueId, context.mode), context.queueId);
+}
+
+function isHistoryBusy(error: unknown): boolean {
+  return (
+    error instanceof LcuError &&
+    [429, 500, 502, 503, 504].includes(error.status)
+  );
+}
+
+function historyErrorMessage(error: unknown): string {
+  if (isHistoryBusy(error)) {
+    return `战绩服务暂时不可用（HTTP ${(error as LcuError).status}），稍后自动重试`;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return `读取战绩失败：${truncate(message, 120)}`;
 }
 
 /** 只保留当前队列/模式的历史对局 */

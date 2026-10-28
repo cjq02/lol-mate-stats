@@ -66,18 +66,36 @@ export class LcuHttp {
     body?: unknown,
     timeoutMs = 15_000,
   ): Promise<T> {
-    const response = await this.raw(method, path, body, timeoutMs);
-    const text = response.body.toString('utf8');
-    if (!text) return undefined as T;
-    const contentType = String(response.headers['content-type'] ?? '');
-    if (contentType.includes('json') || /^[\[{]/.test(text.trim())) {
+    // 国服战绩服务偶发 500/503，重试一次，避免整张卡片直接报错
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        return JSON.parse(text) as T;
-      } catch {
-        /* 非 JSON 响应，原样返回 */
+        const response = await this.raw(method, path, body, timeoutMs);
+        const text = response.body.toString('utf8');
+        if (!text) return undefined as T;
+        const contentType = String(response.headers['content-type'] ?? '');
+        if (contentType.includes('json') || /^[\[{]/.test(text.trim())) {
+          try {
+            return JSON.parse(text) as T;
+          } catch {
+            /* 非 JSON 响应，原样返回 */
+          }
+        }
+        return text as unknown as T;
+      } catch (error) {
+        lastError = error;
+        const retryable =
+          error instanceof LcuError &&
+          (error.status === 429 ||
+            error.status === 500 ||
+            error.status === 502 ||
+            error.status === 503 ||
+            error.status === 504);
+        if (!retryable || attempt >= 1) throw error;
+        await new Promise((resolveSleep) => setTimeout(resolveSleep, 800));
       }
     }
-    return text as unknown as T;
+    throw lastError;
   }
 
   async raw(

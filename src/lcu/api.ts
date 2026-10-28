@@ -85,7 +85,7 @@ export class LcuApi {
   async getMatchListByPuuid(puuid: string, count: number): Promise<RawGame[]> {
     const payload = await this.http.get<unknown>(
       `/lol-match-history/v1/products/lol/${encodeURIComponent(puuid)}/matches?begIndex=0&endIndex=${Math.max(0, count - 1)}`,
-      20_000,
+      10_000,
     );
     return unwrapGames(payload);
   }
@@ -93,7 +93,7 @@ export class LcuApi {
   async getMatchListByAccount(accountId: number, count: number): Promise<RawGame[]> {
     const payload = await this.http.get<unknown>(
       `/lol-match-history/v3/matchlist/account/${accountId}?begIndex=0&endIndex=${Math.max(0, count - 1)}`,
-      20_000,
+      10_000,
     );
     return unwrapGames(payload);
   }
