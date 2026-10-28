@@ -4,6 +4,7 @@ import type { ChampSelectSession, Snapshot } from './types.js';
 import { LcuApi } from './lcu/api.js';
 import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { fetchLiveGame, liveMembersOf } from './lcu/live.js';
+import { modeFromQueue } from './stats/constants.js';
 import { ReportCollector } from './stats/collector.js';
 import { LiveSource } from './watcher.js';
 import { DemoSource } from './demo.js';
@@ -226,8 +227,11 @@ async function runOnce(options: CliOptions): Promise<void> {
       if (!options.quiet) {
         console.log(dim(`正在读取本局 ${members.length} 名玩家最近 ${options.recent} 场战绩…`));
       }
+      const queueId = game?.gameData?.queue?.id;
+      const gameMode = modeFromQueue(queueId, game?.gameData?.gameMode);
+      const context = queueId !== undefined || gameMode ? { queueId, mode: gameMode } : undefined;
       const collector = new ReportCollector(api, { recent: options.recent });
-      const reports = await collector.collectLive(members);
+      const reports = await collector.collectLive(members, undefined, context);
       if (options.json) {
         console.log(JSON.stringify(reports, null, 2));
       } else {
@@ -248,8 +252,12 @@ async function runOnce(options: CliOptions): Promise<void> {
     if (!options.quiet) {
       console.log(dim(`正在读取 ${session.myTeam.length} 名队友最近 ${options.recent} 场战绩…`));
     }
+    const flow = await api.getGameflowSession().catch(() => null);
+    const queueId = flow?.gameData?.queue?.id;
+    const gameMode = modeFromQueue(queueId, flow?.gameData?.gameMode);
+    const context = queueId !== undefined || gameMode ? { queueId, mode: gameMode } : undefined;
     const collector = new ReportCollector(api, { recent: options.recent });
-    const reports = await collector.collect(session);
+    const reports = await collector.collect(session, undefined, context);
 
     if (options.json) {
       console.log(JSON.stringify(reports, null, 2));

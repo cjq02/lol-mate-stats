@@ -140,6 +140,9 @@ export function analyzeGame(
     0,
   );
 
+  // 只有自己的“概况”数据算不出伤害占比/参团，直接丢弃，避免评分虚高
+  if (team.length < 2) return null;
+
   const rawDuration = toNumber(game.gameDuration);
   const durationSeconds = rawDuration > 100_000 ? rawDuration / 1000 : rawDuration;
   const durationMin = Math.max(1, durationSeconds / 60);

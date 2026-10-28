@@ -1,6 +1,7 @@
 import type {
   ChampSelectMember,
   ChampSelectSession,
+  GameContext,
   LcuConnection,
   PlayerReport,
   Snapshot,
@@ -11,6 +12,7 @@ import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { openEventStream } from './lcu/events.js';
 import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
 import { ReportCollector } from './stats/collector.js';
+import { modeFromQueue } from './stats/constants.js';
 import { nowIso, logTag, sleep } from './util.js';
 
 export interface LiveSourceOptions {
@@ -106,7 +108,8 @@ export class LiveSource implements DataSource {
     const api = this.api;
     const session = api ? await api.getChampSelectSession().catch(() => null) : null;
     if (api && session?.myTeam?.length) {
-      await this.collect(api, session);
+      const context = await this.resolveContext(api);
+      await this.collect(api, session, context);
     } else {
       await this.tick('event');
     }
@@ -192,7 +195,8 @@ export class LiveSource implements DataSource {
       }
 
       if (reason !== 'poll') this.log('进入选人阶段，开始读取队友战绩');
-      await this.collect(api, session);
+      const context = await this.resolveContext(api);
+      await this.collect(api, session, context);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!(error instanceof ClientNotFoundError)) {
@@ -215,10 +219,30 @@ export class LiveSource implements DataSource {
         players: changed ? [] : this.snapshot.players,
         message: phaseMessage(phase),
         localPlayer: undefined,
+        queueId: undefined,
+        gameMode: undefined,
         error: undefined,
       },
       false,
     );
+  }
+
+  /** 读取当前队列（选人阶段也能拿到），用于只统计同模式战绩 */
+  private async resolveContext(api: LcuApi): Promise<GameContext | undefined> {
+    if (this.snapshot.queueId !== undefined || this.snapshot.gameMode !== undefined) {
+      return { queueId: this.snapshot.queueId, mode: this.snapshot.gameMode };
+    }
+    try {
+      const session = await api.getGameflowSession();
+      const queueId = session?.gameData?.queue?.id;
+      const mode = modeFromQueue(queueId, session?.gameData?.gameMode);
+      if (queueId !== undefined || mode !== undefined) {
+        this.patch({ queueId, gameMode: mode }, false);
+      }
+      return queueId !== undefined || mode !== undefined ? { queueId, mode } : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
@@ -259,11 +283,19 @@ export class LiveSource implements DataSource {
       return;
     }
 
+    const queueId = game.gameData?.queue?.id ?? this.snapshot.queueId;
+    const gameMode =
+      modeFromQueue(queueId, game.gameData?.gameMode) ?? this.snapshot.gameMode;
+    const context: GameContext | undefined =
+      queueId !== undefined || gameMode !== undefined ? { queueId, mode: gameMode } : undefined;
+
     this.busy = true;
     this.patch({
       phase: 'InProgress',
       inChampSelect: false,
       inGame: true,
+      queueId,
+      gameMode,
       collecting: this.snapshot.players.length === 0,
       message: this.snapshot.players.length ? undefined : '正在读取本局 10 名玩家的战绩…',
       error: undefined,
@@ -271,9 +303,13 @@ export class LiveSource implements DataSource {
 
     try {
       const collector = this.ensureCollector(api);
-      const reports = await collector.collectLive(members, (partial) => {
-        this.patch({ players: partial, collecting: partial.some((player) => player.loading) });
-      });
+      const reports = await collector.collectLive(
+        members,
+        (partial) => {
+          this.patch({ players: partial, collecting: partial.some((player) => player.loading) });
+        },
+        context,
+      );
 
       const selfIndex = self ? members.indexOf(self) : -1;
       const selfReport = selfIndex >= 0 ? reports[selfIndex] : undefined;
@@ -300,7 +336,11 @@ export class LiveSource implements DataSource {
     }
   }
 
-  private async collect(api: LcuApi, session: ChampSelectSession): Promise<void> {
+  private async collect(
+    api: LcuApi,
+    session: ChampSelectSession,
+    context?: GameContext,
+  ): Promise<void> {
     this.busy = true;
     this.lastMembersKey = session.myTeam
       .map((member) => member.summonerId)
@@ -332,16 +372,20 @@ export class LiveSource implements DataSource {
 
     try {
       const collector = this.ensureCollector(api);
-      const reports = await collector.collect(session, (partial) => {
-        this.patch(
-          {
-            players: partial,
-            collecting: partial.some((player) => player.loading),
-            localPlayer: this.localPlayerFrom(session, partial),
-          },
-          true,
-        );
-      });
+      const reports = await collector.collect(
+        session,
+        (partial) => {
+          this.patch(
+            {
+              players: partial,
+              collecting: partial.some((player) => player.loading),
+              localPlayer: this.localPlayerFrom(session, partial),
+            },
+            true,
+          );
+        },
+        context,
+      );
 
       this.lastCollectAt = Date.now();
       this.patch(

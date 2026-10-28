@@ -1,5 +1,6 @@
 import type {
   ChampSelectSession,
+  GameflowSession,
   LcuConnection,
   RankInfo,
   RawGame,
@@ -37,6 +38,11 @@ export class LcuApi {
 
   getChampSelectSession(): Promise<ChampSelectSession | null> {
     return this.http.getOrNull<ChampSelectSession>('/lol-champ-select/v1/session', 8_000);
+  }
+
+  /** 当前对局信息（队列 ID、模式），选人阶段也能拿到 */
+  getGameflowSession(): Promise<GameflowSession | null> {
+    return this.http.getOrNull<GameflowSession>('/lol-gameflow/v1/session', 8_000);
   }
 
   getCurrentSummoner(): Promise<SummonerInfo> {

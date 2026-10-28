@@ -162,6 +162,10 @@ export interface RecentSummary {
   wins: number;
   losses: number;
   winRate: number;
+  /** 近 N 场中疑似挂机的场次 */
+  afkGames: number;
+  /** 疑似挂机比例 0-1 */
+  afkRate: number;
   avgKda: number;
   avgScore: number;
   avgDamage: number;
@@ -181,6 +185,15 @@ export interface RecentSummary {
 }
 
 export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
+
+/** 统计用的模式分组：召唤师峡谷 / 极地大乱斗 / 竞技场 */
+export type GameModeKey = 'SR' | 'ARAM' | 'ARENA';
+
+/** 当前对局信息：只统计同队列/同模式的近期战绩 */
+export interface GameContext {
+  queueId?: number;
+  mode?: GameModeKey;
+}
 
 export interface RankInfo {
   queue: 'RANKED_SOLO_5x5' | 'RANKED_FLEX_SR';
@@ -224,10 +237,21 @@ export interface LiveGamePlayer {
   };
 }
 
+export interface GameflowSession {
+  gameData?: {
+    gameMode?: string;
+    queue?: { id?: number };
+  };
+}
+
 export interface LiveGameData {
   activePlayer?: {
     riotId?: string;
     summonerName?: string;
+  };
+  gameData?: {
+    gameMode?: string;
+    queue?: { id?: number };
   };
   allPlayers?: LiveGamePlayer[];
 }
@@ -277,6 +301,10 @@ export interface Snapshot {
   updatedAt: string;
   message?: string;
   region?: string;
+  /** 当前对局队列（用于只统计同模式战绩） */
+  queueId?: number;
+  /** 当前模式分组 */
+  gameMode?: GameModeKey;
   localPlayer?: {
     summonerId: number;
     displayName: string;

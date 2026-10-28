@@ -1,6 +1,8 @@
 import type {
+  AnalyzedGame,
   ChampSelectMember,
   ChampSelectSession,
+  GameContext,
   LiveGamePlayer,
   LiveMember,
   LiveStats,
@@ -12,6 +14,7 @@ import type {
 import { mapLimit, round, toNumber, truncate } from '../util.js';
 import type { ChampionSummary, LcuApi } from '../lcu/api.js';
 import { analyzeGame } from './analyze.js';
+import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
 import { summarize } from './rating.js';
 
 export interface CollectorOptions {
@@ -48,7 +51,7 @@ export class ReportCollector {
     string,
     { at: number; info: SummonerInfo | null }
   >();
-  private readonly reportCache = new Map<number, CachedReport>();
+  private readonly reportCache = new Map<string, CachedReport>();
   private readonly gameCache = new Map<number, { at: number; game: RawGame | null }>();
   private readonly rankCache = new Map<string, { at: number; rank: RankInfo | null }>();
   private championMap: Map<number, ChampionSummary> | null = null;
@@ -94,6 +97,7 @@ export class ReportCollector {
   async collect(
     session: ChampSelectSession,
     onProgress?: (players: PlayerReport[]) => void,
+    context?: GameContext,
   ): Promise<PlayerReport[]> {
     const members = [...(session.myTeam ?? [])].sort((a, b) => a.cellId - b.cellId);
     if (!members.length) return [];
@@ -103,7 +107,7 @@ export class ReportCollector {
     // 第一步：先把名字等基础信息填上，界面可以立即显示占位卡片
     const bases = await mapLimit(members, 5, async (member) => {
       const info = await this.getSummoner(member.summonerId);
-      return this.buildBaseReport(member, info, championMap);
+      return this.buildBaseReport(member, info, championMap, context);
     });
     onProgress?.(bases);
 
@@ -111,7 +115,7 @@ export class ReportCollector {
     const reports = [...bases];
     await mapLimit(members, this.options.concurrency, async (member, index) => {
       const base = bases[index] as PlayerReport;
-      const report = await this.buildFullReport(member, base, championMap);
+      const report = await this.buildFullReport(member, base, championMap, context);
       reports[index] = report;
       onProgress?.([...reports]);
     });
@@ -126,20 +130,21 @@ export class ReportCollector {
   async collectLive(
     players: LiveMember[],
     onProgress?: (players: PlayerReport[]) => void,
+    context?: GameContext,
   ): Promise<PlayerReport[]> {
     if (!players.length) return [];
 
     const championMap = await this.getChampionMap();
     const bases = await mapLimit(players, 5, async (player) => {
       const info = await this.getSummonerByName(liveName(player));
-      return this.buildLiveBase(player, info, championMap);
+      return this.buildLiveBase(player, info, championMap, context);
     });
     onProgress?.(bases);
 
     const reports = [...bases];
     await mapLimit(players, this.options.concurrency, async (player, index) => {
       const base = bases[index] as PlayerReport;
-      const report = await this.buildLiveFullReport(player, base, championMap);
+      const report = await this.buildLiveFullReport(player, base, championMap, context);
       reports[index] = report;
       onProgress?.([...reports]);
     });
@@ -151,11 +156,13 @@ export class ReportCollector {
     player: LiveMember,
     base: PlayerReport,
     championMap: Map<number, ChampionSummary>,
+    context?: GameContext,
   ): Promise<PlayerReport> {
     if (player.isBot) return { ...base, loading: false, rating: null };
     if (!base.summonerId || !base.puuid) return { ...base, loading: false };
 
-    const cached = this.reportCache.get(base.summonerId);
+    const cacheKey = reportCacheKey(base.summonerId, context);
+    const cached = this.reportCache.get(cacheKey);
     if (cached && Date.now() - cached.at < this.options.ttlMs) {
       return this.withLiveData(cached.report, base);
     }
@@ -172,7 +179,7 @@ export class ReportCollector {
     try {
       const [rank, games] = await Promise.all([
         this.getRank(base.puuid),
-        this.loadRecentGames(summoner),
+        this.loadRecentGames(summoner, context),
       ]);
 
       const analyzed = games
@@ -185,8 +192,10 @@ export class ReportCollector {
         )
         .filter((game): game is NonNullable<typeof game> => game !== null)
         .sort((a, b) => b.gameCreation - a.gameCreation);
+      const filtered = filterByContext(analyzed, context);
 
-      if (!analyzed.length) {
+      if (!filtered.length) {
+        const label = contextLabel(context);
         const report: PlayerReport = {
           ...base,
           rank,
@@ -195,25 +204,27 @@ export class ReportCollector {
           rating: null,
           labels: [],
           loading: false,
-          error: '近期的对局无法解析（可能隐藏了战绩）',
+          error: analyzed.length
+            ? `最近 ${games.length} 场没有${label}记录`
+            : '近期的对局无法解析（可能隐藏了战绩）',
         };
-        this.reportCache.set(base.summonerId, { at: Date.now(), report });
+        this.reportCache.set(cacheKey, { at: Date.now(), report });
         return report;
       }
 
-      const summary = summarize(analyzed, { level: base.level });
+      const summary = summarize(filtered.slice(0, this.options.recent), { level: base.level });
       const report: PlayerReport = {
         ...base,
         rank,
         recent: summary,
-        games: analyzed.slice(0, this.options.recent),
+        games: filtered.slice(0, this.options.recent),
         rating: summary.rating,
         grade: summary.grade,
         labels: summary.labels,
         loading: false,
         error: undefined,
       };
-      this.reportCache.set(base.summonerId, { at: Date.now(), report });
+      this.reportCache.set(cacheKey, { at: Date.now(), report });
       return report;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -231,6 +242,7 @@ export class ReportCollector {
     player: LiveMember,
     info: SummonerInfo | null,
     championMap: Map<number, ChampionSummary>,
+    context?: GameContext,
   ): PlayerReport {
     const championId = this.championIdFor(player.rawChampionName, player.championName);
     const name = liveName(player);
@@ -244,7 +256,9 @@ export class ReportCollector {
       player.position && player.position.toUpperCase() !== 'NONE'
         ? player.position.toLowerCase()
         : undefined;
-    const cached = info ? this.reportCache.get(info.summonerId)?.report : undefined;
+    const cached = info
+      ? this.reportCache.get(reportCacheKey(info.summonerId, context))?.report
+      : undefined;
 
     const base: PlayerReport = {
       summonerId: info?.summonerId ?? 0,
@@ -297,8 +311,10 @@ export class ReportCollector {
     member: ChampSelectMember,
     base: PlayerReport,
     championMap: Map<number, ChampionSummary>,
+    context?: GameContext,
   ): Promise<PlayerReport> {
-    const cached = this.reportCache.get(member.summonerId);
+    const cacheKey = reportCacheKey(member.summonerId, context);
+    const cached = this.reportCache.get(cacheKey);
     if (cached && Date.now() - cached.at < this.options.ttlMs) {
       return this.withSessionData(cached.report, member, base, championMap);
     }
@@ -313,7 +329,7 @@ export class ReportCollector {
     try {
       const [rank, games] = await Promise.all([
         summoner.puuid ? this.getRank(summoner.puuid) : Promise.resolve(null),
-        this.loadRecentGames(summoner),
+        this.loadRecentGames(summoner, context),
       ]);
 
       const analyzed = games
@@ -330,8 +346,10 @@ export class ReportCollector {
         )
         .filter((game): game is NonNullable<typeof game> => game !== null)
         .sort((a, b) => b.gameCreation - a.gameCreation);
+      const filtered = filterByContext(analyzed, context);
 
-      if (!analyzed.length) {
+      if (!filtered.length) {
+        const label = contextLabel(context);
         const report: PlayerReport = {
           ...base,
           rank,
@@ -339,24 +357,28 @@ export class ReportCollector {
           games: [],
           rating: null,
           labels: [],
-          error: '近期的对局无法解析（可能隐藏了战绩）',
+          error: analyzed.length
+            ? `最近 ${games.length} 场没有${label}记录`
+            : '近期的对局无法解析（可能隐藏了战绩）',
         };
-        this.reportCache.set(member.summonerId, { at: Date.now(), report });
+        this.reportCache.set(cacheKey, { at: Date.now(), report });
         return report;
       }
 
-      const summary = summarize(analyzed, { level: summoner.summonerLevel });
+      const summary = summarize(filtered.slice(0, this.options.recent), {
+        level: summoner.summonerLevel,
+      });
       const report: PlayerReport = {
         ...base,
         rank,
         recent: summary,
-        games: analyzed.slice(0, this.options.recent),
+        games: filtered.slice(0, this.options.recent),
         rating: summary.rating,
         grade: summary.grade,
         labels: summary.labels,
         error: undefined,
       };
-      this.reportCache.set(member.summonerId, { at: Date.now(), report });
+      this.reportCache.set(cacheKey, { at: Date.now(), report });
       return report;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -391,9 +413,10 @@ export class ReportCollector {
     member: ChampSelectMember,
     info: SummonerInfo | null,
     championMap: Map<number, ChampionSummary>,
+    context?: GameContext,
   ): PlayerReport {
     const championId = effectiveChampionId(member);
-    const cached = this.reportCache.get(member.summonerId);
+    const cached = this.reportCache.get(reportCacheKey(member.summonerId, context))?.report;
     const displayName =
       info?.displayName ??
       (info?.gameName
@@ -411,12 +434,12 @@ export class ReportCollector {
       position: member.assignedPosition,
       championId: championId || undefined,
       championName: championMap.get(championId)?.name,
-      rating: cached?.report.rating ?? null,
-      grade: cached?.report.grade,
-      labels: cached?.report.labels ?? [],
-      recent: cached?.report.recent,
-      games: cached?.report.games,
-      rank: cached?.report.rank,
+      rating: cached?.rating ?? null,
+      grade: cached?.grade,
+      labels: cached?.labels ?? [],
+      recent: cached?.recent,
+      games: cached?.games,
+      rank: cached?.rank,
       loading: true,
     };
 
@@ -465,8 +488,14 @@ export class ReportCollector {
     return rank;
   }
 
-  private async loadRecentGames(summoner: SummonerInfo): Promise<RawGame[]> {
-    const count = this.options.recent;
+  private async loadRecentGames(
+    summoner: SummonerInfo,
+    context?: GameContext,
+  ): Promise<RawGame[]> {
+    // 需要按当前模式过滤时，多取一些候选场次，避免只剩两三场
+    const count = context
+      ? Math.min(30, Math.max(this.options.recent * 3, this.options.recent))
+      : this.options.recent;
     let games: RawGame[] = [];
     let lastError: unknown = null;
 
@@ -540,11 +569,29 @@ function effectiveChampionId(member: ChampSelectMember): number {
   return member.championId || member.championPickIntent || 0;
 }
 
+function reportCacheKey(summonerId: number, context?: GameContext): string {
+  const group = context ? currentQueueGroup(context.queueId, context.mode) : 'all';
+  return `${summonerId}:${group}`;
+}
+
+function contextLabel(context?: GameContext): string {
+  if (!context) return '近期对局';
+  return queueGroupName(currentQueueGroup(context.queueId, context.mode), context.queueId);
+}
+
+/** 只保留当前队列/模式的历史对局 */
+function filterByContext(games: AnalyzedGame[], context?: GameContext): AnalyzedGame[] {
+  if (!context || (context.queueId === undefined && !context.mode)) return games;
+  const group = currentQueueGroup(context.queueId, context.mode);
+  return games.filter((game) => gameQueueGroup(game.queueId, game.position) === group);
+}
+
 function hasGameDetail(game: RawGame): boolean {
   const participants = game.participants;
   const identities = game.participantIdentities;
-  if (!Array.isArray(participants) || !participants.length) return false;
-  if (!Array.isArray(identities) || !identities.length) return false;
+  // 战绩列表接口只返回“当前玩家”的概况（1 人），不能用来算伤害占比/参团
+  if (!Array.isArray(participants) || participants.length < 2) return false;
+  if (!Array.isArray(identities) || identities.length < 2) return false;
   return participants.some((participant) => participant.stats && 'kills' in participant.stats);
 }
 

@@ -94,6 +94,36 @@ const TIER_NAMES = {
   UNRANKED: '未定级',
 };
 
+const QUEUE_LABELS = {
+  400: '匹配模式',
+  420: '单双排',
+  430: '匹配模式',
+  440: '灵活排位',
+  450: '极地大乱斗',
+  490: '快速匹配',
+  700: '斗魂竞技场',
+  720: '大乱斗克隆',
+  1700: '斗魂竞技场',
+  1710: '斗魂竞技场',
+};
+
+const MODE_LABELS = {
+  SR: '召唤师峡谷',
+  ARAM: '极地大乱斗',
+  ARENA: '斗魂竞技场',
+};
+
+function currentModeLabel() {
+  const snapshot = state.snapshot;
+  if (snapshot?.queueId && QUEUE_LABELS[snapshot.queueId]) {
+    return QUEUE_LABELS[snapshot.queueId];
+  }
+  if (snapshot?.gameMode && MODE_LABELS[snapshot.gameMode]) {
+    return MODE_LABELS[snapshot.gameMode];
+  }
+  return '近期';
+}
+
 const state = {
   snapshot: null,
   snapshotSig: '',
@@ -164,6 +194,9 @@ function kilo(value) {
 }
 
 function positionLabel(player) {
+  const mode = state.snapshot?.gameMode;
+  if (mode === 'ARAM') return '大乱斗';
+  if (mode === 'ARENA') return '竞技场';
   if (player.position) return POSITION_NAMES[String(player.position).toLowerCase()] ?? player.position;
   const lane = player.games?.[0]?.position;
   return lane ? (LANE_NAMES[lane] ?? '补位') : '补位';
@@ -312,7 +345,14 @@ function buildCard(player, isLocal) {
   const chips = labels.length
     ? `<div class="chips">${labels
         .map((label) => {
-          const danger = ['坑', '偏坑', '疑似新手', '伤害过低'].includes(label);
+          const danger = [
+            '坑',
+            '偏坑',
+            '疑似新手',
+            '伤害过低',
+            '常挂机',
+            '疑似挂机',
+          ].includes(label);
           const gold = label === '大腿';
           return `<span class="chip${gold ? ' gold' : ''}${danger ? ' danger' : ''}">${escapeHtml(label)}</span>`;
         })
@@ -322,7 +362,7 @@ function buildCard(player, isLocal) {
       : '';
 
   const record = recent
-    ? `近 ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${pct(
+    ? `${currentModeLabel()} ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${pct(
         recent.winRate,
       )}`
     : '暂无战绩数据';
@@ -336,6 +376,10 @@ function buildCard(player, isLocal) {
           risk.level === 'severe' ? '高风险' : '注意'
         }</span><span>${escapeHtml(risk.reasons.join(' · '))}</span></div>`
       : '';
+
+  const afkNote = recent?.afkGames
+    ? `<div class="afk-note">⚠ 近 ${recent.games} 场有 ${recent.afkGames} 场疑似挂机（数据推断，仅供参考）</div>`
+    : '';
 
   const gameChips = games
     .slice(0, 10)
@@ -351,6 +395,7 @@ function buildCard(player, isLocal) {
 
   const metrics = recent
     ? `<div class="metrics">
+        <div class="metric"><span>近期胜率</span><b>${pct(recent.winRate)}</b></div>
         <div class="metric"><span>KDA</span><b>${num(recent.avgKda, 2)}</b></div>
         <div class="metric"><span>参团率</span><b>${pct(recent.avgKillParticipation)}</b></div>
         <div class="metric"><span>分均伤害</span><b>${Math.round(recent.avgDamagePerMin ?? 0)}</b></div>
@@ -359,6 +404,11 @@ function buildCard(player, isLocal) {
         <div class="metric"><span>分均视野</span><b>${num(recent.avgVisionPerMin, 2)}</b></div>
         <div class="metric"><span>场均死亡</span><b>${num(recent.avgDeaths, 1)}</b></div>
         <div class="metric"><span>场均伤害</span><b>${kilo(recent.avgDamage)}</b></div>
+        ${
+          recent.afkGames
+            ? `<div class="metric afk-metric"><span>疑似挂机</span><b>${recent.afkGames} 场</b></div>`
+            : ''
+        }
       </div>`
     : '';
 
@@ -460,6 +510,7 @@ function buildCard(player, isLocal) {
     ${loading}
     ${metrics}
     ${riskNote}
+    ${afkNote}
     ${champions}
     ${error}
     ${detail}
@@ -536,7 +587,7 @@ function renderHeader(snapshot, players, collecting) {
 
   const recent = players.find((player) => player.recent)?.recent;
   els.recentHint.textContent = recent
-    ? `每位${snapshot?.inGame ? '玩家' : '队友'}最近 ${recent.games} 场 · 评分 0-100`
+    ? `${currentModeLabel()}最近 ${recent.games} 场 · 评分 0-100`
     : snapshot?.inGame
       ? '本局实时数据 · 评分来自最近对局'
       : '';

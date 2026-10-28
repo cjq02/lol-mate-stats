@@ -1,4 +1,4 @@
-import type { Lane } from '../types.js';
+import type { GameModeKey, Lane } from '../types.js';
 
 export const QUEUE_NAMES: Record<number, string> = {
   400: '匹配模式',
@@ -22,6 +22,53 @@ export const QUEUE_NAMES: Record<number, string> = {
 export function queueName(queueId: number | undefined): string {
   if (!queueId) return '未知模式';
   return QUEUE_NAMES[queueId] ?? `模式 ${queueId}`;
+}
+
+export const MODE_NAMES: Record<GameModeKey, string> = {
+  SR: '召唤师峡谷',
+  ARAM: '极地大乱斗',
+  ARENA: '斗魂竞技场',
+};
+
+/** 从队列 ID / Live Client Data 的 gameMode 推导统计分组 */
+export function modeFromQueue(queueId?: number, gameMode?: string): GameModeKey | undefined {
+  const mode = String(gameMode ?? '').toUpperCase();
+  if (mode === 'ARAM' || queueId === 450 || queueId === 720) return 'ARAM';
+  if (mode === 'CHERRY' || queueId === 1700 || queueId === 1710) return 'ARENA';
+  if (mode === 'CLASSIC') return 'SR';
+  if (queueId === 400 || queueId === 420 || queueId === 430 || queueId === 440) return 'SR';
+  return undefined;
+}
+
+/** 当前队列对应的统计组：单双排、灵活排位、匹配、大乱斗、竞技场 */
+export function currentQueueGroup(queueId?: number, mode?: GameModeKey): string {
+  if (mode === 'ARAM') return 'aram';
+  if (mode === 'ARENA') return 'arena';
+  if (queueId === 420) return 'solo';
+  if (queueId === 440) return 'flex';
+  if (queueId === 400 || queueId === 430) return 'normal';
+  if (queueId === 450 || queueId === 720) return 'aram';
+  if (queueId === 1700 || queueId === 1710) return 'arena';
+  return 'sr';
+}
+
+/** 一场历史对局属于哪个统计组 */
+export function gameQueueGroup(queueId: number | undefined, position: Lane): string {
+  if (position === 'ARAM' || queueId === 450 || queueId === 720) return 'aram';
+  if (position === 'ARENA' || queueId === 1700 || queueId === 1710) return 'arena';
+  if (queueId === 420) return 'solo';
+  if (queueId === 440) return 'flex';
+  if (queueId === 400 || queueId === 430) return 'normal';
+  return 'sr';
+}
+
+export function queueGroupName(group: string, queueId?: number): string {
+  if (group === 'aram') return '极地大乱斗';
+  if (group === 'arena') return '斗魂竞技场';
+  if (group === 'solo') return '单双排';
+  if (group === 'flex') return '灵活排位';
+  if (group === 'normal') return '匹配模式';
+  return queueName(queueId) === '未知模式' ? '召唤师峡谷' : queueName(queueId);
 }
 
 export const POSITION_NAMES: Record<string, string> = {

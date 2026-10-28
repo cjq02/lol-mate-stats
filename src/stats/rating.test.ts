@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import type { AnalyzedGame, Lane, RawGame } from '../types.js';
 import { analyzeGame, detectLane } from './analyze.js';
-import { PROFILES, performanceScore, summarize } from './rating.js';
+import { PROFILES, isAfkLike, performanceScore, summarize } from './rating.js';
+import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 
 let passed = 0;
 
@@ -255,6 +256,39 @@ test('识别大乱斗与竞技场', () => {
   const participant = { teamId: 100, timeline: { lane: 'BOTTOM', role: 'SOLO' } };
   assert.equal(detectLane({ queueId: 450, gameMode: 'ARAM' }, participant), 'ARAM');
   assert.equal(detectLane({ queueId: 1700, gameMode: 'CHERRY' }, participant), 'ARENA');
+});
+
+test('识别疑似挂机对局并打标签', () => {
+  const afk = Array.from({ length: 3 }, (_, index) =>
+    makeGame(index, 'MID', {
+      kills: 0,
+      deaths: 0,
+      assists: 0,
+      damage: 0,
+      damageShare: 0,
+      killParticipation: 0,
+      csPerMin: 0.2,
+      visionPerMin: 0,
+      durationMin: 20,
+    }),
+  );
+  const normal = Array.from({ length: 7 }, (_, index) => makeGame(index + 3, 'MID', {}));
+  const summary = summarize([...afk, ...normal]);
+  assert.equal(isAfkLike(afk[0]!), true);
+  assert.equal(isAfkLike(normal[0]!), false);
+  assert.equal(summary.afkGames, 3);
+  assert.ok(summary.labels.includes('常挂机'), summary.labels.join(','));
+});
+
+test('队列/模式分组', () => {
+  assert.equal(modeFromQueue(450, 'ARAM'), 'ARAM');
+  assert.equal(modeFromQueue(1700, 'CHERRY'), 'ARENA');
+  assert.equal(modeFromQueue(420, 'CLASSIC'), 'SR');
+  assert.equal(currentQueueGroup(420, 'SR'), 'solo');
+  assert.equal(currentQueueGroup(440, 'SR'), 'flex');
+  assert.equal(currentQueueGroup(450, 'ARAM'), 'aram');
+  assert.equal(gameQueueGroup(450, 'ARAM'), 'aram');
+  assert.equal(gameQueueGroup(420, 'MID'), 'solo');
 });
 
 console.log(`\n${passed} 项测试全部通过`);

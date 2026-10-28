@@ -142,6 +142,24 @@ export interface AccountSignals {
   level?: number;
 }
 
+/**
+ * 官方战绩接口没有挂机标记，这里只用“明显异常”的对局做推断：
+ * 时长 ≥ 8 分钟，且伤害、经济、补刀、参团、视野同时极低。
+ * 宁可漏判，也不要把被针对/辅助玩家误标成挂机。
+ */
+export function isAfkLike(game: AnalyzedGame): boolean {
+  if (game.durationMin < 8) return false;
+  const goldPerMin = game.gold / Math.max(1, game.durationMin);
+  const hits = [
+    game.damagePerMin < 150,
+    goldPerMin < 220,
+    game.csPerMin < 1.2,
+    game.kills + game.assists <= 1,
+    game.visionPerMin < 0.35,
+  ].filter(Boolean).length;
+  return hits >= 5 || (hits >= 4 && game.kills + game.deaths + game.assists === 0);
+}
+
 export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): RecentSummary {
   const sorted = [...games].sort((a, b) => b.gameCreation - a.gameCreation);
   const wins = sorted.filter((game) => game.win).length;
@@ -174,6 +192,8 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
   const avgVisionPerMin = average(sorted.map((game) => game.visionPerMin));
   const avgDurationMin = average(sorted.map((game) => game.durationMin));
   const winRate = sorted.length ? wins / sorted.length : 0;
+  const afkGames = sorted.filter(isAfkLike).length;
+  const afkRate = sorted.length ? afkGames / sorted.length : 0;
 
   const ratingRounded = Math.round(clamp(rating, 0, 100));
   const profileGames = sorted.filter((game) => game.position !== 'ARAM' && game.position !== 'ARENA');
@@ -205,6 +225,8 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
       profileGames: profileGames.length,
       streak,
       risk,
+      afkGames,
+      afkRate,
     },
     sorted[0]?.position ?? 'UNKNOWN',
   );
@@ -214,6 +236,8 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
     wins,
     losses,
     winRate,
+    afkGames,
+    afkRate,
     avgKda: round(avgKda, 2),
     avgScore: round(average(sorted.map((game) => game.score)), 1),
     avgDamage: Math.round(avgDamage),
@@ -410,6 +434,8 @@ interface LabelInput {
   profileGames: number;
   streak: Streak | null;
   risk: RiskAssessment;
+  afkGames: number;
+  afkRate: number;
 }
 
 function buildLabels(input: LabelInput, lane: Lane): string[] {
@@ -417,7 +443,12 @@ function buildLabels(input: LabelInput, lane: Lane): string[] {
   const labels: string[] = [];
   const profile = PROFILES[lane] ?? PROFILES.UNKNOWN;
 
-  // 坑 / 新手判断优先展示
+  // 挂机 / 坑 / 新手判断优先展示
+  if (input.afkGames >= 3 || (input.afkGames >= 2 && input.afkRate >= 0.25)) {
+    labels.push('常挂机');
+  } else if (input.afkGames >= 1) {
+    labels.push('疑似挂机');
+  }
   if (input.risk.level === 'severe') labels.push('坑');
   else if (input.risk.level === 'high') labels.push('偏坑');
   if (input.risk.newbie) labels.push('疑似新手');
