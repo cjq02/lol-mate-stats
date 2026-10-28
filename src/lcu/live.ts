@@ -1,19 +1,27 @@
 import { request } from 'node:https';
-import type { LiveGameData, LiveGamePlayer } from '../types.js';
+import type { LiveGameData, LiveGamePlayer, LiveMember } from '../types.js';
 
 /** 游戏内 Live Client Data API 固定端口 */
 const DEFAULT_LIVE_PORT = 2999;
 
-/** 只在对局中可用：取当前玩家所在队伍的 5 人 */
-export function teammatesOf(
+/**
+ * 只在对局中可用：按“己方 5 人 → 敌方 5 人”的顺序返回本局 10 名玩家。
+ * 无法判断当前队伍时，按接口返回顺序前 5 人视为己方。
+ */
+export function liveMembersOf(
   allPlayers: LiveGamePlayer[],
   activePlayer?: { riotId?: string; summonerName?: string },
-): LiveGamePlayer[] {
+): LiveMember[] {
   const name = activePlayer?.riotId || activePlayer?.summonerName || '';
   const self = allPlayers.find((player) => sameLiveName(player, name));
-  const team = self?.team;
-  if (!team) return allPlayers.slice(0, 5);
-  return allPlayers.filter((player) => player.team === team);
+  const allyTeam = self?.team;
+  const allies = allyTeam ? allPlayers.filter((player) => player.team === allyTeam) : allPlayers.slice(0, 5);
+  const enemies = allyTeam ? allPlayers.filter((player) => player.team !== allyTeam) : allPlayers.slice(5, 10);
+
+  return [
+    ...allies.map((player) => ({ ...player, isEnemy: false })),
+    ...enemies.map((player) => ({ ...player, isEnemy: true })),
+  ];
 }
 
 export function sameLiveName(

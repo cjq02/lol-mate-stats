@@ -3,7 +3,7 @@ import process from 'node:process';
 import type { ChampSelectSession, Snapshot } from './types.js';
 import { LcuApi } from './lcu/api.js';
 import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
-import { fetchLiveGame, teammatesOf } from './lcu/live.js';
+import { fetchLiveGame, liveMembersOf } from './lcu/live.js';
 import { ReportCollector } from './stats/collector.js';
 import { LiveSource } from './watcher.js';
 import { DemoSource } from './demo.js';
@@ -216,7 +216,7 @@ async function runOnce(options: CliOptions): Promise<void> {
 
     if (phase === 'InProgress') {
       const game = await fetchLiveGame();
-      const members = game ? teammatesOf(game.allPlayers ?? [], game.activePlayer) : [];
+      const members = game ? liveMembersOf(game.allPlayers ?? [], game.activePlayer) : [];
       if (!members.length) {
         console.log(warn('游戏进行中，但还读取不到本局数据（可能在加载界面）。请稍后重试。'));
         api.destroy();
@@ -224,14 +224,14 @@ async function runOnce(options: CliOptions): Promise<void> {
         return;
       }
       if (!options.quiet) {
-        console.log(dim(`正在读取本局 ${members.length} 名队友最近 ${options.recent} 场战绩…`));
+        console.log(dim(`正在读取本局 ${members.length} 名玩家最近 ${options.recent} 场战绩…`));
       }
       const collector = new ReportCollector(api, { recent: options.recent });
       const reports = await collector.collectLive(members);
       if (options.json) {
         console.log(JSON.stringify(reports, null, 2));
       } else {
-        printReports(reports, '本局队友近期战绩');
+        printReports(reports, '本局玩家近期战绩');
       }
       api.destroy();
       return;

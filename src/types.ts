@@ -232,6 +232,11 @@ export interface LiveGameData {
   allPlayers?: LiveGamePlayer[];
 }
 
+/** 本局玩家 + 己方/敌方标记（由当前玩家所在队伍推导） */
+export interface LiveMember extends LiveGamePlayer {
+  isEnemy?: boolean;
+}
+
 export interface PlayerReport {
   summonerId: number;
   puuid?: string;
@@ -251,6 +256,8 @@ export interface PlayerReport {
   live?: LiveStats;
   /** 人机玩家（无战绩可查） */
   isBot?: boolean;
+  /** 对局中的敌方玩家 */
+  isEnemy?: boolean;
   /** 近期综合评分 0-100，取不到战绩时为 null */
   rating: number | null;
   grade?: Grade;

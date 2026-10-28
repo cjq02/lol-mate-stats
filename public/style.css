@@ -263,12 +263,12 @@ body::before {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(368px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
   width: 100%;
-  max-width: 1720px;
+  max-width: 1900px;
   margin: 0 auto;
-  padding: 6px 26px 30px;
+  padding: 6px 22px 30px;
 }
 
 /* ----------------------------- 卡片 ----------------------------- */
@@ -284,8 +284,11 @@ body::before {
   background: linear-gradient(158deg, var(--card-a), var(--card-b));
   box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
-  animation: rise 0.35s ease both;
   transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.card.enter {
+  animation: rise 0.35s ease both;
 }
 
 .card::before {
@@ -328,6 +331,14 @@ body::before {
 
 .card.is-risk::before {
   background: linear-gradient(90deg, transparent, var(--loss), transparent);
+}
+
+.card.is-enemy {
+  border-color: rgba(255, 107, 129, 0.16);
+}
+
+.card.is-enemy::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 107, 129, 0.55), transparent);
 }
 
 .card-head {
@@ -818,6 +829,20 @@ body::before {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.side-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.side-badge.enemy {
+  color: #ffb8c2;
+  border: 1px solid rgba(255, 107, 129, 0.36);
+  background: rgba(255, 107, 129, 0.12);
+}
+
 .metric span {
   display: block;
   font-size: 9.5px;
@@ -1151,6 +1176,53 @@ code {
 }
 
 /* ----------------------------- 响应式 ----------------------------- */
+
+@media (max-width: 1500px) {
+  .board {
+    gap: 10px;
+    padding: 6px 14px 26px;
+  }
+
+  .card {
+    padding: 13px 12px 11px;
+    gap: 11px;
+  }
+
+  .score-row {
+    gap: 12px;
+  }
+
+  .ring {
+    width: 72px;
+    height: 72px;
+  }
+
+  .ring-inner b {
+    font-size: 21px;
+  }
+
+  .picked {
+    width: 54px;
+  }
+
+  .picked .champ-name {
+    max-width: 54px;
+  }
+
+  .metric {
+    padding: 6px 7px;
+  }
+
+  .metric b {
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .board {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 
 @media (max-width: 900px) {
   .board {

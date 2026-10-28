@@ -96,6 +96,7 @@ const TIER_NAMES = {
 
 const state = {
   snapshot: null,
+  snapshotSig: '',
   live: false,
   refreshing: false,
 };
@@ -197,6 +198,10 @@ function iconHtml(assetPath, label, size) {
 /* ------------------------------------------------------------------ */
 
 function applySnapshot(snapshot) {
+  // 服务端每 3 秒会推一次快照，数据没变时不要重绘，否则卡片动画会每 3 秒闪一下
+  const signature = JSON.stringify({ ...snapshot, updatedAt: undefined });
+  if (signature === state.snapshotSig) return;
+  state.snapshotSig = signature;
   state.snapshot = snapshot;
   render();
 }
@@ -228,6 +233,7 @@ function render() {
 function renderBoard(players) {
   const localId = state.snapshot?.localPlayer?.summonerId;
   const localName = state.snapshot?.localPlayer?.displayName;
+  const currentKeys = new Set([...els.board.children].map((node) => node.dataset.key));
   const nodes = players.map((player) => {
     const key = String(player.puuid ?? (player.summonerId || player.displayName));
     const isLocal = player.summonerId
@@ -238,10 +244,36 @@ function renderBoard(players) {
     if (cached && cached.sig === sig) return cached.node;
     const node = buildCard(player, isLocal);
     node.dataset.key = key;
+    // 只有新出现的卡片才播放入场动画，避免数据刷新时整块闪一下
+    if (!currentKeys.has(key)) enterCard(node);
     cardCache.set(key, { sig, node });
     return node;
   });
-  els.board.replaceChildren(...nodes);
+
+  const current = [...els.board.children];
+  const sameOrder =
+    current.length === nodes.length &&
+    nodes.every((node, index) => current[index] === node);
+  if (sameOrder) return;
+
+  const currentOrder = current.map((node) => node.dataset.key).join('|');
+  const nextOrder = nodes.map((node) => node.dataset.key).join('|');
+  if (current.length !== nodes.length || currentOrder !== nextOrder) {
+    els.board.replaceChildren(...nodes);
+    return;
+  }
+
+  // 顺序没变时只替换真正变化的那张卡，其它卡片保持不动
+  nodes.forEach((node, index) => {
+    if (current[index] !== node) els.board.replaceChild(node, current[index]);
+  });
+}
+
+function enterCard(node) {
+  node.classList.add('enter');
+  node.addEventListener('animationend', () => node.classList.remove('enter'), {
+    once: true,
+  });
 }
 
 function skeletonCard() {
@@ -262,7 +294,9 @@ function buildCard(player, isLocal) {
   const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
 
   const card = document.createElement('article');
-  card.className = `card${isLocal ? ' is-local' : ''}${risk?.level === 'severe' ? ' is-risk' : ''}`;
+  card.className = `card${isLocal ? ' is-local' : ''}${risk?.level === 'severe' ? ' is-risk' : ''}${
+    player.isEnemy ? ' is-enemy' : ''
+  }`;
   card.style.setProperty('--ring-color', color);
   card.style.setProperty('--ring-glow', hexToRgba(color, 0.2));
 
@@ -392,6 +426,7 @@ function buildCard(player, isLocal) {
             tag ? `<span class="tag">#${escapeHtml(tag)}</span>` : ''
           }</span>
           ${isLocal ? '<span class="you-badge">你</span>' : ''}
+          ${player.isEnemy ? '<span class="side-badge enemy">敌方</span>' : ''}
           ${player.isBot ? '<span class="bot-badge">人机</span>' : ''}
         </div>
         <div class="sub">
@@ -469,16 +504,18 @@ function renderHeader(snapshot, players, collecting) {
       }`;
     }
   } else if (snapshot.inGame) {
+    const allies = players.filter((player) => !player.isEnemy).length;
+    const enemies = players.filter((player) => player.isEnemy).length;
     if (!players.length) {
       els.status.textContent = snapshot.message ?? '游戏进行中，等待对局数据…';
     } else if (collecting) {
       const loaded = players.filter((player) => !player.loading).length;
-      els.status.textContent = `正在读取本局队友战绩… ${loaded}/${players.length}`;
+      els.status.textContent = `正在读取本局 10 名玩家战绩… ${loaded}/${players.length}`;
     } else {
       const risky = players.filter(
         (player) => player.recent?.risk && player.recent.risk.level === 'severe',
       ).length;
-      els.status.textContent = `本局 ${players.length} 名队友 · 实时数据${
+      els.status.textContent = `本局 ${allies} 己方 / ${enemies} 敌方 · 实时数据${
         risky ? ` · ${risky} 人高风险` : ''
       }`;
     }
@@ -499,7 +536,7 @@ function renderHeader(snapshot, players, collecting) {
 
   const recent = players.find((player) => player.recent)?.recent;
   els.recentHint.textContent = recent
-    ? `每位队友最近 ${recent.games} 场 · 评分 0-100`
+    ? `每位${snapshot?.inGame ? '玩家' : '队友'}最近 ${recent.games} 场 · 评分 0-100`
     : snapshot?.inGame
       ? '本局实时数据 · 评分来自最近对局'
       : '';

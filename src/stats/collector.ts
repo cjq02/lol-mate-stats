@@ -2,6 +2,7 @@ import type {
   ChampSelectMember,
   ChampSelectSession,
   LiveGamePlayer,
+  LiveMember,
   LiveStats,
   PlayerReport,
   RankInfo,
@@ -123,7 +124,7 @@ export class ReportCollector {
    * 召唤师信息通过名字查询 LCU，战绩接口仍然可用。
    */
   async collectLive(
-    players: LiveGamePlayer[],
+    players: LiveMember[],
     onProgress?: (players: PlayerReport[]) => void,
   ): Promise<PlayerReport[]> {
     if (!players.length) return [];
@@ -147,7 +148,7 @@ export class ReportCollector {
   }
 
   private async buildLiveFullReport(
-    player: LiveGamePlayer,
+    player: LiveMember,
     base: PlayerReport,
     championMap: Map<number, ChampionSummary>,
   ): Promise<PlayerReport> {
@@ -227,7 +228,7 @@ export class ReportCollector {
   }
 
   private buildLiveBase(
-    player: LiveGamePlayer,
+    player: LiveMember,
     info: SummonerInfo | null,
     championMap: Map<number, ChampionSummary>,
   ): PlayerReport {
@@ -263,6 +264,7 @@ export class ReportCollector {
       games: cached?.games,
       rank: cached?.rank,
       isBot: Boolean(player.isBot),
+      isEnemy: Boolean(player.isEnemy),
       live: liveStats(player),
       loading: !player.isBot && !cached,
     };
@@ -285,6 +287,7 @@ export class ReportCollector {
       championId: base.championId,
       championName: base.championName,
       isBot: base.isBot,
+      isEnemy: base.isEnemy,
       live: base.live,
       loading: false,
     };

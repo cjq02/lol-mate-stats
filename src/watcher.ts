@@ -9,7 +9,7 @@ import type { AssetResult, DataSource } from './source.js';
 import { LcuApi } from './lcu/api.js';
 import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { openEventStream } from './lcu/events.js';
-import { fetchLiveGame, sameLiveName, teammatesOf } from './lcu/live.js';
+import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
 import { ReportCollector } from './stats/collector.js';
 import { nowIso, logTag, sleep } from './util.js';
 
@@ -30,7 +30,7 @@ export function phaseMessage(phase: string): string {
     case 'ReadyCheck':
       return '已找到对局，等待接受…';
     case 'InProgress':
-      return '游戏进行中，显示本局队友数据';
+      return '游戏进行中，显示双方 10 名玩家的战绩';
     case 'WaitingForStats':
       return '对局结算中…';
     case 'EndOfGame':
@@ -222,7 +222,7 @@ export class LiveSource implements DataSource {
   }
 
   /**
-   * 游戏进行中：从 Live Client Data API 读取本局玩家，
+   * 游戏进行中：从 Live Client Data API 读取本局 10 名玩家，
    * 再结合 LCU 的历史战绩给出同样的评分卡片。
    */
   private async collectInGame(api: LcuApi): Promise<void> {
@@ -244,8 +244,10 @@ export class LiveSource implements DataSource {
 
     const all = game.allPlayers ?? [];
     const activeName = game.activePlayer?.riotId ?? game.activePlayer?.summonerName ?? '';
-    const members = teammatesOf(all, game.activePlayer);
-    const self = members.find((player) => sameLiveName(player, activeName));
+    const members = liveMembersOf(all, game.activePlayer);
+    const self = members.find(
+      (player) => !player.isEnemy && sameLiveName(player, activeName),
+    );
     if (!members.length) {
       this.patch({
         phase: 'InProgress',
@@ -258,47 +260,38 @@ export class LiveSource implements DataSource {
     }
 
     this.busy = true;
-    this.patch(
-      {
-        phase: 'InProgress',
-        inChampSelect: false,
-        inGame: true,
-        collecting: this.snapshot.players.length === 0,
-        message: this.snapshot.players.length ? undefined : '正在读取本局队友战绩…',
-        error: undefined,
-      },
-      true,
-    );
+    this.patch({
+      phase: 'InProgress',
+      inChampSelect: false,
+      inGame: true,
+      collecting: this.snapshot.players.length === 0,
+      message: this.snapshot.players.length ? undefined : '正在读取本局 10 名玩家的战绩…',
+      error: undefined,
+    });
 
     try {
       const collector = this.ensureCollector(api);
       const reports = await collector.collectLive(members, (partial) => {
-        this.patch(
-          { players: partial, collecting: partial.some((player) => player.loading) },
-          true,
-        );
+        this.patch({ players: partial, collecting: partial.some((player) => player.loading) });
       });
 
       const selfIndex = self ? members.indexOf(self) : -1;
       const selfReport = selfIndex >= 0 ? reports[selfIndex] : undefined;
-      this.patch(
-        {
-          players: reports,
-          collecting: false,
-          inGame: true,
-          message: undefined,
-          localPlayer: selfReport
-            ? {
-                summonerId: selfReport.summonerId,
-                displayName: selfReport.displayName,
-                cellId: 0,
-                championId: selfReport.championId ?? 0,
-                championName: selfReport.championName,
-              }
-            : undefined,
-        },
-        true,
-      );
+      this.patch({
+        players: reports,
+        collecting: false,
+        inGame: true,
+        message: undefined,
+        localPlayer: selfReport
+          ? {
+              summonerId: selfReport.summonerId,
+              displayName: selfReport.displayName,
+              cellId: 0,
+              championId: selfReport.championId ?? 0,
+              championName: selfReport.championName,
+            }
+          : undefined,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.patch({ collecting: false, error: `读取本局数据失败：${message}` });
