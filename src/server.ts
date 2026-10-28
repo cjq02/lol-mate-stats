@@ -180,7 +180,15 @@ async function handleRequest(
     return;
   }
 
-  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not Found');
+  // 误输入 /index、/public/index.html 之类的页面路径时，直接回到面板
+  if (method === 'GET' && (!extname(url.pathname) || url.pathname.endsWith('.html'))) {
+    await serveStatic('/index.html', res);
+    return;
+  }
+
+  res
+    .writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    .end('Not Found\n\n面板地址：http://127.0.0.1:5173/\n');
 }
 
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
