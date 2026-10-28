@@ -3,6 +3,7 @@ import process from 'node:process';
 import type { ChampSelectSession, Snapshot } from './types.js';
 import { LcuApi } from './lcu/api.js';
 import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
+import { fetchLiveGame, teammatesOf } from './lcu/live.js';
 import { ReportCollector } from './stats/collector.js';
 import { LiveSource } from './watcher.js';
 import { DemoSource } from './demo.js';
@@ -211,10 +212,34 @@ async function connect(options: CliOptions): Promise<LcuApi> {
 async function runOnce(options: CliOptions): Promise<void> {
   try {
     const api = await connect(options);
+    const phase = await api.getGameflowPhase().catch(() => '未知');
+
+    if (phase === 'InProgress') {
+      const game = await fetchLiveGame();
+      const members = game ? teammatesOf(game.allPlayers ?? [], game.activePlayer) : [];
+      if (!members.length) {
+        console.log(warn('游戏进行中，但还读取不到本局数据（可能在加载界面）。请稍后重试。'));
+        api.destroy();
+        process.exitCode = 1;
+        return;
+      }
+      if (!options.quiet) {
+        console.log(dim(`正在读取本局 ${members.length} 名队友最近 ${options.recent} 场战绩…`));
+      }
+      const collector = new ReportCollector(api, { recent: options.recent });
+      const reports = await collector.collectLive(members);
+      if (options.json) {
+        console.log(JSON.stringify(reports, null, 2));
+      } else {
+        printReports(reports, '本局队友近期战绩');
+      }
+      api.destroy();
+      return;
+    }
+
     const session = await api.getChampSelectSession();
     if (!session?.myTeam?.length) {
-      const phase = await api.getGameflowPhase().catch(() => '未知');
-      console.log(warn(`当前不在选人阶段（阶段：${phase}）。请进入选人阶段后重试。`));
+      console.log(warn(`当前不在选人阶段（阶段：${phase}）。请进入选人阶段或对局后重试。`));
       api.destroy();
       process.exitCode = 1;
       return;
@@ -308,17 +333,29 @@ async function runDoctor(options: CliOptions): Promise<void> {
       ok: false,
       detail:
         error instanceof ClientNotFoundError
-          ? '未找到 LeagueClientUx 进程或 lockfile，请先登录客户端'
+          ? '未找到 LeagueClientUx 进程、lockfile 或客户端日志，请先登录客户端'
           : String(error),
     });
   }
 
   if (api) {
+    let phase = '';
     try {
-      const phase = await api.getGameflowPhase();
+      phase = await api.getGameflowPhase();
       checks.push({ label: 'Gameflow', ok: true, detail: `当前阶段：${phase}` });
     } catch (error) {
       checks.push({ label: 'Gameflow', ok: false, detail: String(error) });
+    }
+
+    if (phase === 'InProgress') {
+      const game = await fetchLiveGame(2_500);
+      checks.push({
+        label: '对局数据',
+        ok: Boolean(game),
+        detail: game
+          ? `本局 ${game.allPlayers?.length ?? 0} 名玩家（端口 2999）`
+          : '读取失败（加载界面或端口 2999 不可用）',
+      });
     }
 
     try {
@@ -407,8 +444,8 @@ ${header('用法')}
   lol-mate-stats [命令] [参数]
 
 ${header('命令')}
-  start            启动本地面板并监听选人阶段（默认）
-  once             连接客户端，输出当前选人阶段队友数据
+  start            启动本地面板并监听选人/对局阶段（默认）
+  once             连接客户端，输出当前选人阶段或对局中的队友数据
   scan <名称>      查询指定召唤师最近战绩
   demo             使用模拟数据预览界面（不需要客户端）
   doctor           检查客户端连接与接口可用性
@@ -423,7 +460,7 @@ ${header('参数')}
 
 ${header('示例')}
   npm start                       # 启动面板
-  npm run once                    # 在选人阶段直接看结果
+  npm run once                    # 选人阶段 / 对局中直接看结果
   npm run demo                    # 无客户端时预览界面
   npx tsx src/index.ts scan "Faker#KR1"
 

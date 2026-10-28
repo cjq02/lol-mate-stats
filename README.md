@@ -4,6 +4,7 @@
 
 - 不需要 Riot API Key
 - 支持国服 / 外服（数据来自本机客户端 LCU 接口）
+- 选人阶段和游戏进行中都能看到 5 名队友的近期战绩（对局中额外显示本局实时 KDA）
 - 只监听 `127.0.0.1`，不上传任何数据
 - 附带模拟数据模式，没有客户端也能预览界面
 
@@ -25,7 +26,7 @@
 npm install
 
 npm start          # 启动面板，监听选人阶段，自动打开浏览器
-npm run once       # 不启动网页，直接在终端输出当前选人阶段的队友数据
+npm run once       # 不启动网页，直接在终端输出当前选人阶段 / 对局中的队友数据
 npm run demo       # 无客户端，使用模拟数据预览界面（含一名“新手”示例）
 npm run scan -- "召唤师名称"   # 查询指定召唤师最近战绩
 npm run doctor     # 诊断：客户端连接、接口、大区、战绩是否可用
@@ -34,6 +35,8 @@ npm run doctor     # 诊断：客户端连接、接口、大区、战绩是否�
 默认地址：<http://127.0.0.1:5173>
 
 进入选人阶段后会自动刷新；也可以按 `R` 或点击「刷新」强制重新拉取。
+
+进入对局后同样会自动切换为本局 5 名队友，卡片内容与选人阶段一致（近期评分、坑指数、最近对局），并额外显示本局的实时 KDA、补刀、等级和视野分。只显示己方队友，不显示对手。
 
 ### 常用参数
 
@@ -52,10 +55,11 @@ npm run doctor     # 诊断：客户端连接、接口、大区、战绩是否�
 
 1. 确认客户端已经**登录并进入大厅**（只启动到登录页时接口不可用）。
 2. 运行 `npm run doctor` 查看具体是哪一步失败。
-3. 仍失败时，可以手动指定连接信息：
+3. 国服 / WeGame 环境下 `lockfile` 可能是 0 字节、进程命令行又读不到，此时工具会退回到客户端日志（`LeagueClientUx.log`）里解析端口与 token；安装目录会从 `RiotClientInstalls.json` 自动识别。若仍失败，可以手动指定连接信息：
 
 ```powershell
 # 端口和 token 在客户端进程命令行里：--app-port=xxxxx --remoting-auth-token=xxxxx
+# 也可以在 LeagueClientUx.log 里搜 --app-port / --remoting-auth-token
 $env:LCU_PORT="xxxxx"
 $env:LCU_PASSWORD="xxxxx"
 npm run once
@@ -156,14 +160,17 @@ npm run once
 
 ```
 英雄联盟客户端 (LCU)
-   │  lockfile / 进程命令行 → 端口 + token
+   │  lockfile / 进程命令行 / LeagueClientUx.log → 端口 + token
    ▼
 Node 服务 (127.0.0.1)
-   │  轮询 + WebSocket 事件监听选人阶段
+   │  轮询 + WebSocket 事件监听阶段（选人 / 对局中）
    │  /lol-champ-select/v1/session   → 队友列表
    │  /lol-summoner/v1/summoners/:id → 名字、等级、头像
    │  /lol-match-history/v1/...      → 最近对局（含详细数据）
    │  /lol-ranked/v1/...             → 段位（可选，失败自动忽略）
+   ▼
+游戏内 Live Client Data API (127.0.0.1:2999，无需认证)
+   │  /liveclientdata/allgamedata  → 本局队友、英雄、实时 KDA
    ▼
 评分 / 坑指数 → 本地网页 (SSE 实时推送)
 ```
@@ -194,9 +201,10 @@ src/
 ├── report.ts             终端表格/详情输出
 ├── types.ts              类型定义
 ├── lcu/
-│   ├── discover.ts       从进程/环境变量/lockfile 发现客户端
+│   ├── discover.ts       从进程/环境变量/lockfile/日志 发现客户端
 │   ├── http.ts           LCU HTTP 客户端（自签名证书 + Basic Auth）
 │   ├── events.ts         LCU WebSocket 事件订阅
+│   ├── live.ts           游戏内 Live Client Data API（本局队友/实时数据）
 │   └── api.ts            接口封装（召唤师/选人/战绩/段位/资源）
 └── stats/
     ├── analyze.ts        原始对局 → 指标
@@ -213,6 +221,9 @@ public/
 
 **战绩为空 / 只显示部分队友？**
 新号、隐藏战绩、或该大区接口临时不可用。9 级以下账号通常没有对局记录。`npm run doctor` 的「战绩接口」可以确认。
+
+**游戏进行中看不到本局队友？**
+对局数据来自 Live Client Data API（`127.0.0.1:2999`），加载界面阶段还没就绪，进入游戏后几秒内会自动出现。若一直空白，用 `npm run doctor` 确认当前阶段是 `InProgress`；仍失败时检查是否有防火墙拦截本地 2999 端口。
 
 **国服能用吗？**
 可以。国服客户端同样是 LCU 接口，`npm run doctor` 能读到阶段和战绩即可。若客户端由 WeGame 启动，进程名仍是 `LeagueClientUx.exe`。

@@ -227,9 +227,12 @@ function render() {
 
 function renderBoard(players) {
   const localId = state.snapshot?.localPlayer?.summonerId;
+  const localName = state.snapshot?.localPlayer?.displayName;
   const nodes = players.map((player) => {
-    const key = String(player.summonerId ?? player.displayName);
-    const isLocal = player.summonerId === localId;
+    const key = String(player.puuid ?? (player.summonerId || player.displayName));
+    const isLocal = player.summonerId
+      ? player.summonerId === localId
+      : Boolean(localName && player.displayName === localName);
     const sig = `${key}|${isLocal}|${JSON.stringify(player)}`;
     const cached = cardCache.get(key);
     if (cached && cached.sig === sig) return cached.node;
@@ -365,6 +368,18 @@ function buildCard(player, isLocal) {
       ? '<div class="card-loading"><span class="spinner"></span>正在读取近期战绩…</div>'
       : '';
 
+  const live = player.live;
+  const liveRow = live
+    ? `<div class="live-row">
+        <span class="live-tag">本局</span>
+        <span class="live-kda">${live.kills} / <b class="loss">${live.deaths}</b> / ${live.assists}</span>
+        <span class="live-stat">补刀 <b>${Math.round(live.cs ?? 0)}</b></span>
+        <span class="live-stat">等级 <b>${live.championLevel ?? '-'}</b></span>
+        <span class="live-stat">视野 <b>${num(live.wardScore, 0)}</b></span>
+        ${live.isDead ? '<span class="live-dead">已阵亡</span>' : ''}
+      </div>`
+    : '';
+
   card.innerHTML = `
     <div class="card-head">
       <div class="avatar-wrap">
@@ -377,6 +392,7 @@ function buildCard(player, isLocal) {
             tag ? `<span class="tag">#${escapeHtml(tag)}</span>` : ''
           }</span>
           ${isLocal ? '<span class="you-badge">你</span>' : ''}
+          ${player.isBot ? '<span class="bot-badge">人机</span>' : ''}
         </div>
         <div class="sub">
           <span class="pos-pill">${escapeHtml(positionLabel(player))}</span>
@@ -404,6 +420,7 @@ function buildCard(player, isLocal) {
       </div>
     </div>
 
+    ${liveRow}
     ${gameChips ? `<div class="games">${gameChips}</div>` : ''}
     ${loading}
     ${metrics}
@@ -451,6 +468,20 @@ function renderHeader(snapshot, players, collecting) {
         risky ? ` · ${risky} 人高风险` : ''
       }`;
     }
+  } else if (snapshot.inGame) {
+    if (!players.length) {
+      els.status.textContent = snapshot.message ?? '游戏进行中，等待对局数据…';
+    } else if (collecting) {
+      const loaded = players.filter((player) => !player.loading).length;
+      els.status.textContent = `正在读取本局队友战绩… ${loaded}/${players.length}`;
+    } else {
+      const risky = players.filter(
+        (player) => player.recent?.risk && player.recent.risk.level === 'severe',
+      ).length;
+      els.status.textContent = `本局 ${players.length} 名队友 · 实时数据${
+        risky ? ` · ${risky} 人高风险` : ''
+      }`;
+    }
   } else {
     els.status.textContent = snapshot.message ?? PHASE_TITLES[phase] ?? '等待进入选人阶段…';
   }
@@ -467,18 +498,27 @@ function renderHeader(snapshot, players, collecting) {
   }
 
   const recent = players.find((player) => player.recent)?.recent;
-  els.recentHint.textContent = recent ? `每位队友最近 ${recent.games} 场 · 评分 0-100` : '';
+  els.recentHint.textContent = recent
+    ? `每位队友最近 ${recent.games} 场 · 评分 0-100`
+    : snapshot?.inGame
+      ? '本局实时数据 · 评分来自最近对局'
+      : '';
 }
 
 function renderEmpty(snapshot) {
   if (!snapshot) return;
   const phase = snapshot.phase ?? 'None';
-  if (snapshot.inChampSelect && snapshot.players?.length) return;
+  if ((snapshot.inChampSelect || snapshot.inGame) && snapshot.players?.length) return;
 
   els.emptyIcon.textContent = PHASE_ICONS[phase] ?? '⌛';
   if (snapshot.inChampSelect) {
     els.emptyTitle.textContent = snapshot.collecting ? '正在读取队友战绩…' : '选人阶段';
     els.emptyDesc.textContent = snapshot.message ?? '正在准备队友数据…';
+    return;
+  }
+  if (snapshot.inGame) {
+    els.emptyTitle.textContent = '游戏进行中';
+    els.emptyDesc.textContent = snapshot.message ?? '正在读取本局队友数据…';
     return;
   }
   els.emptyTitle.textContent = PHASE_TITLES[phase] ?? '等待进入选人阶段';

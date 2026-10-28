@@ -2,38 +2,104 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build",
+      "label": "build: 编译",
       "type": "npm",
       "script": "build",
-      "problemMatcher": "$tsc",
-      "group": { "kind": "build", "isDefault": true }
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
     },
     {
-      "label": "test",
+      "label": "typecheck: 类型检查",
+      "type": "npm",
+      "script": "typecheck",
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "test: 评分测试",
       "type": "npm",
       "script": "test",
+      "group": { "kind": "test", "isDefault": true },
       "problemMatcher": [],
-      "group": { "kind": "test", "isDefault": true }
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
     },
     {
-      "label": "dev: 面板（监听源码）",
+      "label": "dev: 面板（tsx watch）",
       "type": "npm",
       "script": "dev",
       "isBackground": true,
-      "problemMatcher": []
+      "problemMatcher": {
+        "owner": "lol-mate-stats-dev",
+        "pattern": { "regexp": "$^" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "正在连接|开始|web",
+          "endsPattern": "面板已启动"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "start: 面板（编译后运行）",
+      "type": "npm",
+      "script": "start",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "lol-mate-stats-start",
+        "pattern": { "regexp": "$^" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "正在连接|开始|web",
+          "endsPattern": "面板已启动"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
       "label": "demo: 模拟数据预览",
       "type": "npm",
       "script": "demo",
       "isBackground": true,
-      "problemMatcher": []
+      "problemMatcher": {
+        "owner": "lol-mate-stats-demo",
+        "pattern": { "regexp": "$^" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "演示模式|面板已启动",
+          "endsPattern": "浏览器打开|按 Ctrl\\+C 退出"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
       "label": "once: 终端读取队友",
       "type": "npm",
       "script": "once",
-      "problemMatcher": []
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "scan: 查询指定召唤师",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "scan", "--", "${input:summonerName}"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "doctor: 环境诊断",
+      "type": "npm",
+      "script": "doctor",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "summonerName",
+      "type": "promptString",
+      "description": "召唤师名称（国服完整名称；外服可用 游戏名#TAG）"
     }
   ]
 }

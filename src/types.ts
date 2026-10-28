@@ -191,6 +191,47 @@ export interface RankInfo {
   losses: number;
 }
 
+/** 本局实时数据（来自 Live Client Data API） */
+export interface LiveStats {
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  wardScore?: number;
+  championLevel?: number;
+  isDead?: boolean;
+}
+
+/** Live Client Data API 返回的玩家结构（只保留用得到的字段） */
+export interface LiveGamePlayer {
+  championName?: string;
+  rawChampionName?: string;
+  isBot?: boolean;
+  isDead?: boolean;
+  level?: number;
+  position?: string;
+  riotId?: string;
+  riotIdGameName?: string;
+  riotIdTagLine?: string;
+  summonerName?: string;
+  team?: string;
+  scores?: {
+    kills?: number;
+    deaths?: number;
+    assists?: number;
+    creepScore?: number;
+    wardScore?: number;
+  };
+}
+
+export interface LiveGameData {
+  activePlayer?: {
+    riotId?: string;
+    summonerName?: string;
+  };
+  allPlayers?: LiveGamePlayer[];
+}
+
 export interface PlayerReport {
   summonerId: number;
   puuid?: string;
@@ -206,6 +247,10 @@ export interface PlayerReport {
   rank?: RankInfo | null;
   recent?: RecentSummary;
   games?: AnalyzedGame[];
+  /** 本局实时数据（游戏进行中才有） */
+  live?: LiveStats;
+  /** 人机玩家（无战绩可查） */
+  isBot?: boolean;
   /** 近期综合评分 0-100，取不到战绩时为 null */
   rating: number | null;
   grade?: Grade;
@@ -219,6 +264,8 @@ export interface Snapshot {
   mode: 'live' | 'demo';
   phase: string;
   inChampSelect: boolean;
+  /** 是否处于对局中（此时 players 为本局队友） */
+  inGame?: boolean;
   collecting: boolean;
   updatedAt: string;
   message?: string;

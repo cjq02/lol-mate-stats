@@ -9,6 +9,7 @@ import type { AssetResult, DataSource } from './source.js';
 import { LcuApi } from './lcu/api.js';
 import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { openEventStream } from './lcu/events.js';
+import { fetchLiveGame, sameLiveName, teammatesOf } from './lcu/live.js';
 import { ReportCollector } from './stats/collector.js';
 import { nowIso, logTag, sleep } from './util.js';
 
@@ -29,7 +30,7 @@ export function phaseMessage(phase: string): string {
     case 'ReadyCheck':
       return '已找到对局，等待接受…';
     case 'InProgress':
-      return '游戏进行中，下一局选人时自动分析';
+      return '游戏进行中，显示本局队友数据';
     case 'WaitingForStats':
       return '对局结算中…';
     case 'EndOfGame':
@@ -156,6 +157,11 @@ export class LiveSource implements DataSource {
         return;
       }
 
+      if (phase === 'InProgress') {
+        await this.collectInGame(api);
+        return;
+      }
+
       if (phase !== 'ChampSelect') {
         this.resetForPhase(phase);
         return;
@@ -204,6 +210,7 @@ export class LiveSource implements DataSource {
       {
         phase,
         inChampSelect: false,
+        inGame: false,
         collecting: false,
         players: changed ? [] : this.snapshot.players,
         message: phaseMessage(phase),
@@ -212,6 +219,92 @@ export class LiveSource implements DataSource {
       },
       false,
     );
+  }
+
+  /**
+   * 游戏进行中：从 Live Client Data API 读取本局玩家，
+   * 再结合 LCU 的历史战绩给出同样的评分卡片。
+   */
+  private async collectInGame(api: LcuApi): Promise<void> {
+    if (this.busy) return;
+
+    const game = await fetchLiveGame();
+    if (!game) {
+      // 还在加载界面时 2999 端口尚未就绪
+      this.patch({
+        phase: 'InProgress',
+        inChampSelect: false,
+        inGame: true,
+        collecting: false,
+        message: '游戏进行中，等待对局数据…',
+        error: undefined,
+      });
+      return;
+    }
+
+    const all = game.allPlayers ?? [];
+    const activeName = game.activePlayer?.riotId ?? game.activePlayer?.summonerName ?? '';
+    const members = teammatesOf(all, game.activePlayer);
+    const self = members.find((player) => sameLiveName(player, activeName));
+    if (!members.length) {
+      this.patch({
+        phase: 'InProgress',
+        inChampSelect: false,
+        inGame: true,
+        collecting: false,
+        message: '游戏进行中，等待对局数据…',
+      });
+      return;
+    }
+
+    this.busy = true;
+    this.patch(
+      {
+        phase: 'InProgress',
+        inChampSelect: false,
+        inGame: true,
+        collecting: this.snapshot.players.length === 0,
+        message: this.snapshot.players.length ? undefined : '正在读取本局队友战绩…',
+        error: undefined,
+      },
+      true,
+    );
+
+    try {
+      const collector = this.ensureCollector(api);
+      const reports = await collector.collectLive(members, (partial) => {
+        this.patch(
+          { players: partial, collecting: partial.some((player) => player.loading) },
+          true,
+        );
+      });
+
+      const selfIndex = self ? members.indexOf(self) : -1;
+      const selfReport = selfIndex >= 0 ? reports[selfIndex] : undefined;
+      this.patch(
+        {
+          players: reports,
+          collecting: false,
+          inGame: true,
+          message: undefined,
+          localPlayer: selfReport
+            ? {
+                summonerId: selfReport.summonerId,
+                displayName: selfReport.displayName,
+                cellId: 0,
+                championId: selfReport.championId ?? 0,
+                championName: selfReport.championName,
+              }
+            : undefined,
+        },
+        true,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.patch({ collecting: false, error: `读取本局数据失败：${message}` });
+    } finally {
+      this.busy = false;
+    }
   }
 
   private async collect(api: LcuApi, session: ChampSelectSession): Promise<void> {

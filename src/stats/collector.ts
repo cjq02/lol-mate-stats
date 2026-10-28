@@ -1,6 +1,8 @@
 import type {
   ChampSelectMember,
   ChampSelectSession,
+  LiveGamePlayer,
+  LiveStats,
   PlayerReport,
   RankInfo,
   RawGame,
@@ -41,6 +43,10 @@ interface CachedReport {
 export class ReportCollector {
   private readonly options: CollectorOptions;
   private readonly summonerCache = new Map<number, { at: number; info: SummonerInfo | null }>();
+  private readonly summonerByNameCache = new Map<
+    string,
+    { at: number; info: SummonerInfo | null }
+  >();
   private readonly reportCache = new Map<number, CachedReport>();
   private readonly gameCache = new Map<number, { at: number; game: RawGame | null }>();
   private readonly rankCache = new Map<string, { at: number; rank: RankInfo | null }>();
@@ -57,12 +63,31 @@ export class ReportCollector {
   clearCache(): void {
     this.reportCache.clear();
     this.summonerCache.clear();
+    this.summonerByNameCache.clear();
     this.rankCache.clear();
   }
 
   championName(championId: number | undefined): string | undefined {
     if (!championId) return undefined;
     return this.championMap?.get(championId)?.name;
+  }
+
+  /** 用 Live Client Data 的英雄名反查 championId（图标用） */
+  championIdFor(rawChampionName?: string, championName?: string): number | undefined {
+    const map = this.championMap;
+    if (!map) return undefined;
+    const alias = rawChampionName?.split('_').pop()?.toLowerCase();
+    if (alias) {
+      for (const [id, champion] of map) {
+        if (champion.alias.toLowerCase() === alias) return id;
+      }
+    }
+    if (championName) {
+      for (const [id, champion] of map) {
+        if (champion.name === championName) return id;
+      }
+    }
+    return undefined;
   }
 
   async collect(
@@ -91,6 +116,178 @@ export class ReportCollector {
     });
 
     return reports;
+  }
+
+  /**
+   * 游戏进行中：用 Live Client Data 的玩家列表构建报告。
+   * 召唤师信息通过名字查询 LCU，战绩接口仍然可用。
+   */
+  async collectLive(
+    players: LiveGamePlayer[],
+    onProgress?: (players: PlayerReport[]) => void,
+  ): Promise<PlayerReport[]> {
+    if (!players.length) return [];
+
+    const championMap = await this.getChampionMap();
+    const bases = await mapLimit(players, 5, async (player) => {
+      const info = await this.getSummonerByName(liveName(player));
+      return this.buildLiveBase(player, info, championMap);
+    });
+    onProgress?.(bases);
+
+    const reports = [...bases];
+    await mapLimit(players, this.options.concurrency, async (player, index) => {
+      const base = bases[index] as PlayerReport;
+      const report = await this.buildLiveFullReport(player, base, championMap);
+      reports[index] = report;
+      onProgress?.([...reports]);
+    });
+
+    return reports;
+  }
+
+  private async buildLiveFullReport(
+    player: LiveGamePlayer,
+    base: PlayerReport,
+    championMap: Map<number, ChampionSummary>,
+  ): Promise<PlayerReport> {
+    if (player.isBot) return { ...base, loading: false, rating: null };
+    if (!base.summonerId || !base.puuid) return { ...base, loading: false };
+
+    const cached = this.reportCache.get(base.summonerId);
+    if (cached && Date.now() - cached.at < this.options.ttlMs) {
+      return this.withLiveData(cached.report, base);
+    }
+
+    const summoner: SummonerInfo = {
+      summonerId: base.summonerId,
+      puuid: base.puuid,
+      accountId: base.accountId,
+      gameName: base.displayName,
+      tagLine: base.tagLine,
+      summonerLevel: base.level,
+    };
+
+    try {
+      const [rank, games] = await Promise.all([
+        this.getRank(base.puuid),
+        this.loadRecentGames(summoner),
+      ]);
+
+      const analyzed = games
+        .map((game) =>
+          analyzeGame(
+            game,
+            { puuid: summoner.puuid, summonerId: summoner.summonerId, accountId: summoner.accountId },
+            championMap,
+          ),
+        )
+        .filter((game): game is NonNullable<typeof game> => game !== null)
+        .sort((a, b) => b.gameCreation - a.gameCreation);
+
+      if (!analyzed.length) {
+        const report: PlayerReport = {
+          ...base,
+          rank,
+          recent: undefined,
+          games: [],
+          rating: null,
+          labels: [],
+          loading: false,
+          error: '近期的对局无法解析（可能隐藏了战绩）',
+        };
+        this.reportCache.set(base.summonerId, { at: Date.now(), report });
+        return report;
+      }
+
+      const summary = summarize(analyzed, { level: base.level });
+      const report: PlayerReport = {
+        ...base,
+        rank,
+        recent: summary,
+        games: analyzed.slice(0, this.options.recent),
+        rating: summary.rating,
+        grade: summary.grade,
+        labels: summary.labels,
+        loading: false,
+        error: undefined,
+      };
+      this.reportCache.set(base.summonerId, { at: Date.now(), report });
+      return report;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ...base,
+        loading: false,
+        rating: null,
+        labels: [],
+        error: `读取战绩失败：${truncate(message, 120)}`,
+      };
+    }
+  }
+
+  private buildLiveBase(
+    player: LiveGamePlayer,
+    info: SummonerInfo | null,
+    championMap: Map<number, ChampionSummary>,
+  ): PlayerReport {
+    const championId = this.championIdFor(player.rawChampionName, player.championName);
+    const name = liveName(player);
+    const displayName =
+      info?.gameName ||
+      info?.displayName ||
+      player.riotIdGameName ||
+      stripTag(name) ||
+      '未知召唤师';
+    const position =
+      player.position && player.position.toUpperCase() !== 'NONE'
+        ? player.position.toLowerCase()
+        : undefined;
+    const cached = info ? this.reportCache.get(info.summonerId)?.report : undefined;
+
+    const base: PlayerReport = {
+      summonerId: info?.summonerId ?? 0,
+      puuid: info?.puuid,
+      accountId: info?.accountId,
+      displayName,
+      tagLine: info?.tagLine || player.riotIdTagLine,
+      level: info?.summonerLevel,
+      profileIconId: info?.profileIconId,
+      position,
+      championId,
+      championName: player.championName ?? championMap.get(championId ?? 0)?.name,
+      rating: cached?.rating ?? null,
+      grade: cached?.grade,
+      labels: player.isBot ? ['人机'] : (cached?.labels ?? []),
+      recent: cached?.recent,
+      games: cached?.games,
+      rank: cached?.rank,
+      isBot: Boolean(player.isBot),
+      live: liveStats(player),
+      loading: !player.isBot && !cached,
+    };
+
+    if (!info && !player.isBot) base.error = '无法读取召唤师信息';
+    return base;
+  }
+
+  /** 复用缓存时只覆盖本局会变化的部分（英雄、实时数据） */
+  private withLiveData(report: PlayerReport, base: PlayerReport): PlayerReport {
+    return {
+      ...report,
+      summonerId: base.summonerId,
+      puuid: base.puuid,
+      displayName: base.displayName,
+      tagLine: base.tagLine,
+      level: base.level,
+      profileIconId: base.profileIconId,
+      position: base.position ?? report.position,
+      championId: base.championId,
+      championName: base.championName,
+      isBot: base.isBot,
+      live: base.live,
+      loading: false,
+    };
   }
 
   private async buildFullReport(
@@ -241,6 +438,22 @@ export class ReportCollector {
     return info;
   }
 
+  /** 游戏内只有 Riot ID，通过名字查询召唤师信息（含 puuid） */
+  private async getSummonerByName(name: string): Promise<SummonerInfo | null> {
+    if (!name) return null;
+    const cached = this.summonerByNameCache.get(name);
+    if (cached && Date.now() - cached.at < 30 * 60_000) return cached.info;
+
+    let info: SummonerInfo | null = null;
+    try {
+      info = await this.api.getSummonerByName(name);
+    } catch {
+      info = null;
+    }
+    this.summonerByNameCache.set(name, { at: Date.now(), info });
+    return info;
+  }
+
   private async getRank(puuid: string): Promise<RankInfo | null> {
     const cached = this.rankCache.get(puuid);
     if (cached && Date.now() - cached.at < 10 * 60_000) return cached.rank;
@@ -330,6 +543,26 @@ function hasGameDetail(game: RawGame): boolean {
   if (!Array.isArray(participants) || !participants.length) return false;
   if (!Array.isArray(identities) || !identities.length) return false;
   return participants.some((participant) => participant.stats && 'kills' in participant.stats);
+}
+
+function liveName(player: LiveGamePlayer): string {
+  return player.riotId || player.summonerName || '';
+}
+
+function stripTag(name: string): string {
+  return name.split('#')[0]?.trim() ?? '';
+}
+
+function liveStats(player: LiveGamePlayer): LiveStats {
+  return {
+    kills: toNumber(player.scores?.kills),
+    deaths: toNumber(player.scores?.deaths),
+    assists: toNumber(player.scores?.assists),
+    cs: toNumber(player.scores?.creepScore),
+    wardScore: player.scores?.wardScore,
+    championLevel: player.level,
+    isDead: player.isDead,
+  };
 }
 
 export function percentage(value: number | undefined): string {
