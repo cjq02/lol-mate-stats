@@ -3,6 +3,7 @@ import process from 'node:process';
 import type { ChampSelectSession, Snapshot } from './types.js';
 import { LcuApi } from './lcu/api.js';
 import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
+import { findClientLogDir, probeEdge, readEdgeDiagnostics } from './lcu/edge.js';
 import { fetchLiveGame, liveMembersOf } from './lcu/live.js';
 import { modeFromQueue } from './stats/constants.js';
 import { ReportCollector } from './stats/collector.js';
@@ -327,6 +328,7 @@ async function runDoctor(options: CliOptions): Promise<void> {
   const checks: Array<{ label: string; ok: boolean; detail: string }> = [];
   let api: LcuApi | undefined;
   let connection;
+  let edgeFailure = false;
 
   try {
     connection = await discoverConnection({
@@ -371,7 +373,7 @@ async function runDoctor(options: CliOptions): Promise<void> {
       checks.push({
         label: '当前账号',
         ok: true,
-        detail: `${summoner.displayName ?? summoner.gameName ?? '(未知)'} · Lv.${summoner.summonerLevel ?? '?'}`,
+        detail: `${summoner.displayName?.trim() || summoner.gameName || '(未知)'} · Lv.${summoner.summonerLevel ?? '?'}`,
       });
     } catch (error) {
       checks.push({ label: '当前账号', ok: false, detail: String(error) });
@@ -403,6 +405,71 @@ async function runDoctor(options: CliOptions): Promise<void> {
       checks.push({ label: '战绩接口', ok: false, detail: String(error) });
     }
 
+    const logDir = await findClientLogDir(connection);
+    if (!logDir) {
+      checks.push({
+        label: '战绩 edge',
+        ok: false,
+        detail: '未找到客户端日志，无法检查 edge 连通性与历史请求',
+      });
+    } else {
+      const diagnostics = await readEdgeDiagnostics(logDir);
+      const sessions = diagnostics.sessions;
+      const codes = new Map<number, number>();
+      for (const session of sessions) {
+        for (const [code, count] of Object.entries(session.codes)) {
+          const key = Number(code);
+          codes.set(key, (codes.get(key) ?? 0) + count);
+        }
+      }
+      const codeText = [...codes.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([code, count]) => `${code}×${count}`)
+        .join(' / ');
+
+      if (diagnostics.edgeUrl) {
+        const probe = await probeEdge(diagnostics.edgeUrl);
+        checks.push({
+          label: '战绩 edge',
+          ok: probe.ok,
+          detail: `${diagnostics.edgeUrl.replace(/^https?:\/\//, '')} · ${
+            probe.ok ? `可达（HTTP ${probe.status}，${probe.ms}ms）` : `不可达：${probe.error}`
+          }`,
+        });
+      } else {
+        checks.push({ label: '战绩 edge', ok: false, detail: '日志里没有找到 edge 地址' });
+      }
+
+      const recent = sessions[0];
+      const lastFailure = recent?.lastFailureAt
+        ? new Date(recent.lastFailureAt).toLocaleTimeString('zh-CN', {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : undefined;
+      checks.push({
+        label: '失败记录',
+        ok: diagnostics.newestFailed === 0 && !recent?.failed,
+        detail:
+          diagnostics.newestTotal > 0
+            ? `当前会话 ${diagnostics.newestTotal} 次请求，失败 ${diagnostics.newestFailed}${
+                lastFailure ? `（最后 ${lastFailure}）` : ''
+              }`
+            : recent
+              ? `当前会话尚无请求 · 上一会话 ${recent.total} 次，失败 ${recent.failed}${
+                  codeText ? `（${codeText}）` : ''
+                }`
+              : '最近的日志里没有战绩请求',
+      });
+
+      edgeFailure = diagnostics.newestFailed > 0 || Boolean(recent?.failed);
+      const lastError = recent?.lastError;
+      if (edgeFailure && lastError) {
+        checks.push({ label: '最后错误', ok: false, detail: lastError });
+      }
+    }
+
     try {
       const session = await api.getChampSelectSession();
       checks.push({
@@ -427,9 +494,15 @@ async function runDoctor(options: CliOptions): Promise<void> {
   }
   console.log('');
 
-  if (checks.some((check) => !check.ok)) {
+  if (!checks.find((check) => check.label === '发现客户端')?.ok) {
     console.log(dim('若无法连接：确认客户端已登录（进入大厅）后重试；'));
     console.log(dim('也可以手动指定：set LCU_PORT=xxxxx && set LCU_PASSWORD=xxxxx'));
+  }
+
+  if (edgeFailure) {
+    console.log(dim('若 edge 可达但战绩请求失败，说明是客户端/腾讯侧的查询服务在超时：'));
+    console.log(dim('  先退出客户端重登 / 换网络（手机热点）/ 修复客户端；'));
+    console.log(dim('  只有部分玩家失败时，是那几名玩家所在分片超时，稍后刷新即可。'));
   }
 }
 
