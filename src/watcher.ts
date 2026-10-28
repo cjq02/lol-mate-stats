@@ -80,7 +80,7 @@ export class LiveSource implements DataSource {
     this.options = {
       recent: options.recent ?? 10,
       pollMs: options.pollMs ?? 3_000,
-      ttlMs: options.ttlMs ?? 5 * 60_000,
+      ttlMs: options.ttlMs ?? 10 * 60_000,
       quiet: options.quiet ?? false,
     };
   }

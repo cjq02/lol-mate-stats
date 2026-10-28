@@ -31,7 +31,7 @@ export interface CollectorOptions {
 
 const DEFAULT_OPTIONS: CollectorOptions = {
   recent: 10,
-  ttlMs: 5 * 60_000,
+  ttlMs: 10 * 60_000,
   gameTtlMs: 30 * 60_000,
   concurrency: 3,
 };
@@ -509,7 +509,7 @@ export class ReportCollector {
         games = await this.api.getMatchListByPuuid(summoner.puuid, count);
       } catch (error) {
         lastError = error;
-        if (isHistoryBusy(error)) this.historyCooldownUntil = Date.now() + 30_000;
+        if (isHistoryBusy(error)) this.historyCooldownUntil = Date.now() + 60_000;
       }
     }
 
@@ -518,7 +518,7 @@ export class ReportCollector {
         games = await this.api.getMatchListByAccount(summoner.accountId, count);
       } catch (error) {
         lastError = error;
-        if (isHistoryBusy(error)) this.historyCooldownUntil = Date.now() + 30_000;
+        if (isHistoryBusy(error)) this.historyCooldownUntil = Date.now() + 60_000;
       }
     }
 

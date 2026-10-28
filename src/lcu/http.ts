@@ -25,12 +25,18 @@ export interface LcuRawResponse {
 export class LcuHttp {
   private readonly agent: https.Agent;
   private readonly auth: string;
+  /** 全局并发/频率限制：国服战绩服务对突发请求很敏感 */
+  private readonly maxConcurrent = 4;
+  private readonly minGapMs = 60;
+  private running = 0;
+  private lastStart = 0;
+  private readonly waiters: Array<() => void> = [];
 
   constructor(private readonly conn: LcuConnection) {
     this.agent = new https.Agent({
       rejectUnauthorized: false,
       keepAlive: true,
-      maxSockets: 8,
+      maxSockets: 4,
     });
     this.auth = `Basic ${Buffer.from(`riot:${conn.password}`).toString('base64')}`;
   }
@@ -92,13 +98,50 @@ export class LcuHttp {
             error.status === 503 ||
             error.status === 504);
         if (!retryable || attempt >= 1) throw error;
-        await new Promise((resolveSleep) => setTimeout(resolveSleep, 800));
+        await new Promise((resolveSleep) =>
+          setTimeout(resolveSleep, 800 + Math.floor(Math.random() * 400)),
+        );
       }
     }
     throw lastError;
   }
 
   async raw(
+    method: string,
+    path: string,
+    body?: unknown,
+    timeoutMs = 15_000,
+  ): Promise<LcuRawResponse> {
+    await this.acquire();
+    try {
+      return await this.rawInner(method, path, body, timeoutMs);
+    } finally {
+      this.release();
+    }
+  }
+
+  private async acquire(): Promise<void> {
+    if (this.running >= this.maxConcurrent) {
+      await new Promise<void>((resolveWaiter) => this.waiters.push(resolveWaiter));
+    } else {
+      this.running += 1;
+    }
+
+    const wait = this.lastStart + this.minGapMs - Date.now();
+    if (wait > 0) await new Promise((resolveWait) => setTimeout(resolveWait, wait));
+    this.lastStart = Date.now();
+  }
+
+  private release(): void {
+    this.running -= 1;
+    const next = this.waiters.shift();
+    if (next) {
+      this.running += 1;
+      next();
+    }
+  }
+
+  private async rawInner(
     method: string,
     path: string,
     body?: unknown,
