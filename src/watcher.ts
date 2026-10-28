@@ -437,7 +437,7 @@ export class LiveSource implements DataSource {
     const report = players.find((player) => player.summonerId === member.summonerId);
     return {
       summonerId: member.summonerId,
-      displayName: report?.displayName ?? '你',
+      displayName: report?.displayName?.trim() || '你',
       cellId: member.cellId,
       championId: member.championId,
       championName: report?.championName,

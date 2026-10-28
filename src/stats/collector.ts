@@ -57,8 +57,9 @@ export class ReportCollector {
   private readonly rankCache = new Map<string, { at: number; rank: RankInfo | null }>();
   private championMap: Map<number, ChampionSummary> | null = null;
   private championMapAt = 0;
-  /** 战绩服务 5xx 时短暂冷却，避免每 3 秒重复轰炸 */
-  private historyCooldownUntil = 0;
+  /** 战绩服务 5xx 时的退避截止时间（指数增长），避免每 3 秒重复轰炸 */
+  private historyRetryAt = 0;
+  private historyBackoffMs = 0;
 
   constructor(
     private readonly api: LcuApi,
@@ -72,6 +73,8 @@ export class ReportCollector {
     this.summonerCache.clear();
     this.summonerByNameCache.clear();
     this.rankCache.clear();
+    this.historyRetryAt = 0;
+    this.historyBackoffMs = 0;
   }
 
   championName(championId: number | undefined): string | undefined {
@@ -418,8 +421,9 @@ export class ReportCollector {
   ): PlayerReport {
     const championId = effectiveChampionId(member);
     const cached = this.reportCache.get(reportCacheKey(member.summonerId, context))?.report;
+    // 国服 LCU 的 displayName 常常是空字符串，真实名字只在 gameName 里
     const displayName =
-      info?.displayName ??
+      info?.displayName?.trim() ||
       (info?.gameName
         ? `${info.gameName}${info.tagLine ? `#${info.tagLine}` : ''}`
         : `召唤师 ${member.summonerId}`);
@@ -493,8 +497,11 @@ export class ReportCollector {
     summoner: SummonerInfo,
     context?: GameContext,
   ): Promise<RawGame[]> {
-    if (Date.now() < this.historyCooldownUntil) {
-      throw new Error('战绩服务暂时不可用，稍后自动重试');
+    const waitMs = this.historyRetryAt - Date.now();
+    if (waitMs > 0) {
+      throw new HistoryUnavailableError(
+        `战绩服务暂时不可用，约 ${Math.ceil(waitMs / 1000)} 秒后自动重试`,
+      );
     }
 
     // 需要按当前模式过滤时多取一些候选，再在拉详情前先按队列筛掉其它模式
@@ -502,31 +509,22 @@ export class ReportCollector {
       ? Math.min(20, Math.max(this.options.recent * 2, this.options.recent))
       : this.options.recent;
     let games: RawGame[] = [];
-    let lastError: unknown = null;
 
+    // 国服只有 v1 products 一个可用入口，v3/account 路由会直接 404
     if (summoner.puuid) {
       try {
         games = await this.api.getMatchListByPuuid(summoner.puuid, count);
       } catch (error) {
-        lastError = error;
-        if (isHistoryBusy(error)) this.historyCooldownUntil = Date.now() + 60_000;
-      }
-    }
-
-    if (!games.length && !lastError && summoner.accountId) {
-      try {
-        games = await this.api.getMatchListByAccount(summoner.accountId, count);
-      } catch (error) {
-        lastError = error;
-        if (isHistoryBusy(error)) this.historyCooldownUntil = Date.now() + 60_000;
+        if (isHistoryBusy(error)) this.coolDownHistory();
+        throw error;
       }
     }
 
     if (!games.length) {
-      if (lastError) throw lastError;
       throw new Error('没有读取到对局记录（可能隐藏了战绩，或为新号）');
     }
-    this.historyCooldownUntil = 0;
+    this.historyBackoffMs = 0;
+    this.historyRetryAt = 0;
 
     // 拉详情前先按队列筛掉其它模式，避免为了 10 场大乱斗去请求几十场对局详情
     if (context) {
@@ -539,7 +537,7 @@ export class ReportCollector {
     games = games.slice(0, this.options.recent);
     if (!games.length) return [];
 
-    // v3 matchlist 只给概要，需要再拉详情；v1 product 一般已包含详情
+    // 列表接口只给概要时（没有 10 人详情），再按 gameId 拉一次详情
     const detailed = await mapLimit(games, 4, async (game) => {
       if (hasGameDetail(game)) return game;
       const gameId = toNumber(game.gameId);
@@ -548,6 +546,17 @@ export class ReportCollector {
     });
 
     return detailed.filter((game): game is RawGame => game !== null);
+  }
+
+  /** 战绩服务异常时指数退避：60s → 120s → 240s，封顶 5 分钟 */
+  private coolDownHistory(): void {
+    const now = Date.now();
+    // 同一轮里多个玩家并发失败时只提升一次退避，避免直接跳到上限
+    if (now < this.historyRetryAt) return;
+    this.historyBackoffMs = this.historyBackoffMs
+      ? Math.min(5 * 60_000, this.historyBackoffMs * 2)
+      : 60_000;
+    this.historyRetryAt = now + this.historyBackoffMs;
   }
 
   private async getGameDetail(gameId: number): Promise<RawGame | null> {
@@ -596,7 +605,16 @@ function contextLabel(context?: GameContext): string {
   return queueGroupName(currentQueueGroup(context.queueId, context.mode), context.queueId);
 }
 
+/** 战绩服务整体不可用：可能是真实 5xx，也可能正处于退避期 */
+class HistoryUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'HistoryUnavailableError';
+  }
+}
+
 function isHistoryBusy(error: unknown): boolean {
+  if (error instanceof HistoryUnavailableError) return true;
   return (
     error instanceof LcuError &&
     [429, 500, 502, 503, 504].includes(error.status)
@@ -604,11 +622,13 @@ function isHistoryBusy(error: unknown): boolean {
 }
 
 function historyErrorMessage(error: unknown): string {
-  if (isHistoryBusy(error)) {
-    return `战绩服务暂时不可用（HTTP ${(error as LcuError).status}），稍后自动重试`;
+  if (!isHistoryBusy(error)) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `读取战绩失败：${truncate(message, 120)}`;
   }
-  const message = error instanceof Error ? error.message : String(error);
-  return `读取战绩失败：${truncate(message, 120)}`;
+  if (error instanceof HistoryUnavailableError) return error.message;
+  const status = (error as LcuError).status;
+  return `战绩服务暂时不可用（HTTP ${status}，腾讯侧超时），稍后自动重试`;
 }
 
 /** 只保留当前队列/模式的历史对局 */
