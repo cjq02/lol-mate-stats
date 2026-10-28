@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "npm",
+      "script": "build",
+      "problemMatcher": "$tsc",
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "test",
+      "type": "npm",
+      "script": "test",
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      "label": "dev: 面板（监听源码）",
+      "type": "npm",
+      "script": "dev",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "demo: 模拟数据预览",
+      "type": "npm",
+      "script": "demo",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "once: 终端读取队友",
+      "type": "npm",
+      "script": "once",
+      "problemMatcher": []
+    }
+  ]
+}
