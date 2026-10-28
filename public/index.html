@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#070b14" />
+    <title>队友战绩 · LoL</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="aurora" aria-hidden="true"></div>
+
+    <div id="app" class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo" aria-hidden="true">L</div>
+          <div class="brand-text">
+            <h1>队友战绩 <span class="live-dot" id="live-dot" title="实时连接"></span></h1>
+            <p id="status-line">正在连接客户端…</p>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <span id="region-badge" class="badge hidden"></span>
+          <span id="mode-badge" class="badge badge-demo hidden">演示数据</span>
+          <span id="phase-badge" class="badge">连接中</span>
+          <span id="updated" class="muted"></span>
+          <button id="refresh" class="btn" type="button" title="刷新（快捷键 R）">
+            <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+              <path
+                d="M20 11a8 8 0 1 0-2.34 5.66M20 5v6h-6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span>刷新</span>
+          </button>
+        </div>
+      </header>
+
+      <div id="notice" class="notice hidden" role="status"></div>
+
+      <main class="main">
+        <section id="board" class="board" aria-live="polite"></section>
+
+        <section id="empty" class="empty">
+          <div class="empty-card">
+            <div class="empty-icon" id="empty-icon">⌛</div>
+            <h2 id="empty-title">等待进入选人阶段</h2>
+            <p id="empty-desc">启动英雄联盟客户端并进入选人阶段，这里会自动展示 5 名队友的近期战绩与评分。</p>
+            <ul class="empty-tips">
+              <li><b>读取中</b> · 每名队友默认分析最近 10 场对局</li>
+              <li><b>评分</b> · 综合 KDA、参团、分均伤害、补刀与视野</li>
+              <li><b>坑指数</b> · 标记伤害/补刀/参团明显低于同位置的场次</li>
+              <li><b>隐私</b> · 只访问本机客户端接口，不经过任何服务器</li>
+            </ul>
+            <p class="empty-hint">没有启动客户端？运行 <code>npm run demo</code> 预览界面</p>
+          </div>
+        </section>
+      </main>
+
+      <footer class="foot">
+        <span>数据来自本地 LCU 接口 · 仅供娱乐参考</span>
+        <span id="recent-hint"></span>
+      </footer>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

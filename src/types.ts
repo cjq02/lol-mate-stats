@@ -1,0 +1,235 @@
+/** 全局类型定义（LCU 原始数据 + 本项目产出的报告结构） */
+
+export interface LcuConnection {
+  host: string;
+  port: number;
+  password: string;
+  protocol: 'https';
+  pid?: number;
+  /** 连接信息来自哪里：process / lockfile / env */
+  source: string;
+}
+
+export interface SummonerInfo {
+  summonerId: number;
+  accountId?: number;
+  puuid?: string;
+  displayName?: string;
+  gameName?: string;
+  tagLine?: string;
+  summonerLevel?: number;
+  profileIconId?: number;
+}
+
+export interface ChampSelectMember {
+  cellId: number;
+  summonerId: number;
+  puuid?: string;
+  championId: number;
+  championPickIntent?: number;
+  assignedPosition?: string;
+  team: number;
+}
+
+export interface ChampSelectSession {
+  localPlayerCellId: number;
+  myTeam: ChampSelectMember[];
+  theirTeam?: ChampSelectMember[];
+  timer?: {
+    phase?: string;
+    adjustedTimeLeftInPhase?: number;
+    totalTimeInPhase?: number;
+    internalNowInEpochMs?: number;
+  };
+  actions?: Array<Array<{ actorCellId: number; championId: number; type: string; completed: boolean }>>;
+}
+
+export interface RawStats {
+  win?: boolean | number;
+  kills?: number;
+  deaths?: number;
+  assists?: number;
+  goldEarned?: number;
+  totalDamageDealtToChampions?: number;
+  totalDamageTaken?: number;
+  visionScore?: number;
+  totalMinionsKilled?: number;
+  neutralMinionsKilled?: number;
+  minionsKilled?: number;
+  [key: string]: unknown;
+}
+
+export interface RawParticipant {
+  participantId?: number;
+  teamId?: number;
+  championId?: number;
+  spell1Id?: number;
+  spell2Id?: number;
+  stats?: RawStats;
+  timeline?: { lane?: string; role?: string; [key: string]: unknown };
+  [key: string]: unknown;
+}
+
+export interface RawIdentityPlayer {
+  summonerId?: number | string;
+  accountId?: number | string;
+  currentAccountId?: number | string;
+  puuid?: string;
+  summonerName?: string;
+  gameName?: string;
+  tagLine?: string;
+  [key: string]: unknown;
+}
+
+export interface RawGame {
+  gameId?: number;
+  gameCreation?: number;
+  gameDuration?: number;
+  queueId?: number;
+  gameMode?: string;
+  participants?: RawParticipant[];
+  participantIdentities?: Array<{ participantId?: number; player?: RawIdentityPlayer }>;
+  [key: string]: unknown;
+}
+
+export type Lane =
+  | 'TOP'
+  | 'JUNGLE'
+  | 'MID'
+  | 'ADC'
+  | 'SUPPORT'
+  | 'ARAM'
+  | 'ARENA'
+  | 'UNKNOWN';
+
+export interface AnalyzedGame {
+  gameId: number;
+  queueId: number;
+  queueName: string;
+  gameCreation: number;
+  durationMin: number;
+  championId: number;
+  championName: string;
+  win: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  kda: number;
+  cs: number;
+  csPerMin: number;
+  gold: number;
+  damage: number;
+  damageShare: number;
+  damagePerMin: number;
+  tankShare: number;
+  killParticipation: number;
+  visionScore: number;
+  visionPerMin: number;
+  position: Lane;
+  score: number;
+  tags: string[];
+}
+
+export interface Streak {
+  type: 'win' | 'loss';
+  count: number;
+}
+
+export interface TopChampion {
+  championId: number;
+  name: string;
+  games: number;
+  wins: number;
+  winRate: number;
+  avgKda: number;
+}
+
+export interface RiskAssessment {
+  /** 坑指数 0-100，越高说明近期表现越差 */
+  score: number;
+  level: 'low' | 'medium' | 'high' | 'severe';
+  /** 判断依据（含具体数值） */
+  reasons: string[];
+  /** 明显不达标的场次 / 严重不达标场次 */
+  badGames: number;
+  severeGames: number;
+  /** 是否存在新手特征（等级低 + 数据差，仅为提示） */
+  newbie: boolean;
+}
+
+export interface RecentSummary {
+  games: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  avgKda: number;
+  avgScore: number;
+  avgDamage: number;
+  avgDamagePerMin: number;
+  avgDamageShare: number;
+  avgKillParticipation: number;
+  avgCsPerMin: number;
+  avgVisionPerMin: number;
+  avgDeaths: number;
+  avgDurationMin: number;
+  streak: Streak | null;
+  rating: number;
+  grade: Grade;
+  labels: string[];
+  risk: RiskAssessment;
+  topChampions: TopChampion[];
+}
+
+export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
+
+export interface RankInfo {
+  queue: 'RANKED_SOLO_5x5' | 'RANKED_FLEX_SR';
+  tier: string;
+  division: string;
+  leaguePoints: number;
+  wins: number;
+  losses: number;
+}
+
+export interface PlayerReport {
+  summonerId: number;
+  puuid?: string;
+  accountId?: number;
+  displayName: string;
+  tagLine?: string;
+  level?: number;
+  profileIconId?: number;
+  /** 选人阶段的分配位置（top/jungle/middle/bottom/utility） */
+  position?: string;
+  championId?: number;
+  championName?: string;
+  rank?: RankInfo | null;
+  recent?: RecentSummary;
+  games?: AnalyzedGame[];
+  /** 近期综合评分 0-100，取不到战绩时为 null */
+  rating: number | null;
+  grade?: Grade;
+  labels: string[];
+  /** 数据获取失败时的提示 */
+  error?: string;
+  loading?: boolean;
+}
+
+export interface Snapshot {
+  mode: 'live' | 'demo';
+  phase: string;
+  inChampSelect: boolean;
+  collecting: boolean;
+  updatedAt: string;
+  message?: string;
+  region?: string;
+  localPlayer?: {
+    summonerId: number;
+    displayName: string;
+    cellId: number;
+    championId: number;
+    championName?: string;
+  };
+  players: PlayerReport[];
+  error?: string;
+}

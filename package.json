@@ -1,0 +1,32 @@
+{
+  "name": "lol-mate-stats",
+  "version": "0.1.0",
+  "private": true,
+  "description": "英雄联盟选人阶段队友近期战绩与评分面板（基于本地 LCU API，支持国服/外服）",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "lol-mate-stats": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "once": "tsx src/index.ts once",
+    "demo": "tsx src/index.ts demo",
+    "doctor": "tsx src/index.ts doctor",
+    "test": "tsx src/stats/rating.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

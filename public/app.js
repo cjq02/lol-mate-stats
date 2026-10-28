@@ -1,0 +1,581 @@
+/* global EventSource, fetch */
+
+const els = {
+  board: document.getElementById('board'),
+  empty: document.getElementById('empty'),
+  emptyIcon: document.getElementById('empty-icon'),
+  emptyTitle: document.getElementById('empty-title'),
+  emptyDesc: document.getElementById('empty-desc'),
+  status: document.getElementById('status-line'),
+  phase: document.getElementById('phase-badge'),
+  mode: document.getElementById('mode-badge'),
+  region: document.getElementById('region-badge'),
+  updated: document.getElementById('updated'),
+  notice: document.getElementById('notice'),
+  refresh: document.getElementById('refresh'),
+  liveDot: document.getElementById('live-dot'),
+  recentHint: document.getElementById('recent-hint'),
+};
+
+const PHASE_LABELS = {
+  None: '未连接',
+  Lobby: '大厅',
+  Matchmaking: '匹配中',
+  CheckedIntoTournament: '赛事中',
+  ReadyCheck: '确认对局',
+  ChampSelect: '选人阶段',
+  GameStart: '游戏启动中',
+  InProgress: '游戏进行中',
+  Reconnect: '重连中',
+  WaitingForStats: '结算中',
+  PreEndOfGame: '结算中',
+  EndOfGame: '对局结束',
+  TerminatedInError: '异常结束',
+};
+
+const PHASE_TITLES = {
+  None: '等待客户端连接',
+  Lobby: '已进入大厅',
+  Matchmaking: '正在匹配…',
+  ReadyCheck: '已找到对局',
+  ChampSelect: '正在进入选人阶段…',
+  GameStart: '游戏即将开始',
+  InProgress: '游戏进行中',
+  WaitingForStats: '正在结算…',
+  EndOfGame: '对局已结束',
+  Reconnect: '客户端重连中',
+};
+
+const PHASE_ICONS = {
+  None: '🔌',
+  Lobby: '🏠',
+  Matchmaking: '🔍',
+  ReadyCheck: '🎯',
+  ChampSelect: '⏳',
+  InProgress: '🎮',
+  WaitingForStats: '📊',
+  EndOfGame: '📊',
+  Reconnect: '📡',
+};
+
+const POSITION_NAMES = {
+  top: '上单',
+  jungle: '打野',
+  middle: '中单',
+  mid: '中单',
+  bottom: 'ADC',
+  adc: 'ADC',
+  utility: '辅助',
+  support: '辅助',
+};
+
+const LANE_NAMES = {
+  TOP: '上单',
+  JUNGLE: '打野',
+  MID: '中单',
+  ADC: 'ADC',
+  SUPPORT: '辅助',
+  ARAM: '大乱斗',
+  ARENA: '竞技场',
+  UNKNOWN: '补位',
+};
+
+const TIER_NAMES = {
+  IRON: '黑铁',
+  BRONZE: '青铜',
+  SILVER: '白银',
+  GOLD: '黄金',
+  PLATINUM: '铂金',
+  EMERALD: '翡翠',
+  DIAMOND: '钻石',
+  MASTER: '大师',
+  GRANDMASTER: '宗师',
+  CHALLENGER: '王者',
+  UNRANKED: '未定级',
+};
+
+const state = {
+  snapshot: null,
+  live: false,
+  refreshing: false,
+};
+
+/** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
+const STATIC_MODE = new URLSearchParams(window.location.search).has('static');
+
+/** key -> { sig, node } */
+const cardCache = new Map();
+
+/* ------------------------------------------------------------------ */
+/* 工具                                                                */
+/* ------------------------------------------------------------------ */
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function hueFor(text) {
+  let hash = 0;
+  const value = String(text ?? '?');
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) % 360;
+  }
+  return hash;
+}
+
+function ratingColor(rating) {
+  if (rating === null || rating === undefined) return '#5b6b8c';
+  if (rating >= 75) return '#3ddc97';
+  if (rating >= 65) return '#5eead4';
+  if (rating >= 55) return '#f5c76a';
+  if (rating >= 45) return '#ffab5e';
+  return '#ff6b81';
+}
+
+function hexToRgba(hex, alpha) {
+  const normalized = hex.replace('#', '');
+  const value = Number.parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function pct(value, digits = 0) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  return `${(Number(value) * 100).toFixed(digits)}%`;
+}
+
+function num(value, digits = 1, fallback = '-') {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return fallback;
+  return Number(value).toFixed(digits);
+}
+
+function kilo(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  const number = Number(value);
+  return number >= 1000 ? `${(number / 1000).toFixed(1)}<small>K</small>` : `${Math.round(number)}`;
+}
+
+function positionLabel(player) {
+  if (player.position) return POSITION_NAMES[String(player.position).toLowerCase()] ?? player.position;
+  const lane = player.games?.[0]?.position;
+  return lane ? (LANE_NAMES[lane] ?? '补位') : '补位';
+}
+
+function rankLabel(rank) {
+  if (!rank) return '未定级';
+  const tier = TIER_NAMES[String(rank.tier).toUpperCase()] ?? rank.tier;
+  const noDivision = ['大师', '宗师', '王者', '未定级'].includes(tier);
+  const division = rank.division && !noDivision ? ` ${rank.division}` : '';
+  const lp = Number(rank.leaguePoints) > 0 ? ` ${rank.leaguePoints}LP` : '';
+  return `${tier}${division}${lp}`;
+}
+
+function champPath(championId) {
+  return `/lol-game-data/assets/v1/champion-icons/${championId}.png`;
+}
+
+function iconHtml(assetPath, label, size) {
+  const text = String(label ?? '?');
+  const hue = hueFor(text);
+  const image = assetPath
+    ? `<img src="/api/asset?path=${encodeURIComponent(assetPath)}" alt="" loading="lazy" onerror="this.remove()" />`
+    : '';
+  return `<span class="icon ${size}" style="--hue:${hue}"><span class="fb">${escapeHtml(
+    text.slice(0, 1),
+  )}</span>${image}</span>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* 渲染                                                                */
+/* ------------------------------------------------------------------ */
+
+function applySnapshot(snapshot) {
+  state.snapshot = snapshot;
+  render();
+}
+
+function render() {
+  const snapshot = state.snapshot;
+  const players = snapshot?.players ?? [];
+  const collecting = Boolean(snapshot?.collecting);
+  const showSkeleton = !players.length && collecting;
+
+  document.title = players.length ? `(${players.length}) 队友战绩 · LoL` : '队友战绩 · LoL';
+
+  els.empty.classList.toggle('hidden', players.length > 0 || showSkeleton);
+  els.board.classList.toggle('hidden', players.length === 0 && !showSkeleton);
+
+  if (showSkeleton) {
+    els.board.replaceChildren(...Array.from({ length: 5 }, () => skeletonCard()));
+  } else if (players.length) {
+    renderBoard(players);
+  } else {
+    els.board.replaceChildren();
+    cardCache.clear();
+  }
+
+  renderHeader(snapshot, players, collecting);
+  renderEmpty(snapshot);
+}
+
+function renderBoard(players) {
+  const localId = state.snapshot?.localPlayer?.summonerId;
+  const nodes = players.map((player) => {
+    const key = String(player.summonerId ?? player.displayName);
+    const isLocal = player.summonerId === localId;
+    const sig = `${key}|${isLocal}|${JSON.stringify(player)}`;
+    const cached = cardCache.get(key);
+    if (cached && cached.sig === sig) return cached.node;
+    const node = buildCard(player, isLocal);
+    node.dataset.key = key;
+    cardCache.set(key, { sig, node });
+    return node;
+  });
+  els.board.replaceChildren(...nodes);
+}
+
+function skeletonCard() {
+  const node = document.createElement('div');
+  node.className = 'skeleton';
+  return node;
+}
+
+function buildCard(player, isLocal) {
+  const recent = player.recent;
+  const games = player.games ?? [];
+  const rating = player.rating;
+  const color = ratingColor(rating);
+  const name = player.displayName ?? '未知召唤师';
+  const tag = player.tagLine;
+  const labels = (player.labels ?? []).slice(0, 4);
+  const risk = recent?.risk;
+  const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
+
+  const card = document.createElement('article');
+  card.className = `card${isLocal ? ' is-local' : ''}${risk?.level === 'severe' ? ' is-risk' : ''}`;
+  card.style.setProperty('--ring-color', color);
+  card.style.setProperty('--ring-glow', hexToRgba(color, 0.2));
+
+  const profilePath = player.profileIconId
+    ? `/lol-game-data/assets/v1/profile-icons/${player.profileIconId}.jpg`
+    : null;
+
+  const streak =
+    recent?.streak && recent.streak.count >= 2
+      ? `<span class="dot-sep">·</span><span>${recent.streak.count}${recent.streak.type === 'win' ? '连胜' : '连败'}</span>`
+      : '';
+
+  const chips = labels.length
+    ? `<div class="chips">${labels
+        .map((label) => {
+          const danger = ['坑', '偏坑', '疑似新手', '伤害过低'].includes(label);
+          const gold = label === '大腿';
+          return `<span class="chip${gold ? ' gold' : ''}${danger ? ' danger' : ''}">${escapeHtml(label)}</span>`;
+        })
+        .join('')}</div>`
+    : recent
+      ? `<div class="chips"><span class="chip muted-chip">近况平稳</span></div>`
+      : '';
+
+  const record = recent
+    ? `近 ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${pct(
+        recent.winRate,
+      )}`
+    : '暂无战绩数据';
+
+  const riskPill = risky
+    ? `<span class="risk-pill ${risk.level}" title="${escapeHtml(risk.reasons.join('；'))}">坑指数 ${risk.score}</span>`
+    : '';
+  const riskNote =
+    risky && risk.reasons.length
+      ? `<div class="risk-note"><span class="risk-label">${
+          risk.level === 'severe' ? '高风险' : '注意'
+        }</span><span>${escapeHtml(risk.reasons.join(' · '))}</span></div>`
+      : '';
+
+  const gameChips = games
+    .slice(0, 10)
+    .map((game) => {
+      const title = `${game.win ? '胜' : '负'} · ${game.championName} · ${game.kills}/${game.deaths}/${game.assists} · 评分 ${game.score} · ${game.queueName}`;
+      return `<div class="game ${game.win ? 'win' : 'loss'}" title="${escapeHtml(title)}">${iconHtml(
+        champPath(game.championId),
+        game.championName,
+        'chip',
+      )}<span class="res">${game.win ? 'W' : 'L'}</span></div>`;
+    })
+    .join('');
+
+  const metrics = recent
+    ? `<div class="metrics">
+        <div class="metric"><span>KDA</span><b>${num(recent.avgKda, 2)}</b></div>
+        <div class="metric"><span>参团率</span><b>${pct(recent.avgKillParticipation)}</b></div>
+        <div class="metric"><span>分均伤害</span><b>${Math.round(recent.avgDamagePerMin ?? 0)}</b></div>
+        <div class="metric"><span>伤害占比</span><b>${pct(recent.avgDamageShare)}</b></div>
+        <div class="metric"><span>分均补刀</span><b>${num(recent.avgCsPerMin, 1)}</b></div>
+        <div class="metric"><span>分均视野</span><b>${num(recent.avgVisionPerMin, 2)}</b></div>
+        <div class="metric"><span>场均死亡</span><b>${num(recent.avgDeaths, 1)}</b></div>
+        <div class="metric"><span>场均伤害</span><b>${kilo(recent.avgDamage)}</b></div>
+      </div>`
+    : '';
+
+  const champions = recent?.topChampions?.length
+    ? `<div class="champs"><span>常用</span>${recent.topChampions
+        .map(
+          (champion) =>
+            `<span class="champ-mini">${iconHtml(
+              champPath(champion.championId),
+              champion.name,
+              'sm',
+            )}<b>${escapeHtml(champion.name)}</b><em>${champion.games}场 ${pct(champion.winRate)}</em></span>`,
+        )
+        .join('')}</div>`
+    : '';
+
+  const detail = games.length
+    ? `<details class="detail">
+        <summary>最近 ${games.length} 场明细</summary>
+        <div class="list">${games
+          .map(
+            (game) => `<div class="game-row ${game.win ? '' : 'loss'}">
+              <span class="result">${game.win ? '胜' : '负'}</span>
+              <span class="who">${escapeHtml(game.championName)}<small>${escapeHtml(game.queueName)}${
+                game.tags?.length ? ` · ${escapeHtml(game.tags.join(' / '))}` : ''
+              }</small></span>
+              <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
+              <span class="pts" style="color:${ratingColor(game.score)}">${Math.round(game.score)}</span>
+            </div>`,
+          )
+          .join('')}</div>
+      </details>`
+    : '';
+
+  const error = player.error
+    ? `<div class="card-error">${escapeHtml(player.error)}</div>`
+    : '';
+
+  const loading =
+    player.loading && !recent
+      ? '<div class="card-loading"><span class="spinner"></span>正在读取近期战绩…</div>'
+      : '';
+
+  card.innerHTML = `
+    <div class="card-head">
+      <div class="avatar-wrap">
+        ${iconHtml(profilePath, name, 'avatar')}
+        ${player.level ? `<span class="level">${player.level}</span>` : ''}
+      </div>
+      <div class="ident">
+        <div class="name-row">
+          <span class="name">${escapeHtml(name)}${
+            tag ? `<span class="tag">#${escapeHtml(tag)}</span>` : ''
+          }</span>
+          ${isLocal ? '<span class="you-badge">你</span>' : ''}
+        </div>
+        <div class="sub">
+          <span class="pos-pill">${escapeHtml(positionLabel(player))}</span>
+          <span>${escapeHtml(rankLabel(player.rank))}</span>
+          ${streak}
+        </div>
+      </div>
+      <div class="picked">
+        ${iconHtml(player.championId ? champPath(player.championId) : null, player.championName ?? '?', 'champ')}
+        <span class="champ-name">${escapeHtml(player.championName ?? '未选英雄')}</span>
+      </div>
+    </div>
+
+    <div class="score-row">
+      <div class="ring${player.loading && !recent ? ' loading' : ''}" style="--p:${rating ?? 0};--ring:${color}">
+        <div class="ring-inner"><b>${rating ?? '--'}</b><small>评分</small></div>
+      </div>
+      <div class="score-meta">
+        <div class="meta-top">
+          <span class="grade">${player.grade ?? '?'}</span>
+          <span class="record">${record}</span>
+          ${riskPill}
+        </div>
+        ${chips}
+      </div>
+    </div>
+
+    ${gameChips ? `<div class="games">${gameChips}</div>` : ''}
+    ${loading}
+    ${metrics}
+    ${riskNote}
+    ${champions}
+    ${error}
+    ${detail}
+  `;
+
+  return card;
+}
+
+function renderHeader(snapshot, players, collecting) {
+  const phase = snapshot?.phase ?? 'None';
+  const label = PHASE_LABELS[phase] ?? phase;
+  els.phase.textContent = label;
+  els.phase.classList.toggle('phase-select', phase === 'ChampSelect');
+  els.phase.classList.toggle(
+    'phase-game',
+    phase === 'InProgress' || phase === 'WaitingForStats' || phase === 'EndOfGame',
+  );
+
+  els.mode.classList.toggle('hidden', snapshot?.mode !== 'demo');
+  if (snapshot?.region) {
+    els.region.textContent = String(snapshot.region).toUpperCase();
+    els.region.classList.remove('hidden');
+  } else {
+    els.region.classList.add('hidden');
+  }
+
+  if (!snapshot) {
+    els.status.textContent = '正在连接客户端…';
+  } else if (snapshot.inChampSelect) {
+    if (collecting) {
+      const total = players.length;
+      const loaded = players.filter((player) => !player.loading).length;
+      els.status.textContent = total
+        ? `正在读取队友战绩… ${loaded}/${total}`
+        : '正在读取队友战绩…';
+    } else {
+      const risky = players.filter(
+        (player) => player.recent?.risk && player.recent.risk.level === 'severe',
+      ).length;
+      els.status.textContent = `${players.length} 名队友 · 数据已更新${
+        risky ? ` · ${risky} 人高风险` : ''
+      }`;
+    }
+  } else {
+    els.status.textContent = snapshot.message ?? PHASE_TITLES[phase] ?? '等待进入选人阶段…';
+  }
+
+  els.updated.textContent = snapshot?.updatedAt
+    ? `更新 ${new Date(snapshot.updatedAt).toLocaleTimeString('zh-CN', { hour12: false })}`
+    : '';
+
+  if (snapshot?.error) {
+    els.notice.textContent = snapshot.error;
+    els.notice.classList.remove('hidden');
+  } else {
+    els.notice.classList.add('hidden');
+  }
+
+  const recent = players.find((player) => player.recent)?.recent;
+  els.recentHint.textContent = recent ? `每位队友最近 ${recent.games} 场 · 评分 0-100` : '';
+}
+
+function renderEmpty(snapshot) {
+  if (!snapshot) return;
+  const phase = snapshot.phase ?? 'None';
+  if (snapshot.inChampSelect && snapshot.players?.length) return;
+
+  els.emptyIcon.textContent = PHASE_ICONS[phase] ?? '⌛';
+  if (snapshot.inChampSelect) {
+    els.emptyTitle.textContent = snapshot.collecting ? '正在读取队友战绩…' : '选人阶段';
+    els.emptyDesc.textContent = snapshot.message ?? '正在准备队友数据…';
+    return;
+  }
+  els.emptyTitle.textContent = PHASE_TITLES[phase] ?? '等待进入选人阶段';
+  els.emptyDesc.textContent =
+    snapshot.message ??
+    '启动英雄联盟客户端并进入选人阶段，这里会自动展示 5 名队友的近期战绩与评分。';
+}
+
+/* ------------------------------------------------------------------ */
+/* 数据连接                                                            */
+/* ------------------------------------------------------------------ */
+
+function setLive(live) {
+  state.live = live;
+  els.liveDot.classList.toggle('offline', !live);
+  els.liveDot.title = live ? '实时连接正常' : '实时连接断开，正在重连…';
+  if (!live && state.snapshot) {
+    els.status.textContent = '实时连接断开，正在重连…';
+  }
+}
+
+async function fetchSnapshot() {
+  try {
+    const response = await fetch('/api/snapshot', { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    applySnapshot(await response.json());
+    setLive(true);
+  } catch {
+    setLive(false);
+  }
+}
+
+function connectStream() {
+  if (!('EventSource' in window)) {
+    setInterval(fetchSnapshot, 5000);
+    return;
+  }
+
+  const source = new EventSource('/api/stream');
+  source.addEventListener('snapshot', (event) => {
+    try {
+      applySnapshot(JSON.parse(event.data));
+      setLive(true);
+    } catch {
+      /* 忽略异常数据帧 */
+    }
+  });
+  source.onopen = () => setLive(true);
+  source.onerror = () => setLive(false);
+}
+
+async function refresh() {
+  if (state.refreshing) return;
+  state.refreshing = true;
+  els.refresh.disabled = true;
+  els.refresh.classList.add('spinning');
+  els.notice.classList.add('hidden');
+
+  try {
+    const response = await fetch('/api/refresh', { method: 'POST' });
+    const payload = await response.json().catch(() => ({}));
+    if (payload?.snapshot) applySnapshot(payload.snapshot);
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+  } catch (error) {
+    els.notice.textContent = `刷新失败：${error instanceof Error ? error.message : String(error)}`;
+    els.notice.classList.remove('hidden');
+    setTimeout(() => {
+      if (!state.snapshot?.error) els.notice.classList.add('hidden');
+    }, 5000);
+  } finally {
+    state.refreshing = false;
+    els.refresh.disabled = false;
+    els.refresh.classList.remove('spinning');
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 启动                                                                */
+/* ------------------------------------------------------------------ */
+
+els.refresh.addEventListener('click', () => void refresh());
+
+document.addEventListener('keydown', (event) => {
+  if (event.key.toLowerCase() !== 'r' || event.ctrlKey || event.metaKey || event.altKey) return;
+  const target = event.target;
+  if (target instanceof HTMLElement) {
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+  }
+  event.preventDefault();
+  void refresh();
+});
+
+fetchSnapshot();
+if (!STATIC_MODE) {
+  connectStream();
+  setInterval(fetchSnapshot, 20_000);
+}
