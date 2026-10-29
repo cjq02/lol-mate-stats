@@ -232,7 +232,21 @@ function generateGames(player: DemoPlayer, seed: number): AnalyzedGame[] {
       visionPerMin: round(visionPerMin, 2),
       position: lane,
       score,
-      tags: gameTags({ win, score, deaths, kda, damageShare, damagePerMin }),
+      tags: gameTags({
+        win,
+        score,
+        kills,
+        deaths,
+        assists,
+        kda,
+        damageShare,
+        damagePerMin,
+        tankShare,
+        killParticipation: participation,
+        csPerMin,
+        durationMin,
+        position: lane,
+      }),
     });
   }
 

@@ -88,7 +88,7 @@ export function printReports(players: PlayerReport[], title = '队友近期战�
         console.log(`   ${dim('近期')} ${games}`);
       }
 
-      if (recent.topChampions.length) {
+      if (recent.topChampions.length && player.games?.[0]?.position !== 'ARAM') {
         const champions = recent.topChampions
           .map(
             (champion) =>

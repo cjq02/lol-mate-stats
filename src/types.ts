@@ -56,6 +56,15 @@ export interface RawStats {
   totalMinionsKilled?: number;
   neutralMinionsKilled?: number;
   minionsKilled?: number;
+  largestKillingSpree?: number;
+  firstBloodKill?: boolean | number;
+  firstBloodAssist?: boolean | number;
+  doubleKills?: number;
+  tripleKills?: number;
+  quadraKills?: number;
+  pentaKills?: number;
+  turretKills?: number;
+  totalHeal?: number;
   [key: string]: unknown;
 }
 

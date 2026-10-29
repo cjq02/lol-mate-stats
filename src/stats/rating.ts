@@ -8,6 +8,7 @@ import type {
   TopChampion,
 } from '../types.js';
 import { clamp, round } from '../util.js';
+import { LANE_NAMES } from './constants.js';
 
 interface MetricProfile {
   kda: number;
@@ -148,6 +149,11 @@ export function appliesVision(position: Lane): boolean {
   return position !== 'ARAM' && position !== 'ARENA';
 }
 
+/** 大乱斗/竞技场死亡次数天然偏高，不据此打负面标签 */
+function deathTagsApply(position: Lane | undefined): boolean {
+  return position !== 'ARAM' && position !== 'ARENA';
+}
+
 /**
  * 官方战绩接口没有挂机标记，这里只用“明显异常”的对局做推断：
  * 时长 ≥ 8 分钟，且伤害、经济、补刀、参团、视野同时极低。
@@ -201,9 +207,34 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
   const avgCsPerMin = average(sorted.map((game) => game.csPerMin));
   const avgVisionPerMin = average(sorted.map((game) => game.visionPerMin));
   const avgDurationMin = average(sorted.map((game) => game.durationMin));
+  const avgAssists = average(sorted.map((game) => game.assists));
+  const avgTankShare = average(sorted.map((game) => game.tankShare));
+  const avgScore = average(sorted.map((game) => game.score));
+  const uniqueChampions = new Set(sorted.map((game) => game.championId)).size;
+  const topChampions = buildTopChampions(sorted);
   const winRate = sorted.length ? wins / sorted.length : 0;
   const afkGames = sorted.filter(isAfkLike).length;
   const afkRate = sorted.length ? afkGames / sorted.length : 0;
+
+  const positionCounts = new Map<Lane, number>();
+  for (const game of sorted) {
+    if (game.position === 'ARAM' || game.position === 'ARENA' || game.position === 'UNKNOWN') continue;
+    positionCounts.set(game.position, (positionCounts.get(game.position) ?? 0) + 1);
+  }
+  const positionGames = [...positionCounts.values()].reduce((sum, count) => sum + count, 0);
+  const [mainPosition, mainPositionCount] =
+    [...positionCounts.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+  const mainPositionShare = positionGames ? (mainPositionCount ?? 0) / positionGames : 0;
+
+  const nightGames = sorted.filter((game) => {
+    const hour = new Date(game.gameCreation).getHours();
+    return hour >= 0 && hour < 6;
+  }).length;
+  const rankedGames = sorted.filter((game) => game.queueId === 420 || game.queueId === 440).length;
+  const recentScore = average(sorted.slice(0, 5).map((game) => game.score));
+  const olderScore =
+    sorted.length >= 10 ? average(sorted.slice(5, 10).map((game) => game.score)) : undefined;
+  const scoreTrend = olderScore === undefined ? undefined : recentScore - olderScore;
 
   const ratingRounded = Math.round(clamp(rating, 0, 100));
   const profileGames = sorted.filter((game) => game.position !== 'ARAM' && game.position !== 'ARENA');
@@ -231,6 +262,17 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
       avgKillParticipation,
       avgCsPerMin,
       avgVisionPerMin,
+      avgAssists,
+      avgTankShare,
+      avgScore,
+      uniqueChampions,
+      topChampions,
+      mainPosition,
+      mainPositionShare,
+      positionGames,
+      nightGames,
+      rankedGames,
+      scoreTrend,
       aramGames,
       profileGames: profileGames.length,
       streak,
@@ -249,7 +291,7 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
     afkGames,
     afkRate,
     avgKda: round(avgKda, 2),
-    avgScore: round(average(sorted.map((game) => game.score)), 1),
+    avgScore: round(avgScore, 1),
     avgDamage: Math.round(avgDamage),
     avgDamagePerMin: Math.round(avgDamagePerMin),
     avgDamageShare,
@@ -263,7 +305,7 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
     grade: gradeOf(ratingRounded),
     labels,
     risk,
-    topChampions: buildTopChampions(sorted),
+    topChampions,
   };
 }
 
@@ -443,6 +485,17 @@ interface LabelInput {
   avgKillParticipation: number;
   avgCsPerMin: number;
   avgVisionPerMin: number;
+  avgAssists: number;
+  avgTankShare: number;
+  avgScore: number;
+  uniqueChampions: number;
+  topChampions: TopChampion[];
+  mainPosition?: Lane;
+  mainPositionShare: number;
+  positionGames: number;
+  nightGames: number;
+  rankedGames: number;
+  scoreTrend?: number;
   aramGames: number;
   profileGames: number;
   streak: Streak | null;
@@ -472,8 +525,44 @@ function buildLabels(input: LabelInput, lane: Lane): string[] {
   else if (input.rating >= 68) labels.push('稳定');
   else if (input.rating < 45 && input.risk.level === 'low') labels.push('状态低迷');
 
+  // 近期走势：最近 5 场对比更早 5 场
+  if (input.games >= 10 && input.scoreTrend !== undefined) {
+    if (input.scoreTrend >= 8) labels.push('状态回升');
+    else if (input.scoreTrend <= -8) labels.push('状态下滑');
+  }
+  if (input.games >= 5 && input.avgScore >= 70 && input.winRate <= 0.4) {
+    labels.push('空砍群主');
+  }
+
+  if (lane === 'ARAM') {
+    // 大乱斗英雄随机，不判断英雄池；改用乱斗玩法标签
+    if (input.avgScore >= 78) labels.push('乱斗战神');
+    if (input.avgDamageShare >= 0.3 && input.avgDamagePerMin >= 1000) labels.push('乱斗炮台');
+    if (input.avgDeaths >= 10 && input.avgDamageShare >= 0.22) labels.push('乱斗敢死队');
+    if (input.avgTankShare >= 0.3) labels.push('乱斗前排');
+    if (input.avgAssists >= 15) labels.push('乱斗辅助');
+  } else {
+    if (input.games >= 10 && input.uniqueChampions >= 8) labels.push('英雄海');
+    else if (input.games >= 8 && input.uniqueChampions <= 2) labels.push('英雄勺');
+    const top = input.topChampions[0];
+    if (top && top.games >= 5 && top.winRate >= 0.7) labels.push('绝活哥');
+  }
+
+  if (deathTagsApply(lane) && input.games >= 5 && input.avgDeaths <= 3.5) labels.push('稳健');
+  if (
+    lane !== 'ARAM' &&
+    lane !== 'ARENA' &&
+    input.positionGames >= 5 &&
+    input.mainPosition &&
+    input.mainPositionShare >= 0.6
+  ) {
+    labels.push(`专精${LANE_NAMES[input.mainPosition] ?? ''}`);
+  }
+  if (input.games >= 5 && input.nightGames / input.games >= 0.6) labels.push('夜猫子');
+  if (input.games >= 5 && input.rankedGames / input.games >= 0.8) labels.push('排位狂魔');
+
   if (input.avgKda >= 4.5) labels.push('KDA怪');
-  if (input.avgDeaths >= 7.5) labels.push('容易暴毙');
+  if (deathTagsApply(lane) && input.avgDeaths >= 7.5) labels.push('容易暴毙');
   if (input.avgDamageShare >= 0.3 && input.avgDamagePerMin >= profile.target.damagePerMin * 0.8) {
     labels.push('输出核心');
   }
@@ -488,24 +577,71 @@ function buildLabels(input: LabelInput, lane: Lane): string[] {
   if (input.streak?.type === 'loss' && input.streak.count >= 3) labels.push(`${input.streak.count}连败`);
   if (input.aramGames / input.games >= 0.6 && input.games >= 4) labels.push('大乱斗常客');
 
-  return [...new Set(labels)].slice(0, 4);
+  return [...new Set(labels)].slice(0, 5);
 }
 
 export function gameTags(game: {
   win: boolean;
   score: number;
+  kills?: number;
   deaths: number;
+  assists?: number;
   kda: number;
   damageShare: number;
   damagePerMin?: number;
+  tankShare?: number;
+  killParticipation?: number;
+  csPerMin?: number;
+  durationMin?: number;
+  position?: Lane;
+  largestKillingSpree?: number;
+  pentaKills?: number;
+  quadraKills?: number;
+  turretKills?: number;
+  totalHeal?: number;
+  firstBloodKill?: boolean;
 }): string[] {
   const tags: string[] = [];
+  const kills = game.kills ?? 0;
+  const assists = game.assists ?? 0;
+
+  if ((game.pentaKills ?? 0) > 0) tags.push('五杀');
+  else if ((game.quadraKills ?? 0) > 0) tags.push('四杀');
+
   if (game.score >= 85) tags.push('MVP');
   else if (game.win && game.score < 45) tags.push('躺赢');
   else if (!game.win && game.score >= 70) tags.push('尽力局');
+
+  if ((game.largestKillingSpree ?? 0) >= 8) tags.push('超神');
+  if (game.deaths === 0 && kills + assists >= 5) tags.push('零死');
+  // 大乱斗/竞技场死亡次数天然偏高，不据此打“超鬼”标签
+  if (deathTagsApply(game.position) && game.deaths >= 10) tags.push('超鬼');
   if (game.score <= 25) tags.push('战犯');
-  if (game.deaths >= 10) tags.push('超鬼');
+
+  if (game.position === 'ARAM') {
+    if (game.damageShare >= 0.3 && (game.damagePerMin ?? 0) >= 1000) tags.push('乱斗炮台');
+    if (game.deaths >= 12 && ((game.killParticipation ?? 0) >= 0.5 || game.damageShare >= 0.2)) {
+      tags.push('乱斗敢死队');
+    }
+    if ((game.totalHeal ?? 0) >= 6000) tags.push('乱斗奶妈');
+  }
+
+  if (assists >= 20 || (game.killParticipation ?? 0) >= 0.8) tags.push('助攻机器');
+  if (game.damageShare >= 0.35) tags.push('伤害爆炸');
+  if ((game.tankShare ?? 0) >= 0.35) tags.push('肉盾');
+  if (
+    (game.csPerMin ?? 0) >= 9 &&
+    game.position !== 'SUPPORT' &&
+    game.position !== 'ARAM' &&
+    game.position !== 'ARENA'
+  ) {
+    tags.push('补刀怪');
+  }
+  if ((game.turretKills ?? 0) >= 5) tags.push('拆塔工');
+  if (game.win && (game.durationMin ?? 0) > 0 && (game.durationMin ?? 0) <= 20) tags.push('速推局');
+  if ((game.durationMin ?? 0) >= 40) tags.push('膀胱局');
+  if (game.firstBloodKill) tags.push('一血');
   if (game.kda >= 6 && !game.win) tags.push('数据好看');
   if (game.damagePerMin !== undefined && game.damagePerMin < 200 && game.win) tags.push('混赢');
-  return tags.slice(0, 2);
+  return tags.slice(0, 3);
 }

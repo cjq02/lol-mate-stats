@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type { AnalyzedGame, Lane, RawGame } from '../types.js';
 import { analyzeGame, detectLane } from './analyze.js';
-import { PROFILES, isAfkLike, performanceScore, summarize } from './rating.js';
+import { PROFILES, gameTags, isAfkLike, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 
 let passed = 0;
@@ -24,11 +24,14 @@ interface GameOverrides {
   assists?: number;
   damage?: number;
   damageShare?: number;
+  tankShare?: number;
   killParticipation?: number;
   csPerMin?: number;
   visionPerMin?: number;
   durationMin?: number;
   position?: Lane;
+  queueId?: number;
+  championId?: number;
   gameCreation?: number;
 }
 
@@ -44,15 +47,17 @@ function makeGame(index: number, lane: Lane, overrides: GameOverrides = {}): Ana
   const killParticipation = overrides.killParticipation ?? 0.65;
   const csPerMin = overrides.csPerMin ?? 7;
   const visionPerMin = overrides.visionPerMin ?? 1;
+  const tankShare = overrides.tankShare ?? 0.16;
   const kda = (kills + assists) / Math.max(1, deaths);
+  const queueId = overrides.queueId ?? 420;
 
   return {
     gameId: 1000 + index,
-    queueId: 420,
-    queueName: '单双排',
+    queueId,
+    queueName: queueId === 450 ? '极地大乱斗' : '单双排',
     gameCreation: overrides.gameCreation ?? Date.now() - index * 3_600_000,
     durationMin,
-    championId: 103,
+    championId: overrides.championId ?? 103,
     championName: '九尾妖狐',
     win,
     kills,
@@ -65,7 +70,7 @@ function makeGame(index: number, lane: Lane, overrides: GameOverrides = {}): Ana
     damage,
     damageShare,
     damagePerMin: Math.round(damagePerMin),
-    tankShare: 0.16,
+    tankShare,
     killParticipation,
     visionScore: Math.round(visionPerMin * durationMin),
     visionPerMin,
@@ -75,7 +80,7 @@ function makeGame(index: number, lane: Lane, overrides: GameOverrides = {}): Ana
         kda,
         damageShare,
         damagePerMin,
-        tankShare: 0.16,
+        tankShare,
         killParticipation,
         csPerMin,
         visionPerMin,
@@ -270,6 +275,157 @@ test('大乱斗不参考视野', () => {
   assert.ok(!summary.labels.includes('视野偏弱'), summary.labels.join(','));
   assert.ok(!summary.labels.includes('视野大师'), summary.labels.join(','));
   assert.equal(isAfkLike(games[0]!), false);
+});
+
+test('大乱斗不因死亡多打超鬼/容易暴毙标签', () => {
+  const aramTags = gameTags({
+    win: false,
+    score: 40,
+    deaths: 12,
+    kda: 1,
+    damageShare: 0.2,
+    position: 'ARAM',
+  });
+  assert.ok(!aramTags.includes('超鬼'), aramTags.join(','));
+
+  const srTags = gameTags({
+    win: false,
+    score: 40,
+    deaths: 12,
+    kda: 1,
+    damageShare: 0.2,
+    position: 'MID',
+  });
+  assert.ok(srTags.includes('超鬼'), srTags.join(','));
+
+  const games = Array.from({ length: 10 }, (_, index) =>
+    makeGame(index, 'ARAM', { position: 'ARAM', deaths: 10, win: index < 5 }),
+  );
+  const summary = summarize(games);
+  assert.ok(!summary.labels.includes('容易暴毙'), summary.labels.join(','));
+});
+
+test('单场标签：超神/零死/助攻/伤害/肉盾', () => {
+  const base = {
+    win: false,
+    score: 50,
+    kills: 3,
+    deaths: 3,
+    assists: 5,
+    kda: 2,
+    damageShare: 0.2,
+    position: 'MID' as Lane,
+  };
+  assert.ok(gameTags({ ...base, largestKillingSpree: 8 }).includes('超神'));
+  assert.ok(gameTags({ ...base, deaths: 0, kills: 8, assists: 2 }).includes('零死'));
+  assert.ok(gameTags({ ...base, assists: 20 }).includes('助攻机器'));
+  assert.ok(gameTags({ ...base, damageShare: 0.36 }).includes('伤害爆炸'));
+  assert.ok(gameTags({ ...base, tankShare: 0.36 }).includes('肉盾'));
+});
+
+test('单场标签：多杀/一血/补刀/拆塔/时长', () => {
+  const base = {
+    win: false,
+    score: 50,
+    kills: 3,
+    deaths: 3,
+    assists: 5,
+    kda: 2,
+    damageShare: 0.2,
+    position: 'MID' as Lane,
+  };
+  assert.ok(gameTags({ ...base, pentaKills: 1 }).includes('五杀'));
+  assert.ok(gameTags({ ...base, quadraKills: 1 }).includes('四杀'));
+  assert.ok(gameTags({ ...base, firstBloodKill: true }).includes('一血'));
+  assert.ok(gameTags({ ...base, csPerMin: 9.2 }).includes('补刀怪'));
+  assert.ok(gameTags({ ...base, turretKills: 5 }).includes('拆塔工'));
+  assert.ok(gameTags({ ...base, win: true, score: 60, durationMin: 18 }).includes('速推局'));
+  assert.ok(gameTags({ ...base, durationMin: 42 }).includes('膀胱局'));
+});
+
+test('大乱斗单场标签', () => {
+  const base = {
+    win: false,
+    score: 50,
+    kills: 10,
+    deaths: 12,
+    assists: 12,
+    kda: 2,
+    damageShare: 0.25,
+    position: 'ARAM' as Lane,
+  };
+  assert.ok(
+    gameTags({ ...base, damageShare: 0.35, damagePerMin: 1200 }).includes('乱斗炮台'),
+  );
+  assert.ok(gameTags({ ...base, killParticipation: 0.6 }).includes('乱斗敢死队'));
+  assert.ok(gameTags({ ...base, totalHeal: 8000 }).includes('乱斗奶妈'));
+});
+
+test('大乱斗不判断英雄池', () => {
+  const games = Array.from({ length: 10 }, (_, index) =>
+    makeGame(index, 'MID', { championId: 100 + index }),
+  );
+  const summary = summarize(games);
+  assert.ok(summary.labels.includes('英雄海'), summary.labels.join(','));
+
+  const aramGames = games.map((_, index) =>
+    makeGame(index, 'ARAM', { position: 'ARAM', queueId: 450, championId: 100 + index }),
+  );
+  const aramSummary = summarize(aramGames);
+  assert.ok(!aramSummary.labels.includes('英雄海'), aramSummary.labels.join(','));
+  assert.ok(!aramSummary.labels.includes('英雄勺'), aramSummary.labels.join(','));
+});
+
+test('近期标签：绝活哥与空砍群主', () => {
+  const oneTrick = Array.from({ length: 10 }, (_, index) =>
+    makeGame(index, 'MID', { win: index < 8 }),
+  );
+  assert.ok(summarize(oneTrick).labels.includes('绝活哥'));
+
+  const emptyStats = Array.from({ length: 10 }, (_, index) =>
+    makeGame(index, 'MID', {
+      win: index < 4,
+      damage: 42_000,
+      damageShare: 0.38,
+      killParticipation: 0.55,
+    }),
+  );
+  assert.ok(summarize(emptyStats).labels.includes('空砍群主'));
+});
+
+test('近期标签：状态回升/稳健/专精', () => {
+  const comeback = [
+    ...Array.from({ length: 5 }, (_, index) =>
+      makeGame(index, 'MID', {
+        win: true,
+        damage: 40_000,
+        damageShare: 0.4,
+        killParticipation: 0.7,
+        csPerMin: 8,
+      }),
+    ),
+    ...Array.from({ length: 5 }, (_, index) =>
+      makeGame(index + 5, 'MID', {
+        win: false,
+        kills: 1,
+        deaths: 8,
+        assists: 2,
+        damage: 6_000,
+        damageShare: 0.08,
+        killParticipation: 0.3,
+        csPerMin: 3,
+        visionPerMin: 0.3,
+      }),
+    ),
+  ];
+  assert.ok(summarize(comeback).labels.includes('状态回升'));
+
+  const steady = Array.from({ length: 10 }, (_, index) =>
+    makeGame(index, 'MID', { deaths: 2 }),
+  );
+  const steadyLabels = summarize(steady).labels;
+  assert.ok(steadyLabels.includes('稳健'), steadyLabels.join(','));
+  assert.ok(steadyLabels.includes('专精中单'), steadyLabels.join(','));
 });
 
 test('识别疑似挂机对局并打标签', () => {

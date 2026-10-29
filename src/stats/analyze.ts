@@ -129,6 +129,12 @@ export function analyzeParticipant(
   const kills = statNumber(stats, 'kills');
   const deaths = statNumber(stats, 'deaths');
   const assists = statNumber(stats, 'assists');
+  const largestKillingSpree = statNumber(stats, 'largestKillingSpree');
+  const pentaKills = statNumber(stats, 'pentaKills');
+  const quadraKills = statNumber(stats, 'quadraKills');
+  const turretKills = statNumber(stats, 'turretKills');
+  const totalHeal = statNumber(stats, 'totalHeal');
+  const firstBloodKill = stats.firstBloodKill === true || stats.firstBloodKill === 1;
   const damage = statNumber(stats, 'totalDamageDealtToChampions');
   const damageTaken = statNumber(stats, 'totalDamageTaken');
   const gold = statNumber(stats, 'goldEarned');
@@ -211,10 +217,23 @@ export function analyzeParticipant(
     tags: gameTags({
       win,
       score,
+      kills,
       deaths,
+      assists,
       kda,
       damageShare,
       damagePerMin,
+      tankShare,
+      killParticipation,
+      csPerMin,
+      durationMin: displayDurationMin,
+      position,
+      largestKillingSpree,
+      pentaKills,
+      quadraKills,
+      turretKills,
+      totalHeal,
+      firstBloodKill,
     }),
   };
 }

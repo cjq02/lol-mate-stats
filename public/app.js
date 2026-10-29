@@ -346,7 +346,7 @@ function buildCard(player, isLocal, options = {}) {
   const color = ratingColor(rating);
   const name = player.displayName ?? '未知召唤师';
   const tag = player.tagLine;
-  const labels = (thisGame ? thisGame.tags ?? [] : player.labels ?? []).slice(0, 4);
+  const labels = (thisGame ? thisGame.tags ?? [] : player.labels ?? []).slice(0, 5);
   const risk = recent?.risk;
   const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
   const cardMode = options.mode === undefined ? state.snapshot?.gameMode : options.mode;
@@ -448,7 +448,8 @@ function buildCard(player, isLocal, options = {}) {
       </div>`
     : '';
 
-  const champions = recent?.topChampions?.length
+  // 大乱斗英雄随机，“常用英雄”没有参考意义
+  const champions = cardMode !== 'ARAM' && recent?.topChampions?.length
     ? `<div class="champs"><span>常用</span>${recent.topChampions
         .map(
           (champion) =>
