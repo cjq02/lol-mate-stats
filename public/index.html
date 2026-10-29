@@ -21,6 +21,15 @@
         </div>
 
         <div class="toolbar">
+          <form id="search-form" class="search" autocomplete="off">
+            <input
+              id="search-input"
+              type="search"
+              placeholder="查玩家 名字#TAG"
+              aria-label="玩家名称"
+            />
+            <button class="btn" type="submit">查询</button>
+          </form>
           <span id="region-badge" class="badge hidden"></span>
           <span id="mode-badge" class="badge badge-demo hidden">演示数据</span>
           <span id="phase-badge" class="badge">连接中</span>
@@ -42,6 +51,15 @@
       </header>
 
       <div id="notice" class="notice hidden" role="status"></div>
+
+      <section id="search-panel" class="search-panel hidden" aria-label="玩家查询结果">
+        <div class="search-head">
+          <h2 id="search-title">查询结果</h2>
+          <button id="search-close" class="btn" type="button">关闭</button>
+        </div>
+        <div id="search-status" class="search-status"></div>
+        <div id="search-board" class="board search-board" aria-live="polite"></div>
+      </section>
 
       <main class="main">
         <section id="board" class="board" aria-live="polite"></section>

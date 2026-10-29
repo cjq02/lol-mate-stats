@@ -15,6 +15,13 @@ const els = {
   refresh: document.getElementById('refresh'),
   liveDot: document.getElementById('live-dot'),
   recentHint: document.getElementById('recent-hint'),
+  searchForm: document.getElementById('search-form'),
+  searchInput: document.getElementById('search-input'),
+  searchPanel: document.getElementById('search-panel'),
+  searchTitle: document.getElementById('search-title'),
+  searchStatus: document.getElementById('search-status'),
+  searchBoard: document.getElementById('search-board'),
+  searchClose: document.getElementById('search-close'),
 };
 
 const PHASE_LABELS = {
@@ -193,10 +200,10 @@ function kilo(value) {
   return number >= 1000 ? `${(number / 1000).toFixed(1)}<small>K</small>` : `${Math.round(number)}`;
 }
 
-function positionLabel(player) {
-  const mode = state.snapshot?.gameMode;
-  if (mode === 'ARAM') return '大乱斗';
-  if (mode === 'ARENA') return '竞技场';
+function positionLabel(player, mode) {
+  const gameMode = mode === undefined ? state.snapshot?.gameMode : mode;
+  if (gameMode === 'ARAM') return '大乱斗';
+  if (gameMode === 'ARENA') return '竞技场';
   if (player.position) return POSITION_NAMES[String(player.position).toLowerCase()] ?? player.position;
   const lane = player.games?.[0]?.position;
   return lane ? (LANE_NAMES[lane] ?? '补位') : '补位';
@@ -315,7 +322,7 @@ function skeletonCard() {
   return node;
 }
 
-function buildCard(player, isLocal) {
+function buildCard(player, isLocal, options = {}) {
   const recent = player.recent;
   const games = player.games ?? [];
   const rating = player.rating;
@@ -325,6 +332,8 @@ function buildCard(player, isLocal) {
   const labels = (player.labels ?? []).slice(0, 4);
   const risk = recent?.risk;
   const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
+  const cardMode = options.mode === undefined ? state.snapshot?.gameMode : options.mode;
+  const modeName = options.modeLabel ?? currentModeLabel();
 
   const card = document.createElement('article');
   card.className = `card${isLocal ? ' is-local' : ''}${risk?.level === 'severe' ? ' is-risk' : ''}${
@@ -362,7 +371,7 @@ function buildCard(player, isLocal) {
       : '';
 
   const record = recent
-    ? `${currentModeLabel()} ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${pct(
+    ? `${modeName} ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${pct(
         recent.winRate,
       )}`
     : '暂无战绩数据';
@@ -480,7 +489,7 @@ function buildCard(player, isLocal) {
           ${player.isBot ? '<span class="bot-badge">人机</span>' : ''}
         </div>
         <div class="sub">
-          <span class="pos-pill">${escapeHtml(positionLabel(player))}</span>
+          <span class="pos-pill">${escapeHtml(positionLabel(player, cardMode))}</span>
           <span>${escapeHtml(rankLabel(player.rank))}</span>
           ${streak}
         </div>
@@ -686,12 +695,73 @@ async function refresh() {
 }
 
 /* ------------------------------------------------------------------ */
+/* 玩家查询                                                            */
+/* ------------------------------------------------------------------ */
+
+function closeSearch() {
+  els.searchPanel.classList.add('hidden');
+  els.searchBoard.replaceChildren();
+  els.searchStatus.textContent = '';
+  els.searchStatus.classList.remove('error');
+}
+
+async function submitSearch(event) {
+  event.preventDefault();
+  const name = els.searchInput.value.trim();
+  if (!name) {
+    els.searchInput.focus();
+    return;
+  }
+
+  els.searchPanel.classList.remove('hidden');
+  els.searchTitle.textContent = `查询结果 · ${name}`;
+  els.searchStatus.classList.remove('error');
+  els.searchStatus.textContent = '正在读取战绩…';
+  els.searchBoard.replaceChildren();
+
+  try {
+    const response = await fetch(`/api/scan?name=${encodeURIComponent(name)}`, {
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    const players = Array.isArray(payload?.players) ? payload.players : [];
+    if (!players.length) {
+      els.searchStatus.textContent = '没有查到战绩';
+      return;
+    }
+
+    const nodes = players.map((player) =>
+      buildCard(player, false, { mode: null, modeLabel: '近期' }),
+    );
+    els.searchBoard.replaceChildren(...nodes);
+    const games = players[0]?.recent?.games;
+    els.searchStatus.textContent = games
+      ? `查到 ${players.length} 名玩家，最近 ${games} 场`
+      : `查到 ${players.length} 名玩家`;
+  } catch (error) {
+    els.searchStatus.classList.add('error');
+    els.searchStatus.textContent = `查询失败：${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* 启动                                                                */
 /* ------------------------------------------------------------------ */
 
 els.refresh.addEventListener('click', () => void refresh());
+els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
+els.searchClose.addEventListener('click', closeSearch);
 
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !els.searchPanel.classList.contains('hidden')) {
+    closeSearch();
+    return;
+  }
   if (event.key.toLowerCase() !== 'r' || event.ctrlKey || event.metaKey || event.altKey) return;
   const target = event.target;
   if (target instanceof HTMLElement) {
@@ -706,4 +776,10 @@ fetchSnapshot();
 if (!STATIC_MODE) {
   connectStream();
   setInterval(fetchSnapshot, 20_000);
+}
+
+const initialPlayer = new URLSearchParams(window.location.search).get('player');
+if (initialPlayer) {
+  els.searchInput.value = initialPlayer;
+  void submitSearch({ preventDefault() {} });
 }

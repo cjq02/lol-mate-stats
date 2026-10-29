@@ -424,9 +424,8 @@ export class ReportCollector {
     // 国服 LCU 的 displayName 常常是空字符串，真实名字只在 gameName 里
     const displayName =
       info?.displayName?.trim() ||
-      (info?.gameName
-        ? `${info.gameName}${info.tagLine ? `#${info.tagLine}` : ''}`
-        : `召唤师 ${member.summonerId}`);
+      info?.gameName ||
+      `召唤师 ${member.summonerId}`;
 
     const base: PlayerReport = {
       summonerId: member.summonerId,

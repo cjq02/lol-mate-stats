@@ -1,4 +1,4 @@
-import type { Snapshot } from './types.js';
+import type { PlayerReport, Snapshot } from './types.js';
 
 export interface AssetResult {
   body: Buffer;
@@ -12,5 +12,7 @@ export interface DataSource {
   subscribe(listener: (snapshot: Snapshot) => void): () => void;
   refresh(): Promise<void>;
   getAsset(path: string): Promise<AssetResult | null>;
+  /** 按名字查询任意玩家的近期战绩（可选，demo 模式不支持） */
+  scanPlayer?(name: string, recent: number): Promise<PlayerReport[]>;
   stop(): void;
 }

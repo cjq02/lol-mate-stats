@@ -162,6 +162,32 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/scan') {
+    if (!source.scanPlayer) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持查询玩家' });
+      return;
+    }
+    const name = (url.searchParams.get('name') ?? '').trim();
+    if (!name) {
+      sendJson(res, 400, { ok: false, error: '请输入玩家名称（游戏名#TAG）' });
+      return;
+    }
+    const rawRecent = Number(url.searchParams.get('recent') ?? 10);
+    const recent = Number.isFinite(rawRecent)
+      ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
+      : 10;
+    try {
+      const players = await source.scanPlayer(name, recent);
+      sendJson(res, 200, { ok: true, players });
+    } catch (error) {
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/asset') {
     const path = url.searchParams.get('path') ?? '';
     if (!path.startsWith('/lol-game-data/assets/') || path.includes('..')) {

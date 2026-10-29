@@ -120,6 +120,30 @@ export class LiveSource implements DataSource {
     return this.api.getAsset(path);
   }
 
+  /** 页面上的“查询玩家”入口：按名字查任意玩家的近期战绩 */
+  async scanPlayer(name: string, recent: number): Promise<PlayerReport[]> {
+    const api = await this.ensureApi();
+    if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
+
+    const summoner = await api.getSummonerByName(name);
+    if (!summoner) throw new Error(`未找到召唤师：${name}`);
+
+    const session: ChampSelectSession = {
+      localPlayerCellId: 0,
+      myTeam: [
+        {
+          cellId: 0,
+          summonerId: summoner.summonerId,
+          puuid: summoner.puuid,
+          championId: 0,
+          team: 1,
+        },
+      ],
+    };
+    const collector = new ReportCollector(api, { recent });
+    return collector.collect(session);
+  }
+
   stop(): void {
     this.stopped = true;
     if (this.pollTimer) clearInterval(this.pollTimer);
