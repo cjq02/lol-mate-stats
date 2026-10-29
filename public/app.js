@@ -22,6 +22,10 @@ const els = {
   searchStatus: document.getElementById('search-status'),
   searchBoard: document.getElementById('search-board'),
   searchClose: document.getElementById('search-close'),
+  matchesModal: document.getElementById('matches-modal'),
+  matchesTitle: document.getElementById('matches-title'),
+  matchesList: document.getElementById('matches-list'),
+  matchesClose: document.getElementById('matches-close'),
 };
 
 const PHASE_LABELS = {
@@ -435,21 +439,7 @@ function buildCard(player, isLocal, options = {}) {
     : '';
 
   const detail = games.length
-    ? `<details class="detail">
-        <summary>最近 ${games.length} 场明细</summary>
-        <div class="list">${games
-          .map(
-            (game) => `<div class="game-row ${game.win ? '' : 'loss'}">
-              <span class="result">${game.win ? '胜' : '负'}</span>
-              <span class="who">${escapeHtml(game.championName)}<small>${escapeHtml(game.queueName)}${
-                game.tags?.length ? ` · ${escapeHtml(game.tags.join(' / '))}` : ''
-              }</small></span>
-              <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
-              <span class="pts" style="color:${ratingColor(game.score)}">${Math.round(game.score)}</span>
-            </div>`,
-          )
-          .join('')}</div>
-      </details>`
+    ? `<button class="btn matches-btn" type="button" data-action="matches">查看最近 ${games.length} 场战绩</button>`
     : '';
 
   const error = player.error
@@ -524,6 +514,11 @@ function buildCard(player, isLocal, options = {}) {
     ${error}
     ${detail}
   `;
+
+  const matchesButton = card.querySelector('[data-action="matches"]');
+  if (matchesButton) {
+    matchesButton.addEventListener('click', () => openMatches(player));
+  }
 
   return card;
 }
@@ -705,6 +700,48 @@ function closeSearch() {
   els.searchStatus.classList.remove('error');
 }
 
+function formatGameTime(value) {
+  const date = new Date(Number(value));
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function openMatches(player) {
+  const games = player.games ?? [];
+  const name = `${player.displayName ?? '玩家'}${player.tagLine ? `#${player.tagLine}` : ''}`;
+  els.matchesTitle.textContent = `${name} · 最近 ${games.length} 场`;
+  els.matchesList.innerHTML = games
+    .map(
+      (game) => `<div class="game-row ${game.win ? '' : 'loss'}">
+        <span class="result">${game.win ? '胜' : '负'}</span>
+        <span class="who">${iconHtml(
+          champPath(game.championId),
+          game.championName,
+          'sm',
+        )}<b>${escapeHtml(game.championName)}</b><small>${escapeHtml(game.queueName)} · ${
+          game.durationMin
+        } 分钟 · ${formatGameTime(game.gameCreation)}${
+          game.tags?.length ? ` · ${escapeHtml(game.tags.join(' / '))}` : ''
+        }</small></span>
+        <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
+        <span class="pts" style="color:${ratingColor(game.score)}">${Math.round(game.score)}</span>
+      </div>`,
+    )
+    .join('');
+  els.matchesModal.classList.remove('hidden');
+}
+
+function closeMatches() {
+  els.matchesModal.classList.add('hidden');
+  els.matchesList.replaceChildren();
+}
+
 async function submitSearch(event) {
   event.preventDefault();
   const name = els.searchInput.value.trim();
@@ -756,8 +793,16 @@ async function submitSearch(event) {
 els.refresh.addEventListener('click', () => void refresh());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
+els.matchesClose.addEventListener('click', closeMatches);
+els.matchesModal.addEventListener('click', (event) => {
+  if (event.target === els.matchesModal) closeMatches();
+});
 
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !els.matchesModal.classList.contains('hidden')) {
+    closeMatches();
+    return;
+  }
   if (event.key === 'Escape' && !els.searchPanel.classList.contains('hidden')) {
     closeSearch();
     return;
