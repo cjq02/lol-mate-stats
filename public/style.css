@@ -499,14 +499,14 @@ body::before {
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  width: 62px;
+  width: 72px;
   flex: none;
 }
 
 .picked .champ-name {
   font-size: 10.5px;
   color: var(--muted);
-  max-width: 62px;
+  max-width: 72px;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -547,18 +547,18 @@ body::before {
 }
 
 .icon.avatar {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
 }
 
 .icon.avatar .fb {
-  font-size: 18px;
+  font-size: 15px;
 }
 
 .icon.champ {
-  width: 40px;
-  height: 40px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
 }
 
@@ -1285,11 +1285,16 @@ code {
   }
 
   .picked {
-    width: 54px;
+    width: 64px;
   }
 
   .picked .champ-name {
-    max-width: 54px;
+    max-width: 64px;
+  }
+
+  .icon.champ {
+    width: 50px;
+    height: 50px;
   }
 
   .metric {

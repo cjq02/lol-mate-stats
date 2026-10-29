@@ -19,7 +19,7 @@ import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.j
 import { summarize } from './rating.js';
 
 export interface CollectorOptions {
-  /** 拉取最近多少场对局，默认 10 */
+  /** 拉取最近多少场对局，默认 20 */
   recent: number;
   /** 报告缓存时长，默认 5 分钟 */
   ttlMs: number;
@@ -30,7 +30,7 @@ export interface CollectorOptions {
 }
 
 const DEFAULT_OPTIONS: CollectorOptions = {
-  recent: 10,
+  recent: 20,
   ttlMs: 10 * 60_000,
   gameTtlMs: 30 * 60_000,
   concurrency: 3,
@@ -505,7 +505,7 @@ export class ReportCollector {
 
     // 需要按当前模式过滤时多取一些候选，再在拉详情前先按队列筛掉其它模式
     const count = context
-      ? Math.min(20, Math.max(this.options.recent * 2, this.options.recent))
+      ? Math.min(40, Math.max(this.options.recent * 2, this.options.recent))
       : this.options.recent;
     let games: RawGame[] = [];
 
@@ -525,7 +525,7 @@ export class ReportCollector {
     this.historyBackoffMs = 0;
     this.historyRetryAt = 0;
 
-    // 拉详情前先按队列筛掉其它模式，避免为了 10 场大乱斗去请求几十场对局详情
+    // 拉详情前先按队列筛掉其它模式，避免为了 20 场大乱斗去请求几十场对局详情
     if (context) {
       const group = currentQueueGroup(context.queueId, context.mode);
       games = games.filter(

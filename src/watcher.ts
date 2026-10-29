@@ -78,7 +78,7 @@ export class LiveSource implements DataSource {
 
   constructor(options: LiveSourceOptions = {}) {
     this.options = {
-      recent: options.recent ?? 10,
+      recent: options.recent ?? 20,
       pollMs: options.pollMs ?? 3_000,
       ttlMs: options.ttlMs ?? 10 * 60_000,
       quiet: options.quiet ?? false,

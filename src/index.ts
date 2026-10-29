@@ -35,7 +35,7 @@ function parseArgs(argv: string[]): CliOptions {
     command: 'start',
     args: [],
     port: Number(process.env.PORT ?? DEFAULT_PORT),
-    recent: Number(process.env.RECENT_GAMES ?? 10),
+    recent: Number(process.env.RECENT_GAMES ?? 20),
     open: true,
     json: false,
     quiet: false,
@@ -92,7 +92,7 @@ function parseArgs(argv: string[]): CliOptions {
     options.args = positional.slice(1);
   }
   if (!Number.isFinite(options.port) || options.port <= 0) options.port = DEFAULT_PORT;
-  if (!Number.isFinite(options.recent) || options.recent <= 0) options.recent = 10;
+  if (!Number.isFinite(options.recent) || options.recent <= 0) options.recent = 20;
   options.recent = Math.min(30, Math.max(1, options.recent));
 
   return options;
@@ -543,7 +543,7 @@ ${header('命令')}
 
 ${header('参数')}
   -p, --port <n>   面板端口，默认 51730（固定端口）
-  -r, --recent <n> 每位玩家读取的场次，默认 10
+  -r, --recent <n> 每位玩家读取的场次，默认 20
       --no-open    不自动打开浏览器
       --json       以 JSON 输出（once / scan）
       --quiet      减少日志

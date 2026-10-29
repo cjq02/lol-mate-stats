@@ -172,10 +172,10 @@ async function handleRequest(
       sendJson(res, 400, { ok: false, error: '请输入玩家名称（游戏名#TAG）' });
       return;
     }
-    const rawRecent = Number(url.searchParams.get('recent') ?? 10);
+    const rawRecent = Number(url.searchParams.get('recent') ?? 20);
     const recent = Number.isFinite(rawRecent)
       ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
-      : 10;
+      : 20;
     try {
       const players = await source.scanPlayer(name, recent);
       sendJson(res, 200, { ok: true, players });
