@@ -320,12 +320,18 @@ body::before {
 .match-cards {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-auto-rows: max-content;
   align-content: start;
+  align-items: start;
   gap: 10px;
   padding: 12px;
   overflow: auto;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.match-cards .card {
+  height: max-content;
 }
 
 .match-cards::-webkit-scrollbar {
