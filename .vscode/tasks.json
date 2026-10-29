@@ -2,23 +2,26 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build: 编译并启动",
-      "dependsOn": ["build-only: 仅编译", "start: 面板（编译后运行）"],
-      "dependsOrder": "sequence",
-      "group": { "kind": "build", "isDefault": true },
-      "problemMatcher": []
-    },
-    {
-      "label": "build-only: 仅编译",
+      "label": "build+start: 编译并启动",
       "type": "npm",
-      "script": "build",
-      "group": "build",
-      "problemMatcher": ["$tsc"],
+      "script": "start:build",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "lol-mate-stats-start",
+        "pattern": { "regexp": "$^" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "正在连接|开始|web",
+          "endsPattern": "面板已启动"
+        }
+      },
+      "group": { "kind": "build", "isDefault": true },
       "presentation": {
         "reveal": "always",
         "panel": "shared",
-        "group": "lol-mate-stats-build",
-        "clear": true
+        "group": "lol-mate-stats",
+        "clear": true,
+        "close": true
       }
     },
     {
@@ -59,28 +62,6 @@
       }
     },
     {
-      "label": "start: 面板（编译后运行）",
-      "type": "npm",
-      "script": "start",
-      "isBackground": true,
-      "problemMatcher": {
-        "owner": "lol-mate-stats-start",
-        "pattern": { "regexp": "$^" },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "正在连接|开始|web",
-          "endsPattern": "面板已启动"
-        }
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "shared",
-        "group": "lol-mate-stats",
-        "clear": true,
-        "close": true
-      }
-    },
-    {
       "label": "demo: 模拟数据预览",
       "type": "npm",
       "script": "demo",
@@ -103,33 +84,11 @@
       }
     },
     {
-      "label": "once: 终端读取队友",
-      "type": "npm",
-      "script": "once",
-      "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
-    },
-    {
-      "label": "scan: 查询指定召唤师",
-      "type": "shell",
-      "command": "npm",
-      "args": ["run", "scan", "--", "${input:summonerName}"],
-      "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
-    },
-    {
       "label": "doctor: 环境诊断",
       "type": "npm",
       "script": "doctor",
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "shared", "clear": true }
-    }
-  ],
-  "inputs": [
-    {
-      "id": "summonerName",
-      "type": "promptString",
-      "description": "召唤师名称（国服完整名称；外服可用 游戏名#TAG）"
     }
   ]
 }

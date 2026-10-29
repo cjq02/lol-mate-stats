@@ -13,6 +13,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "start:build": "npm run build && node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "once": "tsx src/index.ts once",
     "scan": "tsx src/index.ts scan",
