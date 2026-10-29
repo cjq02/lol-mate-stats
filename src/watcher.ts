@@ -3,8 +3,11 @@ import type {
   ChampSelectSession,
   GameContext,
   LcuConnection,
+  MatchDetail,
+  MatchSummary,
   PlayerReport,
   Snapshot,
+  SummonerInfo,
 } from './types.js';
 import type { AssetResult, DataSource } from './source.js';
 import { LcuApi } from './lcu/api.js';
@@ -12,8 +15,8 @@ import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { openEventStream } from './lcu/events.js';
 import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
 import { ReportCollector } from './stats/collector.js';
-import { modeFromQueue } from './stats/constants.js';
-import { nowIso, logTag, sleep } from './util.js';
+import { modeFromQueue, queueName } from './stats/constants.js';
+import { nowIso, logTag, sleep, toNumber } from './util.js';
 
 export interface LiveSourceOptions {
   recent?: number;
@@ -142,6 +145,71 @@ export class LiveSource implements DataSource {
     };
     const collector = new ReportCollector(api, { recent });
     return collector.collect(session);
+  }
+
+  /** 当前账号最近对局列表 */
+  async getMyMatches(
+    recent: number,
+  ): Promise<{ summoner: SummonerInfo; games: MatchSummary[] }> {
+    const api = await this.ensureApi();
+    if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
+
+    const summoner = await api.getCurrentSummoner();
+    if (!summoner.puuid) throw new Error('无法读取当前账号的 puuid');
+
+    const rawGames = await api.getMatchListByPuuid(summoner.puuid, recent);
+    const championMap = await api.getChampionMap().catch(() => new Map());
+    const games = rawGames
+      .map((game) => {
+        const participant = game.participants?.[0];
+        const stats = participant?.stats ?? {};
+        const championId = toNumber(participant?.championId);
+        const rawDuration = toNumber(game.gameDuration);
+        return {
+          gameId: toNumber(game.gameId),
+          queueId: toNumber(game.queueId),
+          queueName: queueName(toNumber(game.queueId)),
+          gameCreation: toNumber(game.gameCreation),
+          gameDuration: rawDuration > 100_000 ? Math.round(rawDuration / 1000) : rawDuration,
+          championId,
+          championName: championMap.get(championId)?.name,
+          win: stats.win === true || stats.win === 1,
+          kills: toNumber(stats.kills),
+          deaths: toNumber(stats.deaths),
+          assists: toNumber(stats.assists),
+        };
+      })
+      .filter((game) => game.gameId > 0);
+
+    return { summoner, games };
+  }
+
+  /** 某场对局里 10 名玩家的近期战绩 */
+  async getMatchDetail(gameId: number, recent: number): Promise<MatchDetail> {
+    const api = await this.ensureApi();
+    if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
+
+    const summoner = await api.getCurrentSummoner();
+    const game = await api.getGame(gameId);
+    const queueId = toNumber(game.queueId);
+    const gameMode = modeFromQueue(queueId, game.gameMode);
+    const collector = new ReportCollector(api, { recent });
+    const players = await collector.collectMatch(game, summoner.puuid ?? '', {
+      queueId,
+      mode: gameMode,
+    });
+    const rawDuration = toNumber(game.gameDuration);
+
+    return {
+      gameId,
+      queueId,
+      queueName: queueName(queueId),
+      gameMode,
+      gameCreation: toNumber(game.gameCreation),
+      gameDuration: rawDuration > 100_000 ? Math.round(rawDuration / 1000) : rawDuration,
+      selfPuuid: summoner.puuid,
+      players,
+    };
   }
 
   stop(): void {

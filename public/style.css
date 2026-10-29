@@ -269,6 +269,12 @@ body::before {
   font-weight: 650;
 }
 
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .match-list {
   display: flex;
   flex-direction: column;
@@ -285,6 +291,43 @@ body::before {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+.match-item {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.match-item:hover {
+  background: rgba(94, 234, 212, 0.07);
+}
+
+.modal-card.wide {
+  width: min(1520px, 96vw);
+}
+
+.match-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  overflow: auto;
+}
+
+@media (max-width: 1180px) {
+  .match-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .match-cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 .badge {

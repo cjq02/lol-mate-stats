@@ -26,6 +26,8 @@ const els = {
   matchesTitle: document.getElementById('matches-title'),
   matchesList: document.getElementById('matches-list'),
   matchesClose: document.getElementById('matches-close'),
+  matchesBack: document.getElementById('matches-back'),
+  myMatches: document.getElementById('my-matches'),
 };
 
 const PHASE_LABELS = {
@@ -140,6 +142,8 @@ const state = {
   snapshotSig: '',
   live: false,
   refreshing: false,
+  selfPuuid: '',
+  matchesBack: null,
 };
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
@@ -712,34 +716,116 @@ function formatGameTime(value) {
   });
 }
 
+function matchRow(game, showScore) {
+  const durationMin = game.durationMin ?? Math.round((Number(game.gameDuration) || 0) / 60);
+  const score = showScore && Number.isFinite(Number(game.score)) ? Math.round(game.score) : null;
+  return `<button class="game-row match-item ${game.win ? '' : 'loss'}" type="button" data-game-id="${
+    game.gameId
+  }">
+    <span class="result">${game.win ? '胜' : '负'}</span>
+    <span class="who">${iconHtml(
+      champPath(game.championId),
+      game.championName,
+      'sm',
+    )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b><small>${escapeHtml(
+      game.queueName ?? '',
+    )} · ${durationMin} 分钟 · ${formatGameTime(game.gameCreation)}${
+      game.tags?.length ? ` · ${escapeHtml(game.tags.join(' / '))}` : ''
+    }</small></span>
+    <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
+    <span class="pts"${score === null ? '' : ` style="color:${ratingColor(score)}"`}>${
+      score === null ? '›' : score
+    }</span>
+  </button>`;
+}
+
+function showMatchesList(games, title, showScore, back) {
+  state.matchesBack = back;
+  els.matchesModal.classList.remove('hidden');
+  els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
+  els.matchesBack.classList.add('hidden');
+  els.matchesTitle.textContent = title;
+  els.matchesList.className = 'match-list';
+  els.matchesList.innerHTML = games.length
+    ? games.map((game) => matchRow(game, showScore)).join('')
+    : '<div class="search-status">没有对局记录</div>';
+}
+
 function openMatches(player) {
   const games = player.games ?? [];
   const name = `${player.displayName ?? '玩家'}${player.tagLine ? `#${player.tagLine}` : ''}`;
-  els.matchesTitle.textContent = `${name} · 最近 ${games.length} 场`;
-  els.matchesList.innerHTML = games
-    .map(
-      (game) => `<div class="game-row ${game.win ? '' : 'loss'}">
-        <span class="result">${game.win ? '胜' : '负'}</span>
-        <span class="who">${iconHtml(
-          champPath(game.championId),
-          game.championName,
-          'sm',
-        )}<b>${escapeHtml(game.championName)}</b><small>${escapeHtml(game.queueName)} · ${
-          game.durationMin
-        } 分钟 · ${formatGameTime(game.gameCreation)}${
-          game.tags?.length ? ` · ${escapeHtml(game.tags.join(' / '))}` : ''
-        }</small></span>
-        <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
-        <span class="pts" style="color:${ratingColor(game.score)}">${Math.round(game.score)}</span>
-      </div>`,
-    )
-    .join('');
+  const title = `${name} · 最近 ${games.length} 场`;
+  const back = () => showMatchesList(games, title, true, back);
+  showMatchesList(games, title, true, back);
+}
+
+async function openMyMatches() {
+  state.matchesBack = null;
   els.matchesModal.classList.remove('hidden');
+  els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
+  els.matchesBack.classList.add('hidden');
+  els.matchesTitle.textContent = '我的最近战绩';
+  els.matchesList.className = 'match-list';
+  els.matchesList.innerHTML = '<div class="search-status">正在读取最近战绩…</div>';
+
+  try {
+    const response = await fetch('/api/me/matches?recent=20', { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    state.selfPuuid = payload.summoner?.puuid ?? state.selfPuuid;
+    const games = Array.isArray(payload.games) ? payload.games : [];
+    const title = `我的最近 ${games.length} 场`;
+    const back = () => showMatchesList(games, title, false, back);
+    showMatchesList(games, title, false, back);
+  } catch (error) {
+    els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
+      error instanceof Error ? error.message : String(error),
+    )}</div>`;
+  }
+}
+
+async function openMatchDetail(gameId) {
+  els.matchesModal.classList.remove('hidden');
+  els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
+  els.matchesBack.classList.toggle('hidden', !state.matchesBack);
+  els.matchesTitle.textContent = '对局详情';
+  els.matchesList.className = 'match-list match-cards';
+  els.matchesList.innerHTML = '<div class="search-status">正在读取 10 名玩家的战绩…</div>';
+
+  try {
+    const response = await fetch(`/api/match/${gameId}?recent=20`, { cache: 'no-store' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      throw new Error(data?.error ?? `HTTP ${response.status}`);
+    }
+    const selfPuuid = data.selfPuuid ?? state.selfPuuid;
+    const players = Array.isArray(data.players) ? data.players : [];
+    const nodes = players.map((player) =>
+      buildCard(player, Boolean(selfPuuid && player.puuid === selfPuuid), {
+        mode: data.gameMode ?? null,
+        modeLabel: data.queueName ?? '近期',
+      }),
+    );
+    els.matchesList.replaceChildren(...nodes);
+    els.matchesTitle.textContent = `${data.queueName ?? '对局'} · ${formatGameTime(
+      data.gameCreation,
+    )} · 对局详情`;
+    els.matchesBack.classList.toggle('hidden', !state.matchesBack);
+  } catch (error) {
+    els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
+      error instanceof Error ? error.message : String(error),
+    )}</div>`;
+  }
 }
 
 function closeMatches() {
   els.matchesModal.classList.add('hidden');
   els.matchesList.replaceChildren();
+  els.matchesBack.classList.add('hidden');
+  els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
+  state.matchesBack = null;
 }
 
 async function submitSearch(event) {
@@ -791,9 +877,18 @@ async function submitSearch(event) {
 /* ------------------------------------------------------------------ */
 
 els.refresh.addEventListener('click', () => void refresh());
+els.myMatches.addEventListener('click', () => void openMyMatches());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
 els.matchesClose.addEventListener('click', closeMatches);
+els.matchesBack.addEventListener('click', () => {
+  if (typeof state.matchesBack === 'function') state.matchesBack();
+});
+els.matchesList.addEventListener('click', (event) => {
+  const row = event.target.closest('[data-game-id]');
+  if (!row) return;
+  void openMatchDetail(Number(row.dataset.gameId));
+});
 els.matchesModal.addEventListener('click', (event) => {
   if (event.target === els.matchesModal) closeMatches();
 });

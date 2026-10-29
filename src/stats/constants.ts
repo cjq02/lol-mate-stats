@@ -9,6 +9,7 @@ export const QUEUE_NAMES: Record<number, string> = {
   490: '快速匹配',
   700: '斗魂竞技场',
   720: '大乱斗克隆',
+  890: '快速模式',
   900: '无限火力',
   1020: '克隆大作战',
   1300: '极限闪击',
@@ -35,8 +36,10 @@ export function modeFromQueue(queueId?: number, gameMode?: string): GameModeKey 
   const mode = String(gameMode ?? '').toUpperCase();
   if (mode === 'ARAM' || queueId === 450 || queueId === 720) return 'ARAM';
   if (mode === 'CHERRY' || queueId === 1700 || queueId === 1710) return 'ARENA';
-  if (mode === 'CLASSIC') return 'SR';
-  if (queueId === 400 || queueId === 420 || queueId === 430 || queueId === 440) return 'SR';
+  if (mode === 'CLASSIC' || mode === 'SWIFTPLAY') return 'SR';
+  if (queueId === 400 || queueId === 420 || queueId === 430 || queueId === 440 || queueId === 890) {
+    return 'SR';
+  }
   return undefined;
 }
 

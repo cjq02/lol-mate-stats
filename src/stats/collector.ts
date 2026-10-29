@@ -130,6 +130,99 @@ export class ReportCollector {
   }
 
   /**
+   * 某场历史对局：把 10 名参与者都转成选人阶段一样的报告。
+   * 用于首页“我的战绩”里点开某场比赛查看双方卡片。
+   */
+  async collectMatch(
+    game: RawGame,
+    selfPuuid: string,
+    context?: GameContext,
+  ): Promise<PlayerReport[]> {
+    const participants = game.participants ?? [];
+    const identities = game.participantIdentities ?? [];
+    if (!participants.length) return [];
+
+    const championMap = await this.getChampionMap();
+    const entries = participants
+      .map((participant, index) => {
+        const identity = identities.find(
+          (item) => toNumber(item.participantId) === toNumber(participant.participantId),
+        );
+        const player = identity?.player;
+        const lane = String(participant.timeline?.lane ?? '').toUpperCase();
+        const role = String(participant.timeline?.role ?? '').toUpperCase();
+        const validLane = lane && lane !== 'NONE' ? lane : '';
+        const position =
+          validLane === 'BOTTOM'
+            ? role === 'DUO_SUPPORT'
+              ? 'utility'
+              : 'bottom'
+            : validLane === 'MIDDLE'
+              ? 'middle'
+              : validLane
+                ? validLane.toLowerCase()
+                : undefined;
+        const name = player?.gameName
+          ? `${player.gameName}${player.tagLine ? `#${player.tagLine}` : ''}`
+          : String(player?.summonerName ?? '');
+        return {
+          participant,
+          summonerId: toNumber(player?.summonerId),
+          puuid: typeof player?.puuid === 'string' ? player.puuid : undefined,
+          name,
+          position,
+          championId: toNumber(participant.championId),
+          team: toNumber(participant.teamId),
+          cellId: index,
+        };
+      })
+      .filter((entry) => entry.summonerId > 0 || entry.puuid);
+
+    const self = entries.find((entry) => selfPuuid && entry.puuid === selfPuuid) ?? entries[0];
+    const selfTeam = self?.team;
+
+    const prepared = await mapLimit(entries, 5, async (entry) => {
+      const isBot =
+        !entry.summonerId ||
+        /(^|\s)bot$/i.test(entry.name) ||
+        /^0{32}$/.test((entry.puuid ?? '').replace(/-/g, ''));
+
+      let info: SummonerInfo | null = null;
+      if (!isBot && entry.summonerId) info = await this.getSummoner(entry.summonerId);
+      if (!isBot && !info && entry.name) info = await this.getSummonerByName(entry.name);
+
+      const member: ChampSelectMember = {
+        cellId: entry.cellId,
+        summonerId: info?.summonerId ?? entry.summonerId,
+        puuid: info?.puuid ?? entry.puuid,
+        championId: entry.championId,
+        championPickIntent: 0,
+        assignedPosition: entry.position,
+        team: entry.team,
+      };
+      const base = this.buildBaseReport(member, info, championMap, context);
+      if (isBot) {
+        base.displayName = entry.name || '人机';
+        base.isBot = true;
+        base.labels = ['人机'];
+        base.loading = false;
+        base.error = undefined;
+      }
+      return { member, base, isEnemy: entry.team !== selfTeam, isBot };
+    });
+
+    const reports = await mapLimit(prepared, 3, async ({ member, base, isEnemy, isBot }) => {
+      const report = isBot ? base : await this.buildFullReport(member, base, championMap, context);
+      return { ...report, isEnemy, isBot };
+    });
+
+    // 己方在前，敌方在后
+    return reports.sort(
+      (a, b) => Number(Boolean(a.isEnemy)) - Number(Boolean(b.isEnemy)),
+    );
+  }
+
+  /**
    * 游戏进行中：用 Live Client Data 的玩家列表构建报告。
    * 召唤师信息通过名字查询 LCU，战绩接口仍然可用。
    */

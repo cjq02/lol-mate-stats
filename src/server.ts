@@ -188,6 +188,50 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/me/matches') {
+    if (!source.getMyMatches) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持查询战绩' });
+      return;
+    }
+    const rawRecent = Number(url.searchParams.get('recent') ?? 20);
+    const recent = Number.isFinite(rawRecent)
+      ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
+      : 20;
+    try {
+      const data = await source.getMyMatches(recent);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (error) {
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
+  const matchRoute = /^\/api\/match\/(\d+)$/.exec(url.pathname);
+  if (method === 'GET' && matchRoute) {
+    if (!source.getMatchDetail) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持查询战绩' });
+      return;
+    }
+    const gameId = Number(matchRoute[1]);
+    const rawRecent = Number(url.searchParams.get('recent') ?? 20);
+    const recent = Number.isFinite(rawRecent)
+      ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
+      : 20;
+    try {
+      const detail = await source.getMatchDetail(gameId, recent);
+      sendJson(res, 200, { ok: true, ...detail });
+    } catch (error) {
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/asset') {
     const path = url.searchParams.get('path') ?? '';
     if (!path.startsWith('/lol-game-data/assets/') || path.includes('..')) {

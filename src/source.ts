@@ -1,4 +1,4 @@
-import type { PlayerReport, Snapshot } from './types.js';
+import type { MatchDetail, MatchSummary, PlayerReport, Snapshot, SummonerInfo } from './types.js';
 
 export interface AssetResult {
   body: Buffer;
@@ -14,5 +14,9 @@ export interface DataSource {
   getAsset(path: string): Promise<AssetResult | null>;
   /** 按名字查询任意玩家的近期战绩（可选，demo 模式不支持） */
   scanPlayer?(name: string, recent: number): Promise<PlayerReport[]>;
+  /** 首页“我的战绩”：当前账号最近对局列表 */
+  getMyMatches?(recent: number): Promise<{ summoner: SummonerInfo; games: MatchSummary[] }>;
+  /** 某场对局里 10 名玩家的近期战绩卡片 */
+  getMatchDetail?(gameId: number, recent: number): Promise<MatchDetail>;
   stop(): void;
 }

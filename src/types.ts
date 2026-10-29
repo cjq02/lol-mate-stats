@@ -244,6 +244,32 @@ export interface GameflowSession {
   };
 }
 
+/** 首页“我的战绩”列表里的一场比赛 */
+export interface MatchSummary {
+  gameId: number;
+  queueId: number;
+  queueName: string;
+  gameCreation: number;
+  gameDuration: number;
+  championId: number;
+  championName?: string;
+  win: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+}
+
+export interface MatchDetail {
+  gameId: number;
+  queueId?: number;
+  queueName: string;
+  gameMode?: GameModeKey;
+  gameCreation?: number;
+  gameDuration?: number;
+  selfPuuid?: string;
+  players: PlayerReport[];
+}
+
 export interface LiveGameData {
   activePlayer?: {
     riotId?: string;

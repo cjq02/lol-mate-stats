@@ -21,6 +21,7 @@
         </div>
 
         <div class="toolbar">
+          <button id="my-matches" class="btn" type="button">我的战绩</button>
           <form id="search-form" class="search" autocomplete="off">
             <input
               id="search-input"
@@ -65,7 +66,10 @@
         <div class="modal-card">
           <div class="modal-head">
             <h2 id="matches-title">近期战绩</h2>
-            <button id="matches-close" class="btn" type="button">关闭</button>
+            <div class="modal-actions">
+              <button id="matches-back" class="btn hidden" type="button">返回</button>
+              <button id="matches-close" class="btn" type="button">关闭</button>
+            </div>
           </div>
           <div id="matches-list" class="match-list"></div>
         </div>
