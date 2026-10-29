@@ -230,6 +230,76 @@ export class LiveSource implements DataSource {
       `[${gameId}] ${queueName(queueId)}，${participants} 名玩家，开始并发读取战绩`,
     );
 
+    const championMap = await api.getChampionMap().catch(() => new Map());
+    const identities = game.participantIdentities ?? [];
+    const selfIdentity = identities.find((item) => item.player?.puuid === summoner.puuid);
+    const selfParticipant = (game.participants ?? []).find(
+      (item) => toNumber(item.participantId) === toNumber(selfIdentity?.participantId),
+    );
+    const allyTeam =
+      toNumber(selfParticipant?.teamId) || toNumber((game.participants ?? [])[0]?.teamId);
+
+    const scoreboard = (game.participants ?? [])
+      .map((participant) => {
+        const identity = identities.find(
+          (item) => toNumber(item.participantId) === toNumber(participant.participantId),
+        );
+        const player = identity?.player;
+        const stats = participant.stats ?? {};
+        const championId = toNumber(participant.championId);
+        const lane = String(participant.timeline?.lane ?? '').toUpperCase();
+        const role = String(participant.timeline?.role ?? '').toUpperCase();
+        const validLane = lane && lane !== 'NONE' ? lane : '';
+        const position =
+          validLane === 'BOTTOM'
+            ? role === 'DUO_SUPPORT'
+              ? 'utility'
+              : 'bottom'
+            : validLane === 'MIDDLE'
+              ? 'middle'
+              : validLane
+                ? validLane.toLowerCase()
+                : undefined;
+        const cs =
+          toNumber(stats.totalMinionsKilled) + toNumber(stats.neutralMinionsKilled) ||
+          toNumber(stats.minionsKilled);
+        const name = player?.gameName
+          ? `${player.gameName}${player.tagLine ? `#${player.tagLine}` : ''}`
+          : String(player?.summonerName ?? `玩家 ${participant.participantId}`);
+
+        return {
+          puuid: typeof player?.puuid === 'string' ? player.puuid : undefined,
+          name,
+          championId,
+          championName: championMap.get(championId)?.name,
+          teamId: toNumber(participant.teamId),
+          isEnemy: toNumber(participant.teamId) !== allyTeam,
+          position,
+          kills: toNumber(stats.kills),
+          deaths: toNumber(stats.deaths),
+          assists: toNumber(stats.assists),
+          cs,
+          gold: toNumber(stats.goldEarned),
+          damage: toNumber(stats.totalDamageDealtToChampions),
+          damageTaken: toNumber(stats.totalDamageTaken),
+          vision: toNumber(stats.visionScore),
+          win: stats.win === true || stats.win === 1,
+          items: [
+            stats.item0,
+            stats.item1,
+            stats.item2,
+            stats.item3,
+            stats.item4,
+            stats.item5,
+            stats.item6,
+          ]
+            .map((item) => toNumber(item))
+            .filter((item) => item > 0),
+        };
+      })
+      .filter((player) => player.championId > 0)
+      .sort((a, b) => Number(a.isEnemy) - Number(b.isEnemy));
+
     const collector = new ReportCollector(api, { recent });
     onProgress?.(0, participants, '');
     try {
@@ -257,6 +327,7 @@ export class LiveSource implements DataSource {
         gameDuration: rawDuration > 100_000 ? Math.round(rawDuration / 1000) : rawDuration,
         selfPuuid: summoner.puuid,
         players,
+        scoreboard,
       };
     } catch (error) {
       logTag(

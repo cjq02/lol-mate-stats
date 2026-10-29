@@ -259,6 +259,26 @@ export interface MatchSummary {
   assists: number;
 }
 
+export interface MatchScoreboardPlayer {
+  puuid?: string;
+  name: string;
+  championId: number;
+  championName?: string;
+  teamId: number;
+  isEnemy: boolean;
+  position?: string;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  gold: number;
+  damage: number;
+  damageTaken: number;
+  vision: number;
+  win: boolean;
+  items: number[];
+}
+
 export interface MatchDetail {
   gameId: number;
   queueId?: number;
@@ -268,6 +288,7 @@ export interface MatchDetail {
   gameDuration?: number;
   selfPuuid?: string;
   players: PlayerReport[];
+  scoreboard: MatchScoreboardPlayer[];
 }
 
 export interface LiveGameData {

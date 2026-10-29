@@ -27,6 +27,7 @@ const els = {
   matchesList: document.getElementById('matches-list'),
   matchesClose: document.getElementById('matches-close'),
   matchesBack: document.getElementById('matches-back'),
+  matchTabs: document.getElementById('match-tabs'),
   myMatches: document.getElementById('my-matches'),
 };
 
@@ -146,6 +147,8 @@ const state = {
   matchesBack: null,
   loadingTimer: null,
   loadingProgress: null,
+  matchDetail: null,
+  matchTab: 'recent',
 };
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
@@ -789,12 +792,94 @@ function matchRow(game, showScore) {
   </button>`;
 }
 
+function renderScoreboard(detail) {
+  const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
+  if (!scoreboard.length) return '<div class="search-status">没有该局数据</div>';
+
+  const teamBlock = (label, players) => {
+    if (!players.length) return '';
+    const result = players[0]?.win ? '胜利' : '失败';
+    const kills = players.reduce((sum, player) => sum + player.kills, 0);
+    const gold = players.reduce((sum, player) => sum + player.gold, 0);
+    const damage = players.reduce((sum, player) => sum + player.damage, 0);
+    return `<section class="score-team">
+      <h3>${label} · ${result}<span>${kills} 击杀 · ${kilo(gold)} 经济 · ${kilo(
+        damage,
+      )} 伤害</span></h3>
+      <div class="score-table">
+        <div class="score-head">
+          <span>玩家 / 英雄</span><span>KDA</span><span>补刀</span><span>经济</span><span>伤害</span><span>承伤</span><span>视野</span>
+        </div>
+        ${players
+          .map(
+            (player) => `<div class="score-line${player.isEnemy ? ' is-enemy' : ''}">
+              <span class="score-champ">${iconHtml(
+                champPath(player.championId),
+                player.championName,
+                'sm',
+              )}<b>${escapeHtml(player.name)}</b><small>${escapeHtml(
+                player.championName ?? '',
+              )}${
+                player.position
+                  ? ` · ${escapeHtml(POSITION_NAMES[player.position] ?? player.position)}`
+                  : ''
+              }</small></span>
+              <span class="score-kda">${player.kills}/${player.deaths}/${player.assists}</span>
+              <span>${player.cs}</span>
+              <span>${kilo(player.gold)}</span>
+              <span>${kilo(player.damage)}</span>
+              <span>${kilo(player.damageTaken)}</span>
+              <span>${player.vision}</span>
+            </div>`,
+          )
+          .join('')}
+      </div>
+    </section>`;
+  };
+
+  return `${teamBlock(
+    '己方',
+    scoreboard.filter((player) => !player.isEnemy),
+  )}${teamBlock(
+    '敌方',
+    scoreboard.filter((player) => player.isEnemy),
+  )}`;
+}
+
+function renderMatchTab(tab) {
+  state.matchTab = tab;
+  for (const button of els.matchTabs.querySelectorAll('[data-match-tab]')) {
+    button.classList.toggle('active', button.dataset.matchTab === tab);
+  }
+  const detail = state.matchDetail;
+  if (!detail) return;
+
+  if (tab === 'scoreboard') {
+    els.matchesList.className = 'match-list scoreboard-list';
+    els.matchesList.innerHTML = renderScoreboard(detail);
+    return;
+  }
+
+  const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
+  const players = Array.isArray(detail.players) ? detail.players : [];
+  const nodes = players.map((player) =>
+    buildCard(player, Boolean(selfPuuid && player.puuid === selfPuuid), {
+      mode: detail.gameMode ?? null,
+      modeLabel: detail.queueName ?? '近期',
+    }),
+  );
+  els.matchesList.className = 'match-list match-cards';
+  els.matchesList.replaceChildren(...nodes);
+}
+
 function showMatchesList(games, title, showScore, back) {
   stopLoadingTimer();
+  state.matchDetail = null;
   state.matchesBack = back;
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   els.matchesBack.classList.add('hidden');
+  els.matchTabs.classList.add('hidden');
   els.matchesTitle.textContent = title;
   els.matchesList.className = 'match-list';
   els.matchesList.innerHTML = games.length
@@ -842,6 +927,7 @@ async function openMatchDetail(gameId) {
   els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
   els.matchesBack.classList.toggle('hidden', !state.matchesBack);
   els.matchesTitle.textContent = '对局详情';
+  els.matchTabs.classList.add('hidden');
   beginMatchesLoading('正在读取 10 名玩家的战绩…');
 
   try {
@@ -872,22 +958,18 @@ async function openMatchDetail(gameId) {
     }
 
     stopLoadingTimer();
-    const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
-    const players = Array.isArray(detail.players) ? detail.players : [];
-    const nodes = players.map((player) =>
-      buildCard(player, Boolean(selfPuuid && player.puuid === selfPuuid), {
-        mode: detail.gameMode ?? null,
-        modeLabel: detail.queueName ?? '近期',
-      }),
-    );
-    els.matchesList.className = 'match-list match-cards';
-    els.matchesList.replaceChildren(...nodes);
+    state.matchDetail = detail;
+    state.matchTab = 'recent';
+    els.matchTabs.classList.remove('hidden');
     els.matchesTitle.textContent = `${detail.queueName ?? '对局'} · ${formatGameTime(
       detail.gameCreation,
     )} · 对局详情`;
     els.matchesBack.classList.toggle('hidden', !state.matchesBack);
+    renderMatchTab('recent');
   } catch (error) {
     stopLoadingTimer();
+    state.matchDetail = null;
+    els.matchTabs.classList.add('hidden');
     els.matchesList.className = 'match-list';
     els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
       error instanceof Error ? error.message : String(error),
@@ -897,8 +979,10 @@ async function openMatchDetail(gameId) {
 
 function closeMatches() {
   stopLoadingTimer();
+  state.matchDetail = null;
   els.matchesModal.classList.add('hidden');
   els.matchesList.replaceChildren();
+  els.matchTabs.classList.add('hidden');
   els.matchesBack.classList.add('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   state.matchesBack = null;
@@ -964,6 +1048,11 @@ els.matchesList.addEventListener('click', (event) => {
   const row = event.target.closest('[data-game-id]');
   if (!row) return;
   void openMatchDetail(Number(row.dataset.gameId));
+});
+els.matchTabs.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-match-tab]');
+  if (!button) return;
+  renderMatchTab(button.dataset.matchTab);
 });
 
 document.addEventListener('keydown', (event) => {
