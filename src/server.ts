@@ -75,6 +75,8 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     close: async () => {
       for (const client of clients) client.end();
       clients.clear();
+      // 关闭 keep-alive 连接，避免旧进程退出时卡住端口
+      server.closeAllConnections?.();
       await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
     },
   };
@@ -108,6 +110,7 @@ async function handleRequest(
     const snapshot = source.getSnapshot();
     sendJson(res, 200, {
       ok: true,
+      pid: process.pid,
       mode: snapshot.mode,
       phase: snapshot.phase,
       inChampSelect: snapshot.inChampSelect,
@@ -257,26 +260,55 @@ async function listenFixed(server: Server, port: number, host: string): Promise<
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
 
-    const owner = await findPortOwner(port);
-    const ours = owner && (isOwnPanelProcess(owner.commandLine) || (await probePanelHealth(port)));
-    if (!owner || !ours) {
+    const health = await probePanelHealth(port);
+    // 新版面板的 health 里带 PID，直接用它，省掉 PowerShell 查询
+    const owner =
+      health.ok && health.pid ? null : await findPortOwner(port);
+    const panelPid = health.pid ?? owner?.pid;
+    const ours = Boolean(
+      panelPid &&
+        (health.ok || isOwnPanelProcess(owner?.commandLine ?? '')),
+    );
+
+    if (!ours) {
+      // 端口可能刚被释放但内核还没回收，短暂等待后再试
+      if (!panelPid) {
+        const releaseDeadline = Date.now() + 3_000;
+        while (Date.now() < releaseDeadline) {
+          await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+          try {
+            await listenOnce(server, port, host);
+            return port;
+          } catch (retryError) {
+            if ((retryError as NodeJS.ErrnoException).code !== 'EADDRINUSE') {
+              throw retryError;
+            }
+          }
+        }
+      }
       const detail = owner
         ? `PID ${owner.pid}（${owner.commandLine || '无法读取命令行'}）`
-        : '未知进程';
+        : health.pid
+          ? `PID ${health.pid}（面板健康检查失败）`
+          : '未知进程';
       throw new Error(
         `端口 ${port} 已被 ${detail} 占用。请先关闭该进程，或用 --port 指定其它端口。`,
       );
     }
 
-    logTag('web', `端口 ${port} 被旧面板进程 PID ${owner.pid} 占用，正在结束它…`);
+    if (!panelPid) {
+      throw new Error(`端口 ${port} 已被占用，但无法确定占用进程。`);
+    }
+
+    logTag('web', `端口 ${port} 被旧面板进程 PID ${panelPid} 占用，正在结束它…`);
+    // 旧面板没有需要保存的状态，直接强制结束，避免优雅退出拖慢启动
     try {
-      process.kill(owner.pid, 'SIGTERM');
+      process.kill(panelPid, 'SIGKILL');
     } catch {
       /* 进程可能已经退出 */
     }
-
-    if (!(await waitForExit(owner.pid, 5_000))) {
-      throw new Error(`端口 ${port} 的旧面板进程 PID ${owner.pid} 未能退出，请手动结束。`);
+    if (!(await waitForExit(panelPid, 3_000))) {
+      throw new Error(`端口 ${port} 的旧面板进程 PID ${panelPid} 未能退出，请手动结束。`);
     }
 
     // 进程退出后端口可能还会短暂占用，重试几次
@@ -326,6 +358,28 @@ async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
 async function findPortOwner(
   port: number,
 ): Promise<{ pid: number; commandLine: string } | null> {
+  const pid = (await pidFromNetstat(port)) ?? (await pidFromPowerShell(port));
+  if (!pid) return null;
+  if (process.platform !== 'win32') return { pid, commandLine: '' };
+
+  try {
+    const result = await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue).CommandLine`,
+      ],
+      { timeout: 8_000, windowsHide: true },
+    ).catch(() => ({ stdout: '' }));
+    return { pid, commandLine: result.stdout.trim() };
+  } catch {
+    return { pid, commandLine: '' };
+  }
+}
+
+async function pidFromPowerShell(port: number): Promise<number | null> {
   if (process.platform !== 'win32') return null;
   try {
     const { stdout } = await execFileAsync(
@@ -339,19 +393,30 @@ async function findPortOwner(
       { timeout: 8_000, windowsHide: true },
     );
     const pid = Number(stdout.trim());
-    if (!Number.isInteger(pid) || pid <= 0) return null;
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
 
-    const result = await execFileAsync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue).CommandLine`,
-      ],
-      { timeout: 8_000, windowsHide: true },
-    ).catch(() => ({ stdout: '' }));
-    return { pid, commandLine: result.stdout.trim() };
+/** PowerShell 的 CIM 查询偶尔失败，用 netstat 兜底 */
+async function pidFromNetstat(port: number): Promise<number | null> {
+  if (process.platform !== 'win32') return null;
+  try {
+    const { stdout } = await execFileAsync('netstat.exe', ['-ano'], {
+      timeout: 8_000,
+      windowsHide: true,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    for (const line of stdout.split(/\r?\n/)) {
+      if (!line.includes('LISTENING')) continue;
+      const parts = line.trim().split(/\s+/);
+      const local = parts[1] ?? '';
+      if (!local.endsWith(`:${port}`)) continue;
+      const pid = Number(parts[4]);
+      if (Number.isInteger(pid) && pid > 0) return pid;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -362,7 +427,7 @@ function isOwnPanelProcess(commandLine: string): boolean {
 }
 
 /** 端口占用时先确认是不是本项目的面板，避免误杀其它程序 */
-function probePanelHealth(port: number): Promise<boolean> {
+function probePanelHealth(port: number): Promise<{ ok: boolean; pid?: number }> {
   return new Promise((resolveProbe) => {
     const req = httpRequest(
       {
@@ -380,18 +445,19 @@ function probePanelHealth(port: number): Promise<boolean> {
         });
         response.on('end', () => {
           try {
-            const data = JSON.parse(body) as { ok?: boolean; mode?: string };
-            resolveProbe(Boolean(data?.ok && (data.mode === 'live' || data.mode === 'demo')));
+            const data = JSON.parse(body) as { ok?: boolean; mode?: string; pid?: number };
+            const ok = Boolean(data?.ok && (data.mode === 'live' || data.mode === 'demo'));
+            resolveProbe({ ok, pid: typeof data?.pid === 'number' ? data.pid : undefined });
           } catch {
-            resolveProbe(false);
+            resolveProbe({ ok: false });
           }
         });
       },
     );
-    req.on('error', () => resolveProbe(false));
+    req.on('error', () => resolveProbe({ ok: false }));
     req.on('timeout', () => {
       req.destroy();
-      resolveProbe(false);
+      resolveProbe({ ok: false });
     });
     req.end();
   });
