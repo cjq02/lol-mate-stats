@@ -258,6 +258,20 @@ test('识别大乱斗与竞技场', () => {
   assert.equal(detectLane({ queueId: 1700, gameMode: 'CHERRY' }, participant), 'ARENA');
 });
 
+test('大乱斗不参考视野', () => {
+  const noVision = makeGame(0, 'ARAM', { position: 'ARAM', visionPerMin: 0 });
+  const highVision = makeGame(1, 'ARAM', { position: 'ARAM', visionPerMin: 2 });
+  assert.equal(noVision.score, highVision.score);
+
+  const games = Array.from({ length: 10 }, (_, index) =>
+    makeGame(index, 'ARAM', { position: 'ARAM', visionPerMin: 0, win: index < 6 }),
+  );
+  const summary = summarize(games);
+  assert.ok(!summary.labels.includes('视野偏弱'), summary.labels.join(','));
+  assert.ok(!summary.labels.includes('视野大师'), summary.labels.join(','));
+  assert.equal(isAfkLike(games[0]!), false);
+});
+
 test('识别疑似挂机对局并打标签', () => {
   const afk = Array.from({ length: 3 }, (_, index) =>
     makeGame(index, 'MID', {

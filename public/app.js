@@ -339,21 +339,25 @@ function skeletonCard() {
 function buildCard(player, isLocal, options = {}) {
   const recent = player.recent;
   const games = player.games ?? [];
-  const rating = player.rating;
+  // 对局详情里展示的是“本局评分”，而不是近期综合评分
+  const thisGame = options.thisGame;
+  const rating = thisGame?.score ?? player.rating;
+  const grade = thisGame?.grade ?? player.grade;
   const color = ratingColor(rating);
   const name = player.displayName ?? '未知召唤师';
   const tag = player.tagLine;
-  const labels = (player.labels ?? []).slice(0, 4);
+  const labels = (thisGame ? thisGame.tags ?? [] : player.labels ?? []).slice(0, 4);
   const risk = recent?.risk;
   const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
-  const thisGame = options.thisGame;
   const cardMode = options.mode === undefined ? state.snapshot?.gameMode : options.mode;
   const modeName = options.modeLabel ?? currentModeLabel();
+  // 大乱斗/竞技场没有常规眼位，不展示视野相关指标
+  const visionGame = cardMode !== 'ARAM' && cardMode !== 'ARENA';
 
   const card = document.createElement('article');
-  card.className = `card${isLocal ? ' is-local' : ''}${risk?.level === 'severe' ? ' is-risk' : ''}${
-    player.isEnemy ? ' is-enemy' : ''
-  }`;
+  card.className = `card${isLocal ? ' is-local' : ''}${
+    !thisGame && risk?.level === 'severe' ? ' is-risk' : ''
+  }${player.isEnemy ? ' is-enemy' : ''}`;
   card.style.setProperty('--ring-color', color);
   card.style.setProperty('--ring-glow', hexToRgba(color, 0.2));
 
@@ -362,7 +366,7 @@ function buildCard(player, isLocal, options = {}) {
     : null;
 
   const streak =
-    recent?.streak && recent.streak.count >= 2
+    !thisGame && recent?.streak && recent.streak.count >= 2
       ? `<span class="dot-sep">·</span><span>${recent.streak.count}${recent.streak.type === 'win' ? '连胜' : '连败'}</span>`
       : '';
 
@@ -377,21 +381,25 @@ function buildCard(player, isLocal, options = {}) {
             '常挂机',
             '疑似挂机',
           ].includes(label);
-          const gold = label === '大腿';
+          const gold = label === '大腿' || label === 'MVP';
           return `<span class="chip${gold ? ' gold' : ''}${danger ? ' danger' : ''}">${escapeHtml(label)}</span>`;
         })
         .join('')}</div>`
-    : recent
+    : !thisGame && recent
       ? `<div class="chips"><span class="chip muted-chip">近况平稳</span></div>`
       : '';
 
-  const record = recent
-    ? `${modeName} ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${pct(
-        recent.winRate,
-      )}`
-    : '暂无战绩数据';
+  const record = thisGame
+    ? `本局 · <b class="${thisGame.win ? 'win' : 'loss'}">${thisGame.win ? '胜' : '负'}</b> · ${
+        thisGame.durationMin ?? '-'
+      } 分钟`
+    : recent
+      ? `${modeName} ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${pct(
+          recent.winRate,
+        )}`
+      : '暂无战绩数据';
 
-  const riskPill = risk && (risky || thisGame)
+  const riskPill = !thisGame && risk && risky
     ? `<span class="risk-pill ${risk.level}" title="${escapeHtml(risk.reasons.join('；'))}">坑指数 ${risk.score}</span>`
     : '';
   const riskNote =
@@ -425,7 +433,11 @@ function buildCard(player, isLocal, options = {}) {
         <div class="metric"><span>分均伤害</span><b>${Math.round(recent.avgDamagePerMin ?? 0)}</b></div>
         <div class="metric"><span>伤害占比</span><b>${pct(recent.avgDamageShare)}</b></div>
         <div class="metric"><span>分均补刀</span><b>${num(recent.avgCsPerMin, 1)}</b></div>
-        <div class="metric"><span>分均视野</span><b>${num(recent.avgVisionPerMin, 2)}</b></div>
+        ${
+          visionGame
+            ? `<div class="metric"><span>分均视野</span><b>${num(recent.avgVisionPerMin, 2)}</b></div>`
+            : ''
+        }
         <div class="metric"><span>场均死亡</span><b>${num(recent.avgDeaths, 1)}</b></div>
         <div class="metric"><span>场均伤害</span><b>${kilo(recent.avgDamage)}</b></div>
         ${
@@ -469,7 +481,11 @@ function buildCard(player, isLocal, options = {}) {
         <span class="live-kda">${live.kills} / <b class="loss">${live.deaths}</b> / ${live.assists}</span>
         <span class="live-stat">补刀 <b>${Math.round(live.cs ?? 0)}</b></span>
         <span class="live-stat">等级 <b>${live.championLevel ?? '-'}</b></span>
-        <span class="live-stat">视野 <b>${num(live.wardScore, 0)}</b></span>
+        ${
+          visionGame
+            ? `<span class="live-stat">视野 <b>${num(live.wardScore, 0)}</b></span>`
+            : ''
+        }
         ${live.isDead ? '<span class="live-dead">已阵亡</span>' : ''}
       </div>`
     : '';
@@ -482,9 +498,39 @@ function buildCard(player, isLocal, options = {}) {
         <span class="live-stat">经济 <b>${kilo(thisGame.gold)}</b></span>
         <span class="live-stat">伤害 <b>${kilo(thisGame.damage)}</b></span>
         <span class="live-stat">承伤 <b>${kilo(thisGame.damageTaken)}</b></span>
-        <span class="live-stat">视野 <b>${thisGame.vision}</b></span>
+        ${
+          visionGame
+            ? `<span class="live-stat">视野 <b>${thisGame.vision}</b></span>`
+            : ''
+        }
       </div>`
     : liveRow;
+
+  const itemRow =
+    thisGame && thisGame.items?.length
+      ? `<div class="items">${thisGame.items
+          .map((itemId) =>
+            iconHtml(`/lol-game-data/assets/v1/item-icons/${itemId}.png`, String(itemId), 'sm'),
+          )
+          .join('')}</div>`
+      : '';
+
+  const thisGameMetrics = thisGame
+    ? `<div class="metrics">
+        <div class="metric"><span>伤害占比</span><b>${pct(thisGame.damageShare)}</b></div>
+        <div class="metric"><span>承伤占比</span><b>${pct(thisGame.tankShare)}</b></div>
+        <div class="metric"><span>参团率</span><b>${pct(thisGame.killParticipation)}</b></div>
+        <div class="metric"><span>分均伤害</span><b>${Math.round(thisGame.damagePerMin ?? 0)}</b></div>
+        <div class="metric"><span>分均承伤</span><b>${Math.round(thisGame.damageTakenPerMin ?? 0)}</b></div>
+        <div class="metric"><span>分均补刀</span><b>${num(thisGame.csPerMin, 1)}</b></div>
+        <div class="metric"><span>分均经济</span><b>${Math.round(thisGame.goldPerMin ?? 0)}</b></div>
+        ${
+          visionGame
+            ? `<div class="metric"><span>分均视野</span><b>${num(thisGame.visionPerMin, 2)}</b></div>`
+            : ''
+        }
+      </div>`
+    : '';
 
   card.innerHTML = `
     <div class="card-head">
@@ -514,12 +560,12 @@ function buildCard(player, isLocal, options = {}) {
     </div>
 
     <div class="score-row">
-      <div class="ring${player.loading && !recent ? ' loading' : ''}" style="--p:${rating ?? 0};--ring:${color}">
-        <div class="ring-inner"><b>${rating ?? '--'}</b><small>评分</small></div>
+      <div class="ring${!thisGame && player.loading && !recent ? ' loading' : ''}" style="--p:${rating ?? 0};--ring:${color}">
+        <div class="ring-inner"><b>${rating ?? '--'}</b><small>${thisGame ? '本局评分' : '评分'}</small></div>
       </div>
       <div class="score-meta">
         <div class="meta-top">
-          <span class="grade">${player.grade ?? '?'}</span>
+          <span class="grade">${grade ?? '?'}</span>
           <span class="record">${record}</span>
           ${riskPill}
         </div>
@@ -528,13 +574,15 @@ function buildCard(player, isLocal, options = {}) {
     </div>
 
     ${thisGame ? gameRow : liveRow}
+    ${thisGame ? thisGameMetrics : ''}
+    ${thisGame ? itemRow : ''}
     ${thisGame ? '' : gameChips ? `<div class="games">${gameChips}</div>` : ''}
     ${thisGame ? '' : loading}
     ${thisGame ? '' : metrics}
-    ${riskNote}
-    ${afkNote}
+    ${thisGame ? '' : riskNote}
+    ${thisGame ? '' : afkNote}
     ${thisGame ? '' : champions}
-    ${error}
+    ${thisGame ? '' : error}
     ${detail}
   `;
 
@@ -613,11 +661,18 @@ function renderHeader(snapshot, players, collecting) {
   }
 
   const recent = players.find((player) => player.recent)?.recent;
-  els.recentHint.textContent = recent
-    ? `${currentModeLabel()}最近 ${recent.games} 场 · 评分 0-100`
-    : snapshot?.inGame
-      ? '本局实时数据 · 评分来自最近对局'
-      : '';
+  if (snapshot?.inChampSelect) {
+    // 选人阶段 LCU 不返回对手身份，避免用户误以为漏读
+    els.recentHint.textContent = recent
+      ? `${currentModeLabel()}最近 ${recent.games} 场 · 评分 0-100 · 对手战绩进入对局后显示`
+      : '选人阶段无法读取对手身份，进入对局后显示双方 10 人';
+  } else {
+    els.recentHint.textContent = recent
+      ? `${currentModeLabel()}最近 ${recent.games} 场 · 评分 0-100`
+      : snapshot?.inGame
+        ? '本局实时数据 · 评分来自最近对局'
+        : '';
+  }
 }
 
 function renderEmpty(snapshot) {
@@ -926,7 +981,8 @@ async function openMyMatches() {
   beginMatchesLoading('正在读取最近战绩…');
 
   try {
-    const response = await fetch('/api/me/matches?recent=20', { cache: 'no-store' });
+    // “我的战绩”只是一次列表请求，不逐场分析，可以比队友的 10 场多展示一些
+    const response = await fetch('/api/me/matches?recent=30', { cache: 'no-store' });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok === false) {
       throw new Error(payload?.error ?? `HTTP ${response.status}`);
@@ -953,7 +1009,7 @@ async function openMatchDetail(gameId) {
   beginMatchesLoading('正在读取 10 名玩家的战绩…');
 
   try {
-    const response = await fetch(`/api/match/${gameId}/stream?recent=20`, {
+    const response = await fetch(`/api/match/${gameId}/stream?recent=10`, {
       cache: 'no-store',
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -971,7 +1027,7 @@ async function openMatchDetail(gameId) {
 
     // 浏览器不支持流式响应时退回到普通 JSON 接口
     if (!detail) {
-      const fallback = await fetch(`/api/match/${gameId}?recent=20`, { cache: 'no-store' });
+      const fallback = await fetch(`/api/match/${gameId}?recent=10`, { cache: 'no-store' });
       const payload = await fallback.json().catch(() => ({}));
       if (!fallback.ok || payload?.ok === false) {
         throw new Error(payload?.error ?? `HTTP ${fallback.status}`);

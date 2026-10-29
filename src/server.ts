@@ -183,10 +183,10 @@ async function handleRequest(
       sendJson(res, 400, { ok: false, error: '请输入玩家名称（游戏名#TAG）' });
       return;
     }
-    const rawRecent = Number(url.searchParams.get('recent') ?? 20);
+    const rawRecent = Number(url.searchParams.get('recent') ?? 10);
     const recent = Number.isFinite(rawRecent)
       ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
-      : 20;
+      : 10;
     try {
       logTag('api', `查询玩家 ${name}（最近 ${recent} 场）…`);
       const players = await source.scanPlayer(name, recent);
@@ -210,10 +210,10 @@ async function handleRequest(
       sendJson(res, 501, { ok: false, error: '当前模式不支持查询战绩' });
       return;
     }
-    const rawRecent = Number(url.searchParams.get('recent') ?? 20);
+    const rawRecent = Number(url.searchParams.get('recent') ?? 10);
     const recent = Number.isFinite(rawRecent)
       ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
-      : 20;
+      : 10;
     try {
       const data = await source.getMyMatches(recent);
       sendJson(res, 200, { ok: true, ...data });
@@ -233,10 +233,10 @@ async function handleRequest(
       return;
     }
     const gameId = Number(matchStreamRoute[1]);
-    const rawRecent = Number(url.searchParams.get('recent') ?? 20);
+    const rawRecent = Number(url.searchParams.get('recent') ?? 10);
     const recent = Number.isFinite(rawRecent)
       ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
-      : 20;
+      : 10;
     const started = Date.now();
 
     res.writeHead(200, {
@@ -277,10 +277,10 @@ async function handleRequest(
       return;
     }
     const gameId = Number(matchRoute[1]);
-    const rawRecent = Number(url.searchParams.get('recent') ?? 20);
+    const rawRecent = Number(url.searchParams.get('recent') ?? 10);
     const recent = Number.isFinite(rawRecent)
       ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
-      : 20;
+      : 10;
     try {
       logTag('api', `读取对局 ${gameId} 详情（最近 ${recent} 场）…`);
       const detail = await source.getMatchDetail(gameId, recent);

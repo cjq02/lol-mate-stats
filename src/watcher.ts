@@ -14,8 +14,10 @@ import { LcuApi } from './lcu/api.js';
 import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { openEventStream } from './lcu/events.js';
 import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
+import { analyzeParticipant } from './stats/analyze.js';
 import { ReportCollector } from './stats/collector.js';
 import { modeFromQueue, queueName } from './stats/constants.js';
+import { gradeOf } from './stats/rating.js';
 import { nowIso, logTag, sleep, toNumber } from './util.js';
 
 export interface LiveSourceOptions {
@@ -81,7 +83,7 @@ export class LiveSource implements DataSource {
 
   constructor(options: LiveSourceOptions = {}) {
     this.options = {
-      recent: options.recent ?? 20,
+      recent: options.recent ?? 10,
       pollMs: options.pollMs ?? 3_000,
       ttlMs: options.ttlMs ?? 24 * 60 * 60_000,
       quiet: options.quiet ?? false,
@@ -274,6 +276,13 @@ export class LiveSource implements DataSource {
         const name = player?.gameName
           ? `${player.gameName}${player.tagLine ? `#${player.tagLine}` : ''}`
           : String(player?.summonerName ?? `玩家 ${participant.participantId}`);
+        const analyzed = analyzeParticipant(game, participant, championMap);
+        const rawDuration = toNumber(game.gameDuration);
+        const durationSeconds = rawDuration > 100_000 ? rawDuration / 1000 : rawDuration;
+        const durationMin =
+          analyzed?.durationMin || (durationSeconds > 0 ? Math.round(durationSeconds / 60) : 0);
+        const perMin = (value: number): number =>
+          durationMin > 0 ? Math.round(value / durationMin) : 0;
 
         return {
           puuid: typeof player?.puuid === 'string' ? player.puuid : undefined,
@@ -303,6 +312,18 @@ export class LiveSource implements DataSource {
           ]
             .map((item) => toNumber(item))
             .filter((item) => item > 0),
+          durationMin,
+          score: analyzed?.score,
+          grade: analyzed ? gradeOf(analyzed.score) : undefined,
+          damageShare: analyzed?.damageShare,
+          tankShare: analyzed?.tankShare,
+          killParticipation: analyzed?.killParticipation,
+          csPerMin: analyzed?.csPerMin,
+          goldPerMin: perMin(toNumber(stats.goldEarned)),
+          damagePerMin: analyzed?.damagePerMin,
+          damageTakenPerMin: perMin(toNumber(stats.totalDamageTaken)),
+          visionPerMin: analyzed?.visionPerMin,
+          tags: analyzed?.tags,
         };
       })
       .filter((player) => player.championId > 0)

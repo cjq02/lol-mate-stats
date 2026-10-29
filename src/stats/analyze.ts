@@ -112,7 +112,15 @@ export function analyzeGame(
 ): AnalyzedGame | null {
   const participant = findParticipant(game, identityKey);
   if (!participant) return null;
+  return analyzeParticipant(game, participant, championMap);
+}
 
+/** 已知参与者时直接计算单场数据（对局详情记分板复用） */
+export function analyzeParticipant(
+  game: RawGame,
+  participant: RawParticipant,
+  championMap: Map<number, ChampionSummary>,
+): AnalyzedGame | null {
   const stats = participant.stats ?? {};
   const participants = game.participants ?? [];
   const teamId = toNumber(participant.teamId);

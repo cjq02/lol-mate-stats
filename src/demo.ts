@@ -165,7 +165,7 @@ function generateGames(player: DemoPlayer, seed: number): AnalyzedGame[] {
   const games: AnalyzedGame[] = [];
   const now = Date.now();
 
-  for (let index = 0; index < 20; index += 1) {
+  for (let index = 0; index < 10; index += 1) {
     const durationMin = 24 + Math.floor(random() * 14);
     const teamKills = 16 + Math.floor(random() * 18);
     const participation = Math.min(0.85, (0.42 + random() * 0.22) * player.kp);
@@ -255,7 +255,7 @@ function buildReports(seed: number): PlayerReport[] {
       championName: champion?.name,
       rank: player.rank,
       recent: summary,
-      games: games.slice(0, 20),
+      games: games.slice(0, 10),
       rating: summary.rating,
       grade: summary.grade,
       labels: summary.labels,

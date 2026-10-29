@@ -277,6 +277,20 @@ export interface MatchScoreboardPlayer {
   vision: number;
   win: boolean;
   items: number[];
+  /** 本局时长（分钟） */
+  durationMin?: number;
+  /** 本局表现评分（与近期战绩的评分口径一致） */
+  score?: number;
+  grade?: Grade;
+  damageShare?: number;
+  tankShare?: number;
+  killParticipation?: number;
+  csPerMin?: number;
+  goldPerMin?: number;
+  damagePerMin?: number;
+  damageTakenPerMin?: number;
+  visionPerMin?: number;
+  tags?: string[];
 }
 
 export interface MatchDetail {

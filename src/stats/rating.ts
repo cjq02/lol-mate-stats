@@ -59,7 +59,8 @@ export const PROFILES: Record<Lane, Profile> = {
   },
   ARAM: {
     label: '大乱斗',
-    weight: { kda: 0.22, damageShare: 0.24, damagePerMin: 0.18, tankShare: 0.1, killParticipation: 0.18, csPerMin: 0.02, visionPerMin: 0.06 },
+    // 大乱斗没有眼位，视野分不参与评分
+    weight: { kda: 0.24, damageShare: 0.26, damagePerMin: 0.2, tankShare: 0.1, killParticipation: 0.18, csPerMin: 0.02, visionPerMin: 0 },
     target: { kda: 3.3, damageShare: 0.26, damagePerMin: 850, tankShare: 0.22, killParticipation: 0.65, csPerMin: 3.0, visionPerMin: 0.8 },
   },
   ARENA: {
@@ -142,6 +143,11 @@ export interface AccountSignals {
   level?: number;
 }
 
+/** 大乱斗/竞技场没有常规眼位，不参考视野数据 */
+export function appliesVision(position: Lane): boolean {
+  return position !== 'ARAM' && position !== 'ARENA';
+}
+
 /**
  * 官方战绩接口没有挂机标记，这里只用“明显异常”的对局做推断：
  * 时长 ≥ 8 分钟，且伤害、经济、补刀、参团、视野同时极低。
@@ -150,14 +156,18 @@ export interface AccountSignals {
 export function isAfkLike(game: AnalyzedGame): boolean {
   if (game.durationMin < 8) return false;
   const goldPerMin = game.gold / Math.max(1, game.durationMin);
-  const hits = [
+  const checks = [
     game.damagePerMin < 150,
     goldPerMin < 220,
     game.csPerMin < 1.2,
     game.kills + game.assists <= 1,
-    game.visionPerMin < 0.35,
-  ].filter(Boolean).length;
-  return hits >= 5 || (hits >= 4 && game.kills + game.deaths + game.assists === 0);
+  ];
+  if (appliesVision(game.position)) checks.push(game.visionPerMin < 0.35);
+  const hits = checks.filter(Boolean).length;
+  return (
+    hits >= checks.length ||
+    (hits >= checks.length - 1 && game.kills + game.deaths + game.assists === 0)
+  );
 }
 
 export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): RecentSummary {
@@ -292,8 +302,10 @@ function gameDeficit(game: AnalyzedGame): number {
   if (game.killParticipation < 0.3) flags += 1.0;
   else if (game.killParticipation < 0.4) flags += 0.5;
 
-  if (game.visionPerMin < target.visionPerMin * 0.35) flags += 0.8;
-  else if (game.visionPerMin < target.visionPerMin * 0.55) flags += 0.4;
+  if (appliesVision(game.position)) {
+    if (game.visionPerMin < target.visionPerMin * 0.35) flags += 0.8;
+    else if (game.visionPerMin < target.visionPerMin * 0.55) flags += 0.4;
+  }
 
   return flags;
 }
@@ -335,6 +347,7 @@ function assessRisk(games: AnalyzedGame[], averages: RiskAverages): RiskAssessme
 
   const reasons: string[] = [];
   const csApplies = latest.position !== 'SUPPORT' && latest.position !== 'ARAM' && latest.position !== 'ARENA';
+  const visionApplies = appliesVision(latest.position);
 
   if (averages.avgDamagePerMin < weakDamage) {
     reasons.push(`分均伤害 ${Math.round(averages.avgDamagePerMin)}（参考 ≥${Math.round(weakDamage)}）`);
@@ -349,7 +362,7 @@ function assessRisk(games: AnalyzedGame[], averages: RiskAverages): RiskAssessme
   if (averages.avgKillParticipation < 0.42) {
     reasons.push(`参团率 ${Math.round(averages.avgKillParticipation * 100)}%`);
   }
-  if (averages.avgVisionPerMin < weakVision) {
+  if (visionApplies && averages.avgVisionPerMin < weakVision) {
     reasons.push(`分均视野 ${averages.avgVisionPerMin.toFixed(2)}`);
   }
   if (averages.level !== undefined && averages.level < 40) {
@@ -467,8 +480,9 @@ function buildLabels(input: LabelInput, lane: Lane): string[] {
   if (input.avgKillParticipation >= 0.68) labels.push('团战积极');
   if (input.avgKillParticipation < 0.4 && input.games >= 4) labels.push('参团偏低');
   if (input.avgCsPerMin >= 8) labels.push('补刀机器');
-  if (input.avgVisionPerMin >= 1.5) labels.push('视野大师');
-  if (input.avgVisionPerMin < 0.5 && input.profileGames >= 4) labels.push('视野偏弱');
+  const visionApplies = appliesVision(lane);
+  if (visionApplies && input.avgVisionPerMin >= 1.5) labels.push('视野大师');
+  if (visionApplies && input.avgVisionPerMin < 0.5 && input.profileGames >= 4) labels.push('视野偏弱');
   if (input.winRate >= 0.7 && input.games >= 5) labels.push('状态火热');
   if (input.streak?.type === 'win' && input.streak.count >= 3) labels.push(`${input.streak.count}连胜`);
   if (input.streak?.type === 'loss' && input.streak.count >= 3) labels.push(`${input.streak.count}连败`);

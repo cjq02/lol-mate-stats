@@ -1130,6 +1130,21 @@ body::before {
   background: rgba(255, 255, 255, 0.022);
 }
 
+/* 本局出装 */
+
+.items {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.items .icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
 /* 本局实时数据 */
 
 .live-row {

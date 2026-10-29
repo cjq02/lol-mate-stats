@@ -1,5 +1,6 @@
 import type { PlayerReport } from './types.js';
 import { LANE_NAMES, TIER_NAMES, positionName } from './stats/constants.js';
+import { appliesVision } from './stats/rating.js';
 import { colorize, dim, padCjk, printTable, warn } from './util.js';
 
 function ratingColor(rating: number | null): 'green' | 'cyan' | 'yellow' | 'red' {
@@ -56,13 +57,14 @@ export function printReports(players: PlayerReport[], title = '队友近期战�
     console.log(`${index + 1}. ${head}  ${record}`);
 
     if (recent) {
+      const showVision = !player.games?.length || appliesVision(player.games[0]!.position);
       const metrics = [
         `KDA ${recent.avgKda.toFixed(2)}`,
         `参团 ${percent(recent.avgKillParticipation)}`,
         `分伤 ${recent.avgDamagePerMin}`,
         `伤害占比 ${percent(recent.avgDamageShare)}`,
         `补刀 ${recent.avgCsPerMin.toFixed(1)}/min`,
-        `视野 ${recent.avgVisionPerMin.toFixed(2)}/min`,
+        ...(showVision ? [`视野 ${recent.avgVisionPerMin.toFixed(2)}/min`] : []),
         `死亡 ${recent.avgDeaths.toFixed(1)}`,
       ].join(dim(' · '));
       console.log(`   ${metrics}`);

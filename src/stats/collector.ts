@@ -19,7 +19,7 @@ import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.j
 import { summarize } from './rating.js';
 
 export interface CollectorOptions {
-  /** 拉取最近多少场对局，默认 20 */
+  /** 拉取最近多少场对局，默认 10 */
   recent: number;
   /** 玩家报告缓存时长，默认 24 小时；自己的报告不读缓存 */
   ttlMs: number;
@@ -30,7 +30,7 @@ export interface CollectorOptions {
 }
 
 const DEFAULT_OPTIONS: CollectorOptions = {
-  recent: 20,
+  recent: 10,
   ttlMs: 24 * 60 * 60_000,
   gameTtlMs: 24 * 60 * 60_000,
   concurrency: 3,
@@ -640,37 +640,65 @@ export class ReportCollector {
       );
     }
 
-    // 需要按当前模式过滤时多取一些候选，再在拉详情前先按队列筛掉其它模式
-    const count = context
-      ? Math.min(40, Math.max(this.options.recent * 2, this.options.recent))
-      : this.options.recent;
+    const target = this.options.recent;
+    const group = context ? currentQueueGroup(context.queueId, context.mode) : undefined;
+
+    // 只拉摘要的列表接口很轻，详情才是大头；先取一个窗口，同模式不够再扩窗
+    const MAX_CANDIDATES = 100;
+    let windowSize = Math.min(
+      MAX_CANDIDATES,
+      context ? Math.max(target * 2, target) : target,
+    );
     let games: RawGame[] = [];
 
     // 国服只有 v1 products 一个可用入口，v3/account 路由会直接 404
-    if (summoner.puuid) {
+    const fetchGames = async (count: number): Promise<RawGame[]> => {
+      if (!summoner.puuid) return [];
       try {
-        games = await this.api.getMatchListByPuuid(summoner.puuid, count);
+        return await this.api.getMatchListByPuuid(summoner.puuid, count);
       } catch (error) {
         if (isHistoryBusy(error)) this.coolDownHistory();
         throw error;
       }
-    }
+    };
 
+    games = await fetchGames(windowSize);
     if (!games.length) {
       throw new Error('没有读取到对局记录（可能隐藏了战绩，或为新号）');
     }
     this.historyBackoffMs = 0;
     this.historyRetryAt = 0;
 
-    // 拉详情前先按队列筛掉其它模式，避免为了 20 场大乱斗去请求几十场对局详情
-    if (context) {
-      const group = currentQueueGroup(context.queueId, context.mode);
-      games = games.filter(
-        (game) => gameQueueGroup(toNumber(game.queueId), 'UNKNOWN') === group,
-      );
+    // 先按队列筛掉其它模式，避免为了 10 场大乱斗去请求几十场对局详情
+    const sameMode = (list: RawGame[]): RawGame[] =>
+      group
+        ? list.filter((game) => gameQueueGroup(toNumber(game.queueId), 'UNKNOWN') === group)
+        : list;
+
+    let filtered = sameMode(games);
+    // “最近 N 场同模式”而不是“最近 N 场里恰好有几场同模式”：
+    // 不足时继续往前翻，只增加摘要请求，详情请求仍然最多 target 次
+    while (
+      group &&
+      filtered.length < target &&
+      games.length >= windowSize &&
+      windowSize < MAX_CANDIDATES
+    ) {
+      const next = Math.min(MAX_CANDIDATES, windowSize * 3);
+      let wider: RawGame[];
+      try {
+        wider = await fetchGames(next);
+      } catch {
+        // 扩窗失败时保留已经取到的同模式对局
+        break;
+      }
+      if (wider.length <= games.length) break; // 没有更多历史
+      games = wider;
+      windowSize = next;
+      filtered = sameMode(games);
     }
 
-    games = games.slice(0, this.options.recent);
+    games = filtered.slice(0, target);
     if (!games.length) return [];
 
     // 列表接口只给概要时（没有 10 人详情），再按 gameId 拉一次详情
