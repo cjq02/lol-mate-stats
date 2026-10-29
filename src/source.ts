@@ -17,6 +17,10 @@ export interface DataSource {
   /** 首页“我的战绩”：当前账号最近对局列表 */
   getMyMatches?(recent: number): Promise<{ summoner: SummonerInfo; games: MatchSummary[] }>;
   /** 某场对局里 10 名玩家的近期战绩卡片 */
-  getMatchDetail?(gameId: number, recent: number): Promise<MatchDetail>;
+  getMatchDetail?(
+    gameId: number,
+    recent: number,
+    onProgress?: (done: number, total: number, name: string) => void,
+  ): Promise<MatchDetail>;
   stop(): void;
 }

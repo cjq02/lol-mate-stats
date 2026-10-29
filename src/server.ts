@@ -215,6 +215,50 @@ async function handleRequest(
     return;
   }
 
+  const matchStreamRoute = /^\/api\/match\/(\d+)\/stream$/.exec(url.pathname);
+  if (method === 'GET' && matchStreamRoute) {
+    if (!source.getMatchDetail) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持查询战绩' });
+      return;
+    }
+    const gameId = Number(matchStreamRoute[1]);
+    const rawRecent = Number(url.searchParams.get('recent') ?? 20);
+    const recent = Number.isFinite(rawRecent)
+      ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
+      : 20;
+    const started = Date.now();
+
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.on('error', () => undefined);
+    res.flushHeaders?.();
+    const sendEvent = (payload: unknown): void => {
+      if (!res.writableEnded) res.write(`${JSON.stringify(payload)}\n`);
+    };
+
+    logTag('api', `流式读取对局 ${gameId} 详情（最近 ${recent} 场）…`);
+    try {
+      const detail = await source.getMatchDetail(gameId, recent, (done, total, name) => {
+        sendEvent({ type: 'progress', done, total, name });
+      });
+      sendEvent({ type: 'done', data: detail });
+      logTag(
+        'api',
+        `流式读取对局 ${gameId} 完成，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendEvent({ type: 'error', error: message });
+      logTag('api', `流式读取对局 ${gameId} 失败：${message}`);
+    }
+    res.end();
+    return;
+  }
+
   const matchRoute = /^\/api\/match\/(\d+)$/.exec(url.pathname);
   if (method === 'GET' && matchRoute) {
     if (!source.getMatchDetail) {

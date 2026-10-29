@@ -200,7 +200,11 @@ export class LiveSource implements DataSource {
   }
 
   /** 某场对局里 10 名玩家的近期战绩 */
-  async getMatchDetail(gameId: number, recent: number): Promise<MatchDetail> {
+  async getMatchDetail(
+    gameId: number,
+    recent: number,
+    onProgress?: (done: number, total: number, name: string) => void,
+  ): Promise<MatchDetail> {
     const started = Date.now();
     const api = await this.ensureApi();
     if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
@@ -227,6 +231,7 @@ export class LiveSource implements DataSource {
     );
 
     const collector = new ReportCollector(api, { recent });
+    onProgress?.(0, participants, '');
     try {
       const players = await collector.collectMatch(
         game,
@@ -234,6 +239,7 @@ export class LiveSource implements DataSource {
         { queueId, mode: gameMode },
         (done, total, name) => {
           logTag('match', `[${gameId}] ${done}/${total} ${name} 完成`);
+          onProgress?.(done, total, name);
         },
       );
       const rawDuration = toNumber(game.gameDuration);

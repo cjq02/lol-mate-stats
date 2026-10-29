@@ -145,6 +145,7 @@ const state = {
   selfPuuid: '',
   matchesBack: null,
   loadingTimer: null,
+  loadingProgress: null,
 };
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
@@ -727,16 +728,42 @@ function stopLoadingTimer() {
 function beginMatchesLoading(text) {
   stopLoadingTimer();
   const started = Date.now();
+  state.loadingProgress = null;
   els.matchesList.className = 'match-list';
   els.matchesList.innerHTML = `<div class="search-status"><span class="spinner"></span><span class="match-loading">${escapeHtml(
     text,
   )}</span></div>`;
-  state.loadingTimer = setInterval(() => {
+  const render = () => {
     const label = els.matchesList.querySelector('.match-loading');
     if (!label) return;
+    const progress = state.loadingProgress;
+    const suffix = progress?.total ? ` ${progress.done}/${progress.total}` : '';
     const seconds = Math.floor((Date.now() - started) / 1000);
-    label.textContent = `${text} 已用时 ${seconds}s`;
-  }, 500);
+    label.textContent = `${text}${suffix} · 已用时 ${seconds}s`;
+  };
+  render();
+  state.loadingTimer = setInterval(render, 500);
+}
+
+async function readNdjson(response, onEvent) {
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let index = buffer.indexOf('\n');
+    while (index >= 0) {
+      const line = buffer.slice(0, index).trim();
+      buffer = buffer.slice(index + 1);
+      if (line) onEvent(JSON.parse(line));
+      index = buffer.indexOf('\n');
+    }
+  }
+  const tail = buffer.trim();
+  if (tail) onEvent(JSON.parse(tail));
 }
 
 function matchRow(game, showScore) {
@@ -818,24 +845,45 @@ async function openMatchDetail(gameId) {
   beginMatchesLoading('正在读取 10 名玩家的战绩…');
 
   try {
-    const response = await fetch(`/api/match/${gameId}?recent=20`, { cache: 'no-store' });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data?.ok === false) {
-      throw new Error(data?.error ?? `HTTP ${response.status}`);
+    const response = await fetch(`/api/match/${gameId}/stream?recent=20`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    let detail = null;
+    await readNdjson(response, (event) => {
+      if (event.type === 'progress') {
+        state.loadingProgress = { done: event.done, total: event.total };
+      } else if (event.type === 'done') {
+        detail = event.data;
+      } else if (event.type === 'error') {
+        throw new Error(event.error ?? '读取失败');
+      }
+    });
+
+    // 浏览器不支持流式响应时退回到普通 JSON 接口
+    if (!detail) {
+      const fallback = await fetch(`/api/match/${gameId}?recent=20`, { cache: 'no-store' });
+      const payload = await fallback.json().catch(() => ({}));
+      if (!fallback.ok || payload?.ok === false) {
+        throw new Error(payload?.error ?? `HTTP ${fallback.status}`);
+      }
+      detail = payload;
     }
+
     stopLoadingTimer();
-    const selfPuuid = data.selfPuuid ?? state.selfPuuid;
-    const players = Array.isArray(data.players) ? data.players : [];
+    const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
+    const players = Array.isArray(detail.players) ? detail.players : [];
     const nodes = players.map((player) =>
       buildCard(player, Boolean(selfPuuid && player.puuid === selfPuuid), {
-        mode: data.gameMode ?? null,
-        modeLabel: data.queueName ?? '近期',
+        mode: detail.gameMode ?? null,
+        modeLabel: detail.queueName ?? '近期',
       }),
     );
     els.matchesList.className = 'match-list match-cards';
     els.matchesList.replaceChildren(...nodes);
-    els.matchesTitle.textContent = `${data.queueName ?? '对局'} · ${formatGameTime(
-      data.gameCreation,
+    els.matchesTitle.textContent = `${detail.queueName ?? '对局'} · ${formatGameTime(
+      detail.gameCreation,
     )} · 对局详情`;
     els.matchesBack.classList.toggle('hidden', !state.matchesBack);
   } catch (error) {
