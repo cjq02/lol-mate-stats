@@ -889,15 +889,8 @@ els.matchesList.addEventListener('click', (event) => {
   if (!row) return;
   void openMatchDetail(Number(row.dataset.gameId));
 });
-els.matchesModal.addEventListener('click', (event) => {
-  if (event.target === els.matchesModal) closeMatches();
-});
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !els.matchesModal.classList.contains('hidden')) {
-    closeMatches();
-    return;
-  }
   if (event.key === 'Escape' && !els.searchPanel.classList.contains('hidden')) {
     closeSearch();
     return;
