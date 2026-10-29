@@ -21,9 +21,9 @@ import { summarize } from './rating.js';
 export interface CollectorOptions {
   /** 拉取最近多少场对局，默认 20 */
   recent: number;
-  /** 报告缓存时长，默认 5 分钟 */
+  /** 玩家报告缓存时长，默认 24 小时；自己的报告不读缓存 */
   ttlMs: number;
-  /** 对局详情缓存时长，默认 30 分钟 */
+  /** 对局详情缓存时长，默认 24 小时（对局数据不会变） */
   gameTtlMs: number;
   /** 单个玩家的拉取并发 */
   concurrency: number;
@@ -31,8 +31,8 @@ export interface CollectorOptions {
 
 const DEFAULT_OPTIONS: CollectorOptions = {
   recent: 20,
-  ttlMs: 10 * 60_000,
-  gameTtlMs: 30 * 60_000,
+  ttlMs: 24 * 60 * 60_000,
+  gameTtlMs: 24 * 60 * 60_000,
   concurrency: 3,
 };
 
@@ -60,6 +60,9 @@ export class ReportCollector {
   /** 战绩服务 5xx 时的退避截止时间（指数增长），避免每 3 秒重复轰炸 */
   private historyRetryAt = 0;
   private historyBackoffMs = 0;
+  /** 当前登录账号的 puuid：命中时不读报告缓存，保证自己的战绩实时 */
+  private selfPuuid?: string;
+  private selfRetryAt = 0;
 
   constructor(
     private readonly api: LcuApi,
@@ -73,8 +76,40 @@ export class ReportCollector {
     this.summonerCache.clear();
     this.summonerByNameCache.clear();
     this.rankCache.clear();
+    this.gameCache.clear();
+    this.championMap = null;
+    this.championMapAt = 0;
     this.historyRetryAt = 0;
     this.historyBackoffMs = 0;
+  }
+
+  /** 记录当前登录账号的 puuid；自己的报告不读缓存，保证实时 */
+  setSelfPuuid(puuid?: string): void {
+    if (!puuid) return;
+    this.selfPuuid = puuid;
+    this.selfRetryAt = 0;
+  }
+
+  /** 判断是否当前登录账号；未知时按需读一次 LCU */
+  private async isSelf(puuid?: string): Promise<boolean> {
+    if (!puuid) return false;
+    if (this.selfPuuid) return puuid === this.selfPuuid;
+    if (Date.now() < this.selfRetryAt) return false;
+    try {
+      const summoner = await this.api.getCurrentSummoner();
+      this.selfPuuid = summoner?.puuid;
+    } catch {
+      this.selfPuuid = undefined;
+    }
+    if (!this.selfPuuid) {
+      this.selfRetryAt = Date.now() + 60_000;
+      return false;
+    }
+    return puuid === this.selfPuuid;
+  }
+
+  private isKnownSelf(puuid?: string): boolean {
+    return Boolean(puuid && this.selfPuuid && puuid === this.selfPuuid);
   }
 
   championName(championId: number | undefined): string | undefined {
@@ -358,9 +393,10 @@ export class ReportCollector {
       player.position && player.position.toUpperCase() !== 'NONE'
         ? player.position.toLowerCase()
         : undefined;
-    const cached = info
-      ? this.reportCache.get(reportCacheKey(info.summonerId, context))?.report
-      : undefined;
+    const cached =
+      info && !this.isKnownSelf(info.puuid)
+        ? this.reportCache.get(reportCacheKey(info.summonerId, context))?.report
+        : undefined;
 
     const base: PlayerReport = {
       summonerId: info?.summonerId ?? 0,
@@ -416,7 +452,8 @@ export class ReportCollector {
     context?: GameContext,
   ): Promise<PlayerReport> {
     const cacheKey = reportCacheKey(member.summonerId, context);
-    const cached = this.reportCache.get(cacheKey);
+    const self = await this.isSelf(base.puuid ?? member.puuid);
+    const cached = self ? undefined : this.reportCache.get(cacheKey);
     if (cached && Date.now() - cached.at < this.options.ttlMs) {
       return this.withSessionData(cached.report, member, base, championMap);
     }
@@ -517,7 +554,10 @@ export class ReportCollector {
     context?: GameContext,
   ): PlayerReport {
     const championId = effectiveChampionId(member);
-    const cached = this.reportCache.get(reportCacheKey(member.summonerId, context))?.report;
+    const puuid = info?.puuid ?? member.puuid;
+    const cached = this.isKnownSelf(puuid)
+      ? undefined
+      : this.reportCache.get(reportCacheKey(member.summonerId, context))?.report;
     // 国服 LCU 的 displayName 常常是空字符串，真实名字只在 gameName 里
     const displayName =
       info?.displayName?.trim() ||
@@ -553,7 +593,7 @@ export class ReportCollector {
 
   private async getSummoner(summonerId: number): Promise<SummonerInfo | null> {
     const cached = this.summonerCache.get(summonerId);
-    if (cached && Date.now() - cached.at < 30 * 60_000) return cached.info;
+    if (cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.info;
 
     let info: SummonerInfo | null = null;
     try {
@@ -569,7 +609,7 @@ export class ReportCollector {
   private async getSummonerByName(name: string): Promise<SummonerInfo | null> {
     if (!name) return null;
     const cached = this.summonerByNameCache.get(name);
-    if (cached && Date.now() - cached.at < 30 * 60_000) return cached.info;
+    if (cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.info;
 
     let info: SummonerInfo | null = null;
     try {
@@ -583,7 +623,7 @@ export class ReportCollector {
 
   private async getRank(puuid: string): Promise<RankInfo | null> {
     const cached = this.rankCache.get(puuid);
-    if (cached && Date.now() - cached.at < 10 * 60_000) return cached.rank;
+    if (cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.rank;
     const rank = await this.api.getRankedStats(puuid);
     this.rankCache.set(puuid, { at: Date.now(), rank });
     return rank;
@@ -666,7 +706,7 @@ export class ReportCollector {
       game = null;
     }
     this.gameCache.set(gameId, { at: Date.now(), game });
-    if (this.gameCache.size > 400) {
+    if (this.gameCache.size > 1200) {
       const oldest = [...this.gameCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
       if (oldest) this.gameCache.delete(oldest[0]);
     }
@@ -674,7 +714,7 @@ export class ReportCollector {
   }
 
   private async getChampionMap(): Promise<Map<number, ChampionSummary>> {
-    if (this.championMap && Date.now() - this.championMapAt < 60 * 60_000) {
+    if (this.championMap && Date.now() - this.championMapAt < 24 * 60 * 60_000) {
       return this.championMap;
     }
     try {

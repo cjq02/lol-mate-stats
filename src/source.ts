@@ -11,6 +11,8 @@ export interface DataSource {
   getSnapshot(): Snapshot;
   subscribe(listener: (snapshot: Snapshot) => void): () => void;
   refresh(): Promise<void>;
+  /** 手动清空缓存（可选） */
+  clearCache?(): void;
   getAsset(path: string): Promise<AssetResult | null>;
   /** 按名字查询任意玩家的近期战绩（可选，demo 模式不支持） */
   scanPlayer?(name: string, recent: number): Promise<PlayerReport[]>;

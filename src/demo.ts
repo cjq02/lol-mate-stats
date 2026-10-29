@@ -289,6 +289,10 @@ export class DemoSource implements DataSource {
     this.regenerate();
   }
 
+  clearCache(): void {
+    // 演示模式没有真实缓存
+  }
+
   async getAsset(): Promise<AssetResult | null> {
     return null;
   }

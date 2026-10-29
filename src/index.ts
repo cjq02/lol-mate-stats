@@ -150,6 +150,9 @@ async function startLive(options: CliOptions): Promise<void> {
   }
 
   const source = new LiveSource({ recent: options.recent, quiet: options.quiet });
+  if (!options.quiet) {
+    logTag('cache', '其他玩家战绩缓存 24 小时；自己的战绩每次实时读取，可在面板点「清缓存」手动清空');
+  }
 
   const running = await startServer({
     source,

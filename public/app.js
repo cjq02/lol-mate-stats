@@ -29,6 +29,7 @@ const els = {
   matchesBack: document.getElementById('matches-back'),
   matchTabs: document.getElementById('match-tabs'),
   myMatches: document.getElementById('my-matches'),
+  clearCache: document.getElementById('clear-cache'),
 };
 
 const PHASE_LABELS = {
@@ -345,6 +346,7 @@ function buildCard(player, isLocal, options = {}) {
   const labels = (player.labels ?? []).slice(0, 4);
   const risk = recent?.risk;
   const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
+  const thisGame = options.thisGame;
   const cardMode = options.mode === undefined ? state.snapshot?.gameMode : options.mode;
   const modeName = options.modeLabel ?? currentModeLabel();
 
@@ -389,7 +391,7 @@ function buildCard(player, isLocal, options = {}) {
       )}`
     : '暂无战绩数据';
 
-  const riskPill = risky
+  const riskPill = risk && (risky || thisGame)
     ? `<span class="risk-pill ${risk.level}" title="${escapeHtml(risk.reasons.join('；'))}">坑指数 ${risk.score}</span>`
     : '';
   const riskNote =
@@ -447,7 +449,7 @@ function buildCard(player, isLocal, options = {}) {
         .join('')}</div>`
     : '';
 
-  const detail = games.length
+  const detail = games.length && !thisGame
     ? `<button class="btn matches-btn" type="button" data-action="matches">查看最近 ${games.length} 场战绩</button>`
     : '';
 
@@ -471,6 +473,18 @@ function buildCard(player, isLocal, options = {}) {
         ${live.isDead ? '<span class="live-dead">已阵亡</span>' : ''}
       </div>`
     : '';
+
+  const gameRow = thisGame
+    ? `<div class="live-row this-game-row ${thisGame.win ? 'win' : 'loss'}">
+        <span class="game-result">${thisGame.win ? '胜' : '负'}</span>
+        <span class="live-kda">${thisGame.kills} / <b class="loss">${thisGame.deaths}</b> / ${thisGame.assists}</span>
+        <span class="live-stat">补刀 <b>${thisGame.cs}</b></span>
+        <span class="live-stat">经济 <b>${kilo(thisGame.gold)}</b></span>
+        <span class="live-stat">伤害 <b>${kilo(thisGame.damage)}</b></span>
+        <span class="live-stat">承伤 <b>${kilo(thisGame.damageTaken)}</b></span>
+        <span class="live-stat">视野 <b>${thisGame.vision}</b></span>
+      </div>`
+    : liveRow;
 
   card.innerHTML = `
     <div class="card-head">
@@ -513,13 +527,13 @@ function buildCard(player, isLocal, options = {}) {
       </div>
     </div>
 
-    ${liveRow}
-    ${gameChips ? `<div class="games">${gameChips}</div>` : ''}
-    ${loading}
-    ${metrics}
+    ${thisGame ? gameRow : liveRow}
+    ${thisGame ? '' : gameChips ? `<div class="games">${gameChips}</div>` : ''}
+    ${thisGame ? '' : loading}
+    ${thisGame ? '' : metrics}
     ${riskNote}
     ${afkNote}
-    ${champions}
+    ${thisGame ? '' : champions}
     ${error}
     ${detail}
   `;
@@ -698,6 +712,30 @@ async function refresh() {
   }
 }
 
+async function clearCache() {
+  if (els.clearCache.disabled) return;
+  els.clearCache.disabled = true;
+  els.notice.classList.add('hidden');
+  try {
+    const response = await fetch('/api/cache/clear', { method: 'POST' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    els.notice.textContent = '战绩缓存已清空，下次读取会重新拉取';
+    els.notice.classList.remove('hidden');
+    setTimeout(() => els.notice.classList.add('hidden'), 5000);
+  } catch (error) {
+    els.notice.textContent = `清缓存失败：${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    els.notice.classList.remove('hidden');
+    setTimeout(() => els.notice.classList.add('hidden'), 8000);
+  } finally {
+    els.clearCache.disabled = false;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* 玩家查询                                                            */
 /* ------------------------------------------------------------------ */
@@ -794,56 +832,41 @@ function matchRow(game, showScore) {
 
 function renderScoreboard(detail) {
   const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
-  if (!scoreboard.length) return '<div class="search-status">没有该局数据</div>';
+  const players = Array.isArray(detail.players) ? detail.players : [];
+  if (!scoreboard.length) {
+    els.matchesList.className = 'match-list';
+    els.matchesList.innerHTML = '<div class="search-status">没有该局数据</div>';
+    return;
+  }
 
-  const teamBlock = (label, players) => {
-    if (!players.length) return '';
-    const result = players[0]?.win ? '胜利' : '失败';
-    const kills = players.reduce((sum, player) => sum + player.kills, 0);
-    const gold = players.reduce((sum, player) => sum + player.gold, 0);
-    const damage = players.reduce((sum, player) => sum + player.damage, 0);
-    return `<section class="score-team">
-      <h3>${label} · ${result}<span>${kills} 击杀 · ${kilo(gold)} 经济 · ${kilo(
-        damage,
-      )} 伤害</span></h3>
-      <div class="score-table">
-        <div class="score-head">
-          <span>玩家 / 英雄</span><span>KDA</span><span>补刀</span><span>经济</span><span>伤害</span><span>承伤</span><span>视野</span>
-        </div>
-        ${players
-          .map(
-            (player) => `<div class="score-line${player.isEnemy ? ' is-enemy' : ''}">
-              <span class="score-champ">${iconHtml(
-                champPath(player.championId),
-                player.championName,
-                'sm',
-              )}<b>${escapeHtml(player.name)}</b><small>${escapeHtml(
-                player.championName ?? '',
-              )}${
-                player.position
-                  ? ` · ${escapeHtml(POSITION_NAMES[player.position] ?? player.position)}`
-                  : ''
-              }</small></span>
-              <span class="score-kda">${player.kills}/${player.deaths}/${player.assists}</span>
-              <span>${player.cs}</span>
-              <span>${kilo(player.gold)}</span>
-              <span>${kilo(player.damage)}</span>
-              <span>${kilo(player.damageTaken)}</span>
-              <span>${player.vision}</span>
-            </div>`,
-          )
-          .join('')}
-      </div>
-    </section>`;
-  };
+  const byPuuid = new Map(players.filter((player) => player.puuid).map((p) => [p.puuid, p]));
+  const byName = new Map(players.map((player) => [player.displayName, player]));
+  const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
 
-  return `${teamBlock(
-    '己方',
-    scoreboard.filter((player) => !player.isEnemy),
-  )}${teamBlock(
-    '敌方',
-    scoreboard.filter((player) => player.isEnemy),
-  )}`;
+  const nodes = scoreboard.map((row) => {
+    const report = (row.puuid && byPuuid.get(row.puuid)) || byName.get(row.name);
+    return buildCard(
+      {
+        ...(report ?? {}),
+        puuid: row.puuid ?? report?.puuid,
+        displayName: report?.displayName ?? row.name,
+        championId: row.championId,
+        championName: row.championName ?? report?.championName,
+        position: row.position ?? report?.position,
+        isEnemy: row.isEnemy,
+        isBot: report?.isBot,
+      },
+      Boolean(row.puuid && selfPuuid && row.puuid === selfPuuid),
+      {
+        mode: detail.gameMode ?? null,
+        modeLabel: detail.queueName ?? '本局',
+        thisGame: row,
+      },
+    );
+  });
+
+  els.matchesList.className = 'match-list match-cards';
+  els.matchesList.replaceChildren(...nodes);
 }
 
 function renderMatchTab(tab) {
@@ -855,8 +878,7 @@ function renderMatchTab(tab) {
   if (!detail) return;
 
   if (tab === 'scoreboard') {
-    els.matchesList.className = 'match-list scoreboard-list';
-    els.matchesList.innerHTML = renderScoreboard(detail);
+    renderScoreboard(detail);
     return;
   }
 
@@ -1038,6 +1060,7 @@ async function submitSearch(event) {
 
 els.refresh.addEventListener('click', () => void refresh());
 els.myMatches.addEventListener('click', () => void openMyMatches());
+els.clearCache.addEventListener('click', () => void clearCache());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
 els.matchesClose.addEventListener('click', closeMatches);

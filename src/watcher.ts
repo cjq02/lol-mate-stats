@@ -66,7 +66,7 @@ export class LiveSource implements DataSource {
   private readonly options: Required<LiveSourceOptions>;
 
   private api?: LcuApi;
-  private collector?: ReportCollector;
+  private readonly collectors = new Map<number, ReportCollector>();
   private connection?: LcuConnection;
   private eventStream?: { close(): void };
   private pollTimer?: NodeJS.Timeout;
@@ -83,7 +83,7 @@ export class LiveSource implements DataSource {
     this.options = {
       recent: options.recent ?? 20,
       pollMs: options.pollMs ?? 3_000,
-      ttlMs: options.ttlMs ?? 10 * 60_000,
+      ttlMs: options.ttlMs ?? 24 * 60 * 60_000,
       quiet: options.quiet ?? false,
     };
   }
@@ -107,7 +107,7 @@ export class LiveSource implements DataSource {
   async refresh(): Promise<void> {
     this.lastMembersKey = '';
     this.lastCollectAt = 0;
-    this.collector?.clearCache();
+    for (const collector of this.collectors.values()) collector.clearCache();
     const api = this.api;
     const session = api ? await api.getChampSelectSession().catch(() => null) : null;
     if (api && session?.myTeam?.length) {
@@ -116,6 +116,14 @@ export class LiveSource implements DataSource {
     } else {
       await this.tick('event');
     }
+  }
+
+  /** 手动清空所有缓存；下次读取会重新拉取 */
+  clearCache(): void {
+    for (const collector of this.collectors.values()) collector.clearCache();
+    this.lastMembersKey = '';
+    this.lastCollectAt = 0;
+    logTag('match', '已清空战绩缓存');
   }
 
   async getAsset(path: string): Promise<AssetResult | null> {
@@ -143,7 +151,7 @@ export class LiveSource implements DataSource {
         },
       ],
     };
-    const collector = new ReportCollector(api, { recent });
+    const collector = this.ensureCollector(api, recent);
     return collector.collect(session);
   }
 
@@ -300,7 +308,8 @@ export class LiveSource implements DataSource {
       .filter((player) => player.championId > 0)
       .sort((a, b) => Number(a.isEnemy) - Number(b.isEnemy));
 
-    const collector = new ReportCollector(api, { recent });
+    const collector = this.ensureCollector(api, recent);
+    collector.setSelfPuuid(summoner.puuid);
     onProgress?.(0, participants, '');
     try {
       const players = await collector.collectMatch(
@@ -614,6 +623,7 @@ export class LiveSource implements DataSource {
 
     try {
       const collector = this.ensureCollector(api);
+      collector.setSelfPuuid(localMember?.puuid);
       const reports = await collector.collect(
         session,
         (partial) => {
@@ -660,6 +670,7 @@ export class LiveSource implements DataSource {
       session.myTeam.map((member) => [member.summonerId, member]),
     );
     let changed = false;
+    const collector = this.collectors.get(this.options.recent);
     const players = this.snapshot.players.map((player) => {
       const member = bySummoner.get(player.summonerId);
       if (!member) return player;
@@ -669,7 +680,7 @@ export class LiveSource implements DataSource {
         return {
           ...player,
           championId: championId || undefined,
-          championName: this.collector?.championName(championId) ?? player.championName,
+          championName: collector?.championName(championId) ?? player.championName,
         };
       }
       return player;
@@ -702,10 +713,6 @@ export class LiveSource implements DataSource {
       this.connection = connection;
       const api = new LcuApi(connection);
       this.api = api;
-      this.collector = new ReportCollector(api, {
-        recent: this.options.recent,
-        ttlMs: this.options.ttlMs,
-      });
       this.log(`已连接客户端（端口 ${connection.port}，来源：${connection.source}）`);
       this.patch(
         {
@@ -767,20 +774,22 @@ export class LiveSource implements DataSource {
     this.eventStream = undefined;
     this.api?.destroy();
     this.api = undefined;
-    this.collector = undefined;
+    this.collectors.clear();
     this.connection = undefined;
     this.lastMembersKey = '';
     this.nextDiscoveryAt = 0;
   }
 
-  private ensureCollector(api: LcuApi): ReportCollector {
-    if (!this.collector) {
-      this.collector = new ReportCollector(api, {
-        recent: this.options.recent,
-        ttlMs: this.options.ttlMs,
-      });
-    }
-    return this.collector;
+  /** 按场次复用同一个 collector，让 24 小时缓存真正跨请求生效 */
+  private ensureCollector(api: LcuApi, recent = this.options.recent): ReportCollector {
+    const existing = this.collectors.get(recent);
+    if (existing) return existing;
+    const collector = new ReportCollector(api, {
+      recent,
+      ttlMs: this.options.ttlMs,
+    });
+    this.collectors.set(recent, collector);
+    return collector;
   }
 
   private patch(partial: Partial<Snapshot>, force = false): void {

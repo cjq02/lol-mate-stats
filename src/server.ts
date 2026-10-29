@@ -149,6 +149,17 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'POST' && url.pathname === '/api/cache/clear') {
+    if (!source.clearCache) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持缓存操作' });
+      return;
+    }
+    source.clearCache();
+    logTag('api', '已清空战绩缓存');
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
   if (method === 'POST' && url.pathname === '/api/refresh') {
     try {
       await source.refresh();
