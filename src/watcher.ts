@@ -370,12 +370,15 @@ export class LiveSource implements DataSource {
     }
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     this.stopped = true;
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.eventTimer) clearTimeout(this.eventTimer);
     this.eventStream?.close();
     this.eventStream = undefined;
+    const collectors = [...this.collectors.values()];
+    this.collectors.clear();
+    await Promise.all(collectors.map((collector) => collector.flush()));
     this.api?.destroy();
     this.api = undefined;
   }
@@ -795,6 +798,7 @@ export class LiveSource implements DataSource {
     this.eventStream = undefined;
     this.api?.destroy();
     this.api = undefined;
+    for (const collector of this.collectors.values()) void collector.flush();
     this.collectors.clear();
     this.connection = undefined;
     this.lastMembersKey = '';

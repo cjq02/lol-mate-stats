@@ -178,7 +178,7 @@ async function startLive(options: CliOptions): Promise<void> {
     closing = true;
     console.log('');
     logTag('app', '正在退出…');
-    source.stop();
+    await source.stop();
     await running.close();
     process.exit(0);
   };
@@ -201,7 +201,7 @@ async function startDemo(options: CliOptions): Promise<void> {
     console.log(dim(`浏览器打开 ${running.url}，按 Ctrl+C 退出`));
   }
   const shutdown = async (): Promise<void> => {
-    source.stop();
+    await source.stop();
     await running.close();
     process.exit(0);
   };
@@ -251,6 +251,7 @@ async function runOnce(options: CliOptions): Promise<void> {
       } else {
         printReports(reports, '本局玩家近期战绩');
       }
+      await collector.flush();
       api.destroy();
       return;
     }
@@ -278,6 +279,7 @@ async function runOnce(options: CliOptions): Promise<void> {
     } else {
       printReports(reports);
     }
+    await collector.flush();
     api.destroy();
   } catch (error) {
     handleError(error);
@@ -327,6 +329,7 @@ async function runScan(options: CliOptions): Promise<void> {
     } else {
       printReports(reports, '召唤师近期战绩');
     }
+    await collector.flush();
     api.destroy();
   } catch (error) {
     handleError(error);

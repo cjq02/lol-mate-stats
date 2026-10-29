@@ -56,7 +56,7 @@ npm run doctor     # 诊断：客户端连接、接口、大区、战绩是否�
 | `--quiet` | 减少日志 |
 | `--token <token>` | 手动指定 LCU remoting token |
 
-环境变量：`LCU_PORT`、`LCU_PASSWORD`、`LOL_LOCKFILE`、`LOL_INSTALL_DIR`。
+环境变量：`LCU_PORT`、`LCU_PASSWORD`、`LOL_LOCKFILE`、`LOL_INSTALL_DIR`、`LOL_MATE_CACHE`（缓存文件路径）。
 
 ### 找不到客户端时
 
@@ -199,6 +199,7 @@ Node 服务 (127.0.0.1)
 - 服务只绑定 `127.0.0.1`，不开放局域网/公网。
 - 头像、英雄图标通过 `/api/asset` 从客户端本地资源读取，无网络请求（demo 模式用彩色首字占位）。
 - 战绩缓存 **24 小时**（对局详情本身不会变）；自己的战绩每次都实时读取，不吃报告缓存。右上角「清缓存」可随时手动清空。
+- 报告、召唤师、段位和英雄列表缓存会写到 `用户目录/.lol-mate-stats/cache.json`，重启后仍可复用；可用环境变量 `LOL_MATE_CACHE` 指定路径。对局原始详情不落盘，避免文件过大。清缓存会同时删除该文件。
 - 客户端重启或更换端口会自动重新发现；事件订阅断开时会退化为轮询。
 
 ## HTTP 接口

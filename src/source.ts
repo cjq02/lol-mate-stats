@@ -24,5 +24,5 @@ export interface DataSource {
     recent: number,
     onProgress?: (done: number, total: number, name: string) => void,
   ): Promise<MatchDetail>;
-  stop(): void;
+  stop(): void | Promise<void>;
 }

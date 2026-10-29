@@ -1,3 +1,7 @@
+import { readFileSync, unlinkSync } from 'node:fs';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import type {
   AnalyzedGame,
   ChampSelectMember,
@@ -41,6 +45,24 @@ interface CachedReport {
   report: PlayerReport;
 }
 
+const DAY_MS = 24 * 60 * 60_000;
+const CACHE_VERSION = 1;
+const CACHE_FILE =
+  process.env.LOL_MATE_CACHE?.trim() || join(homedir(), '.lol-mate-stats', 'cache.json');
+const CACHE_SAVE_DELAY = 2_000;
+/** 单类缓存最多落盘多少条，避免文件无限增长 */
+const MAX_PERSISTED = 500;
+
+interface PersistedCache {
+  version: number;
+  savedAt: number;
+  reports: Array<[string, CachedReport]>;
+  summoners: Array<[number, { at: number; info: SummonerInfo | null }]>;
+  summonersByName: Array<[string, { at: number; info: SummonerInfo | null }]>;
+  ranks: Array<[string, { at: number; rank: RankInfo | null }]>;
+  championMap?: { at: number; entries: Array<[number, ChampionSummary]> };
+}
+
 /**
  * 根据选人阶段成员，读取召唤师信息 + 最近战绩 + 段位，产出评分报告。
  * 所有数据都来自本地客户端的 LCU 接口，不需要 Riot API Key。
@@ -63,12 +85,17 @@ export class ReportCollector {
   /** 当前登录账号的 puuid：命中时不读报告缓存，保证自己的战绩实时 */
   private selfPuuid?: string;
   private selfRetryAt = 0;
+  /** 磁盘缓存写盘防抖，避免采集过程中频繁写大文件 */
+  private saveTimer?: NodeJS.Timeout;
+  /** 串行写盘，避免多个缓存同时更新时互相覆盖 */
+  private saveQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly api: LcuApi,
     options: Partial<CollectorOptions> = {},
   ) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
+    this.restoreCache();
   }
 
   clearCache(): void {
@@ -81,6 +108,174 @@ export class ReportCollector {
     this.championMapAt = 0;
     this.historyRetryAt = 0;
     this.historyBackoffMs = 0;
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = undefined;
+    }
+    try {
+      unlinkSync(CACHE_FILE);
+    } catch {
+      /* 缓存文件可能还不存在 */
+    }
+    void this.queueSave();
+  }
+
+  /** 立即把缓存写盘；退出前调用，避免防抖计时器被 unref 后丢失最后一次写入 */
+  async flush(): Promise<void> {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = undefined;
+    }
+    await this.queueSave();
+  }
+
+  /** 启动时恢复报告/召唤师/段位/英雄缓存；对局原始详情不落盘，避免文件过大 */
+  private restoreCache(): void {
+    let text: string;
+    try {
+      text = readFileSync(CACHE_FILE, 'utf8');
+    } catch {
+      return;
+    }
+
+    let data: Partial<PersistedCache>;
+    try {
+      data = JSON.parse(text) as Partial<PersistedCache>;
+    } catch {
+      return;
+    }
+    if (!data || data.version !== CACHE_VERSION) return;
+
+    const now = Date.now();
+    const fresh = (at: unknown, ttl: number): at is number =>
+      typeof at === 'number' && Number.isFinite(at) && now - at >= 0 && now - at < ttl;
+
+    if (Array.isArray(data.reports)) {
+      for (const item of data.reports) {
+        if (!Array.isArray(item) || item.length < 2) continue;
+        const [key, entry] = item;
+        if (typeof key !== 'string' || !entry || typeof entry !== 'object') continue;
+        const cached = entry as CachedReport;
+        if (fresh(cached.at, this.options.ttlMs) && cached.report) {
+          this.reportCache.set(key, cached);
+        }
+      }
+    }
+
+    if (Array.isArray(data.summoners)) {
+      for (const item of data.summoners) {
+        if (!Array.isArray(item) || item.length < 2) continue;
+        const [summonerId, entry] = item;
+        if (typeof summonerId !== 'number' || !entry || typeof entry !== 'object') continue;
+        const cached = entry as { at: number; info: SummonerInfo | null };
+        if (fresh(cached.at, DAY_MS)) this.summonerCache.set(summonerId, cached);
+      }
+    }
+
+    if (Array.isArray(data.summonersByName)) {
+      for (const item of data.summonersByName) {
+        if (!Array.isArray(item) || item.length < 2) continue;
+        const [name, entry] = item;
+        if (typeof name !== 'string' || !entry || typeof entry !== 'object') continue;
+        const cached = entry as { at: number; info: SummonerInfo | null };
+        if (fresh(cached.at, DAY_MS)) this.summonerByNameCache.set(name, cached);
+      }
+    }
+
+    if (Array.isArray(data.ranks)) {
+      for (const item of data.ranks) {
+        if (!Array.isArray(item) || item.length < 2) continue;
+        const [puuid, entry] = item;
+        if (typeof puuid !== 'string' || !entry || typeof entry !== 'object') continue;
+        const cached = entry as { at: number; rank: RankInfo | null };
+        if (fresh(cached.at, DAY_MS)) this.rankCache.set(puuid, cached);
+      }
+    }
+
+    const championMap = data.championMap;
+    if (
+      championMap &&
+      fresh(championMap.at, DAY_MS) &&
+      Array.isArray(championMap.entries)
+    ) {
+      const entries = championMap.entries.filter(
+        (item): item is [number, ChampionSummary] =>
+          Array.isArray(item) &&
+          typeof item[0] === 'number' &&
+          Boolean(item[1]) &&
+          typeof item[1] === 'object',
+      );
+      if (entries.length) {
+        this.championMap = new Map(entries);
+        this.championMapAt = championMap.at;
+      }
+    }
+  }
+
+  private scheduleSave(): void {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = undefined;
+      void this.queueSave();
+    }, CACHE_SAVE_DELAY);
+    this.saveTimer.unref?.();
+  }
+
+  private queueSave(): Promise<void> {
+    this.saveQueue = this.saveQueue
+      .then(() => this.writeCache())
+      .catch(() => undefined);
+    return this.saveQueue;
+  }
+
+  private serializeCache(): PersistedCache {
+    const now = Date.now();
+    const fresh = (at: number, ttl: number): boolean => now - at >= 0 && now - at < ttl;
+    const byNewest = <K, T extends { at: number }>(a: [K, T], b: [K, T]): number =>
+      b[1].at - a[1].at;
+
+    const reports = [...this.reportCache.entries()]
+      .filter(([, entry]) => fresh(entry.at, this.options.ttlMs))
+      .sort(byNewest)
+      .slice(0, MAX_PERSISTED);
+    const summoners = [...this.summonerCache.entries()]
+      .filter(([, entry]) => fresh(entry.at, DAY_MS))
+      .sort(byNewest)
+      .slice(0, MAX_PERSISTED);
+    const summonersByName = [...this.summonerByNameCache.entries()]
+      .filter(([, entry]) => fresh(entry.at, DAY_MS))
+      .sort(byNewest)
+      .slice(0, MAX_PERSISTED);
+    const ranks = [...this.rankCache.entries()]
+      .filter(([, entry]) => fresh(entry.at, DAY_MS))
+      .sort(byNewest)
+      .slice(0, MAX_PERSISTED);
+    const championMap =
+      this.championMap && fresh(this.championMapAt, DAY_MS)
+        ? { at: this.championMapAt, entries: [...this.championMap.entries()] }
+        : undefined;
+
+    return {
+      version: CACHE_VERSION,
+      savedAt: now,
+      reports,
+      summoners,
+      summonersByName,
+      ranks,
+      championMap,
+    };
+  }
+
+  private async writeCache(): Promise<void> {
+    try {
+      const data = this.serializeCache();
+      await mkdir(dirname(CACHE_FILE), { recursive: true });
+      const temp = `${CACHE_FILE}.tmp`;
+      await writeFile(temp, JSON.stringify(data), 'utf8');
+      await rename(temp, CACHE_FILE);
+    } catch {
+      /* 缓存写入失败不影响主流程 */
+    }
   }
 
   /** 记录当前登录账号的 puuid；自己的报告不读缓存，保证实时 */
@@ -347,6 +542,7 @@ export class ReportCollector {
             : '近期的对局无法解析（可能隐藏了战绩）',
         };
         this.reportCache.set(cacheKey, { at: Date.now(), report });
+        this.scheduleSave();
         return report;
       }
 
@@ -363,6 +559,7 @@ export class ReportCollector {
         error: undefined,
       };
       this.reportCache.set(cacheKey, { at: Date.now(), report });
+      this.scheduleSave();
       return report;
     } catch (error) {
       return {
@@ -501,6 +698,7 @@ export class ReportCollector {
             : '近期的对局无法解析（可能隐藏了战绩）',
         };
         this.reportCache.set(cacheKey, { at: Date.now(), report });
+        this.scheduleSave();
         return report;
       }
 
@@ -518,6 +716,7 @@ export class ReportCollector {
         error: undefined,
       };
       this.reportCache.set(cacheKey, { at: Date.now(), report });
+      this.scheduleSave();
       return report;
     } catch (error) {
       return {
@@ -542,6 +741,10 @@ export class ReportCollector {
       position: base.position,
       championId: championId || undefined,
       championName: championMap.get(championId)?.name,
+      // 复用的缓存可能来自上一局/敌方阵营，清掉只在当时有效的字段
+      live: undefined,
+      isEnemy: base.isEnemy,
+      isBot: base.isBot,
       loading: false,
       error: report.error,
     };
@@ -602,6 +805,7 @@ export class ReportCollector {
       info = null;
     }
     this.summonerCache.set(summonerId, { at: Date.now(), info });
+    this.scheduleSave();
     return info;
   }
 
@@ -618,6 +822,7 @@ export class ReportCollector {
       info = null;
     }
     this.summonerByNameCache.set(name, { at: Date.now(), info });
+    this.scheduleSave();
     return info;
   }
 
@@ -626,6 +831,7 @@ export class ReportCollector {
     if (cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.rank;
     const rank = await this.api.getRankedStats(puuid);
     this.rankCache.set(puuid, { at: Date.now(), rank });
+    this.scheduleSave();
     return rank;
   }
 
@@ -748,6 +954,7 @@ export class ReportCollector {
     try {
       this.championMap = await this.api.getChampionMap();
       this.championMapAt = Date.now();
+      this.scheduleSave();
     } catch {
       this.championMap ??= new Map();
     }
