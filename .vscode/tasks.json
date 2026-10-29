@@ -2,12 +2,24 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build: 编译",
+      "label": "build: 编译并启动",
+      "dependsOn": ["build-only: 仅编译", "start: 面板（编译后运行）"],
+      "dependsOrder": "sequence",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "build-only: 仅编译",
       "type": "npm",
       "script": "build",
-      "group": { "kind": "build", "isDefault": true },
+      "group": "build",
       "problemMatcher": ["$tsc"],
-      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "group": "lol-mate-stats-build",
+        "clear": true
+      }
     },
     {
       "label": "typecheck: 类型检查",
@@ -38,7 +50,13 @@
           "endsPattern": "面板已启动"
         }
       },
-      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "group": "lol-mate-stats",
+        "clear": true,
+        "close": true
+      }
     },
     {
       "label": "start: 面板（编译后运行）",
@@ -54,7 +72,13 @@
           "endsPattern": "面板已启动"
         }
       },
-      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "group": "lol-mate-stats",
+        "clear": true,
+        "close": true
+      }
     },
     {
       "label": "demo: 模拟数据预览",
@@ -70,7 +94,13 @@
           "endsPattern": "浏览器打开|按 Ctrl\\+C 退出"
         }
       },
-      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "group": "lol-mate-stats",
+        "clear": true,
+        "close": true
+      }
     },
     {
       "label": "once: 终端读取队友",
