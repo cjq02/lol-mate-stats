@@ -14,6 +14,8 @@ import { printReports } from './report.js';
 import { colorize, dim, fail, header, logTag, ok, sleep, warn } from './util.js';
 
 const VERSION = '0.1.0';
+/** 固定 5 位端口，避免和其它开发服务器抢占 5173 */
+const DEFAULT_PORT = 51730;
 
 interface CliOptions {
   command: string;
@@ -32,7 +34,7 @@ function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     command: 'start',
     args: [],
-    port: Number(process.env.PORT ?? 5173),
+    port: Number(process.env.PORT ?? DEFAULT_PORT),
     recent: Number(process.env.RECENT_GAMES ?? 10),
     open: true,
     json: false,
@@ -89,7 +91,7 @@ function parseArgs(argv: string[]): CliOptions {
     options.command = positional[0] as string;
     options.args = positional.slice(1);
   }
-  if (!Number.isFinite(options.port) || options.port <= 0) options.port = 5173;
+  if (!Number.isFinite(options.port) || options.port <= 0) options.port = DEFAULT_PORT;
   if (!Number.isFinite(options.recent) || options.recent <= 0) options.recent = 10;
   options.recent = Math.min(30, Math.max(1, options.recent));
 
@@ -107,10 +109,18 @@ async function main(): Promise<void> {
   switch (options.command) {
     case 'start':
     case 'watch':
-      await startLive(options);
+      try {
+        await startLive(options);
+      } catch (error) {
+        handleError(error);
+      }
       break;
     case 'demo':
-      await startDemo(options);
+      try {
+        await startDemo(options);
+      } catch (error) {
+        handleError(error);
+      }
       break;
     case 'once':
       await runOnce(options);
@@ -140,7 +150,6 @@ async function startLive(options: CliOptions): Promise<void> {
   }
 
   const source = new LiveSource({ recent: options.recent, quiet: options.quiet });
-  source.start();
 
   const running = await startServer({
     source,
@@ -149,6 +158,7 @@ async function startLive(options: CliOptions): Promise<void> {
     open: options.open,
     quiet: options.quiet,
   });
+  source.start();
 
   if (!options.quiet) {
     console.log(
@@ -532,7 +542,7 @@ ${header('命令')}
   doctor           检查客户端连接与接口可用性
 
 ${header('参数')}
-  -p, --port <n>   面板端口，默认 5173
+  -p, --port <n>   面板端口，默认 51730（固定端口）
   -r, --recent <n> 每位玩家读取的场次，默认 10
       --no-open    不自动打开浏览器
       --json       以 JSON 输出（once / scan）

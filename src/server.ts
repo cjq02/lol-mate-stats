@@ -1,10 +1,19 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { DataSource } from './source.js';
 import { logTag } from './util.js';
+
+const execFileAsync = promisify(execFile);
 
 export interface ServerOptions {
   source: DataSource;
@@ -52,7 +61,7 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
     });
   });
 
-  const port = await listenWithFallback(server, options.port, host);
+  const port = await listenFixed(server, options.port, host);
   const url = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
 
   if (!options.quiet) {
@@ -188,7 +197,7 @@ async function handleRequest(
 
   res
     .writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
-    .end('Not Found\n\n面板地址：http://127.0.0.1:5173/\n');
+    .end(`Not Found\n\n面板地址：http://127.0.0.1:${req.socket.localPort ?? ''}/\n`);
 }
 
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
@@ -241,34 +250,151 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<void>
   }
 }
 
-async function listenWithFallback(server: Server, startPort: number, host: string): Promise<number> {
-  let port = startPort;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    try {
-      await new Promise<void>((resolveListen, rejectListen) => {
-        const onError = (error: NodeJS.ErrnoException): void => {
-          server.off('listening', onListening);
-          rejectListen(error);
-        };
-        const onListening = (): void => {
-          server.off('error', onError);
-          resolveListen();
-        };
-        server.once('error', onError);
-        server.once('listening', onListening);
-        server.listen(port, host);
-      });
-      return port;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'EADDRINUSE' && attempt < 9) {
-        port += 1;
-        continue;
-      }
-      throw error;
+async function listenFixed(server: Server, port: number, host: string): Promise<number> {
+  try {
+    await listenOnce(server, port, host);
+    return port;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
+
+    const owner = await findPortOwner(port);
+    const ours = owner && (isOwnPanelProcess(owner.commandLine) || (await probePanelHealth(port)));
+    if (!owner || !ours) {
+      const detail = owner
+        ? `PID ${owner.pid}（${owner.commandLine || '无法读取命令行'}）`
+        : '未知进程';
+      throw new Error(
+        `端口 ${port} 已被 ${detail} 占用。请先关闭该进程，或用 --port 指定其它端口。`,
+      );
     }
+
+    logTag('web', `端口 ${port} 被旧面板进程 PID ${owner.pid} 占用，正在结束它…`);
+    try {
+      process.kill(owner.pid, 'SIGTERM');
+    } catch {
+      /* 进程可能已经退出 */
+    }
+
+    if (!(await waitForExit(owner.pid, 5_000))) {
+      throw new Error(`端口 ${port} 的旧面板进程 PID ${owner.pid} 未能退出，请手动结束。`);
+    }
+
+    // 进程退出后端口可能还会短暂占用，重试几次
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      try {
+        await listenOnce(server, port, host);
+        return port;
+      } catch (retryError) {
+        if ((retryError as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw retryError;
+        await new Promise((resolveWait) => setTimeout(resolveWait, 200));
+      }
+    }
+    throw new Error(`端口 ${port} 在结束旧进程后仍被占用，请手动检查。`);
   }
-  return port;
+}
+
+function listenOnce(server: Server, port: number, host: string): Promise<void> {
+  return new Promise<void>((resolveListen, rejectListen) => {
+    const onError = (error: NodeJS.ErrnoException): void => {
+      server.off('listening', onListening);
+      rejectListen(error);
+    };
+    const onListening = (): void => {
+      server.off('error', onError);
+      resolveListen();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, host);
+  });
+}
+
+async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+  }
+  return false;
+}
+
+async function findPortOwner(
+  port: number,
+): Promise<{ pid: number; commandLine: string } | null> {
+  if (process.platform !== 'win32') return null;
+  try {
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess`,
+      ],
+      { timeout: 8_000, windowsHide: true },
+    );
+    const pid = Number(stdout.trim());
+    if (!Number.isInteger(pid) || pid <= 0) return null;
+
+    const result = await execFileAsync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue).CommandLine`,
+      ],
+      { timeout: 8_000, windowsHide: true },
+    ).catch(() => ({ stdout: '' }));
+    return { pid, commandLine: result.stdout.trim() };
+  } catch {
+    return null;
+  }
+}
+
+function isOwnPanelProcess(commandLine: string): boolean {
+  return /lol-mate-stats|dist[\\/]index\.js|src[\\/]index\.ts/i.test(commandLine);
+}
+
+/** 端口占用时先确认是不是本项目的面板，避免误杀其它程序 */
+function probePanelHealth(port: number): Promise<boolean> {
+  return new Promise((resolveProbe) => {
+    const req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port,
+        path: '/api/health',
+        method: 'GET',
+        timeout: 1_200,
+      },
+      (response) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk: string) => {
+          body += chunk;
+        });
+        response.on('end', () => {
+          try {
+            const data = JSON.parse(body) as { ok?: boolean; mode?: string };
+            resolveProbe(Boolean(data?.ok && (data.mode === 'live' || data.mode === 'demo')));
+          } catch {
+            resolveProbe(false);
+          }
+        });
+      },
+    );
+    req.on('error', () => resolveProbe(false));
+    req.on('timeout', () => {
+      req.destroy();
+      resolveProbe(false);
+    });
+    req.end();
+  });
 }
 
 export function openBrowser(url: string): void {
