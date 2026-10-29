@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { request as httpsRequest } from 'node:https';
 import { open, readdir, readFile, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -47,7 +48,7 @@ export async function discoverConnection(options: DiscoverOptions = {}): Promise
   const lockfilePaths = candidateLockfiles(options.installDir);
   for (const path of lockfilePaths) {
     const conn = await readLockfile(path);
-    if (conn) return conn;
+    if (conn && (await probeConnection(conn))) return conn;
   }
 
   // 国服 / WeGame：lockfile 可能是 0 字节，只能从客户端日志里找启动参数
@@ -226,23 +227,53 @@ async function fromClientLog(dir: string): Promise<LcuConnection | null> {
   // 文件名以 ISO 时间开头，倒序即为最新
   names.sort((a, b) => b.localeCompare(a));
 
-  for (const name of names.slice(0, 5)) {
+  for (const name of names.slice(0, 3)) {
     const file = join(dir, name);
     const head = await readHead(file);
     if (!head) continue;
     const port = /--app-port=(\d+)/.exec(head)?.[1];
     const password = /--remoting-auth-token=([\w-]+)/.exec(head)?.[1];
     if (!port || !password) continue;
-    return {
+    const conn: LcuConnection = {
       host: '127.0.0.1',
       port: Number(port),
       password,
       protocol: 'https',
       source: `log (${file})`,
     };
+    // 旧日志里的端口可能已经失效，探测通过才返回
+    if (await probeConnection(conn)) return conn;
   }
 
   return null;
+}
+
+function probeConnection(conn: LcuConnection, timeoutMs = 1_500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const auth = `Basic ${Buffer.from(`riot:${conn.password}`).toString('base64')}`;
+    const req = httpsRequest(
+      {
+        host: conn.host,
+        port: conn.port,
+        path: '/lol-gameflow/v1/gameflow-phase',
+        method: 'GET',
+        rejectUnauthorized: false,
+        timeout: timeoutMs,
+        headers: { Authorization: auth },
+      },
+      (response) => {
+        response.resume();
+        const status = response.statusCode ?? 0;
+        resolve(status >= 200 && status < 300);
+      },
+    );
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.end();
+  });
 }
 
 async function readHead(file: string, size = 64 * 1024): Promise<string | null> {

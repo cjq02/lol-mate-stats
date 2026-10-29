@@ -15,6 +15,7 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "once": "tsx src/index.ts once",
+    "scan": "tsx src/index.ts scan",
     "demo": "tsx src/index.ts demo",
     "doctor": "tsx src/index.ts doctor",
     "test": "tsx src/stats/rating.test.ts",
