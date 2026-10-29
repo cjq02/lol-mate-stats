@@ -1050,10 +1050,11 @@ body::before {
 
 .metric span {
   display: block;
-  font-size: 9.5px;
-  letter-spacing: 0.05em;
+  font-size: 9px;
+  letter-spacing: 0.01em;
   color: var(--muted-2);
   margin-bottom: 2px;
+  white-space: nowrap;
 }
 
 .metric b {
@@ -1425,6 +1426,12 @@ code {
 
   .metric b {
     font-size: 12.5px;
+  }
+}
+
+@media (max-width: 1600px) {
+  .board {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
