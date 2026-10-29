@@ -144,6 +144,7 @@ const state = {
   refreshing: false,
   selfPuuid: '',
   matchesBack: null,
+  loadingTimer: null,
 };
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
@@ -716,6 +717,28 @@ function formatGameTime(value) {
   });
 }
 
+function stopLoadingTimer() {
+  if (state.loadingTimer) {
+    clearInterval(state.loadingTimer);
+    state.loadingTimer = null;
+  }
+}
+
+function beginMatchesLoading(text) {
+  stopLoadingTimer();
+  const started = Date.now();
+  els.matchesList.className = 'match-list';
+  els.matchesList.innerHTML = `<div class="search-status"><span class="spinner"></span><span class="match-loading">${escapeHtml(
+    text,
+  )}</span></div>`;
+  state.loadingTimer = setInterval(() => {
+    const label = els.matchesList.querySelector('.match-loading');
+    if (!label) return;
+    const seconds = Math.floor((Date.now() - started) / 1000);
+    label.textContent = `${text} 已用时 ${seconds}s`;
+  }, 500);
+}
+
 function matchRow(game, showScore) {
   const durationMin = game.durationMin ?? Math.round((Number(game.gameDuration) || 0) / 60);
   const score = showScore && Number.isFinite(Number(game.score)) ? Math.round(game.score) : null;
@@ -740,6 +763,7 @@ function matchRow(game, showScore) {
 }
 
 function showMatchesList(games, title, showScore, back) {
+  stopLoadingTimer();
   state.matchesBack = back;
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
@@ -765,8 +789,7 @@ async function openMyMatches() {
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   els.matchesBack.classList.add('hidden');
   els.matchesTitle.textContent = '我的最近战绩';
-  els.matchesList.className = 'match-list';
-  els.matchesList.innerHTML = '<div class="search-status">正在读取最近战绩…</div>';
+  beginMatchesLoading('正在读取最近战绩…');
 
   try {
     const response = await fetch('/api/me/matches?recent=20', { cache: 'no-store' });
@@ -780,6 +803,7 @@ async function openMyMatches() {
     const back = () => showMatchesList(games, title, false, back);
     showMatchesList(games, title, false, back);
   } catch (error) {
+    stopLoadingTimer();
     els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
       error instanceof Error ? error.message : String(error),
     )}</div>`;
@@ -791,8 +815,7 @@ async function openMatchDetail(gameId) {
   els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
   els.matchesBack.classList.toggle('hidden', !state.matchesBack);
   els.matchesTitle.textContent = '对局详情';
-  els.matchesList.className = 'match-list match-cards';
-  els.matchesList.innerHTML = '<div class="search-status">正在读取 10 名玩家的战绩…</div>';
+  beginMatchesLoading('正在读取 10 名玩家的战绩…');
 
   try {
     const response = await fetch(`/api/match/${gameId}?recent=20`, { cache: 'no-store' });
@@ -800,6 +823,7 @@ async function openMatchDetail(gameId) {
     if (!response.ok || data?.ok === false) {
       throw new Error(data?.error ?? `HTTP ${response.status}`);
     }
+    stopLoadingTimer();
     const selfPuuid = data.selfPuuid ?? state.selfPuuid;
     const players = Array.isArray(data.players) ? data.players : [];
     const nodes = players.map((player) =>
@@ -808,12 +832,15 @@ async function openMatchDetail(gameId) {
         modeLabel: data.queueName ?? '近期',
       }),
     );
+    els.matchesList.className = 'match-list match-cards';
     els.matchesList.replaceChildren(...nodes);
     els.matchesTitle.textContent = `${data.queueName ?? '对局'} · ${formatGameTime(
       data.gameCreation,
     )} · 对局详情`;
     els.matchesBack.classList.toggle('hidden', !state.matchesBack);
   } catch (error) {
+    stopLoadingTimer();
+    els.matchesList.className = 'match-list';
     els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
       error instanceof Error ? error.message : String(error),
     )}</div>`;
@@ -821,6 +848,7 @@ async function openMatchDetail(gameId) {
 }
 
 function closeMatches() {
+  stopLoadingTimer();
   els.matchesModal.classList.add('hidden');
   els.matchesList.replaceChildren();
   els.matchesBack.classList.add('hidden');

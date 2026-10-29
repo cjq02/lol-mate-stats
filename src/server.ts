@@ -177,9 +177,15 @@ async function handleRequest(
       ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
       : 20;
     try {
+      logTag('api', `查询玩家 ${name}（最近 ${recent} 场）…`);
       const players = await source.scanPlayer(name, recent);
+      logTag('api', `查询玩家 ${name} 完成：${players.length} 人`);
       sendJson(res, 200, { ok: true, players });
     } catch (error) {
+      logTag(
+        'api',
+        `查询玩家 ${name} 失败：${error instanceof Error ? error.message : String(error)}`,
+      );
       sendJson(res, 502, {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
@@ -221,9 +227,14 @@ async function handleRequest(
       ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
       : 20;
     try {
+      logTag('api', `读取对局 ${gameId} 详情（最近 ${recent} 场）…`);
       const detail = await source.getMatchDetail(gameId, recent);
       sendJson(res, 200, { ok: true, ...detail });
     } catch (error) {
+      logTag(
+        'api',
+        `读取对局 ${gameId} 失败：${error instanceof Error ? error.message : String(error)}`,
+      );
       sendJson(res, 502, {
         ok: false,
         error: error instanceof Error ? error.message : String(error),

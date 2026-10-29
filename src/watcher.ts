@@ -151,13 +151,24 @@ export class LiveSource implements DataSource {
   async getMyMatches(
     recent: number,
   ): Promise<{ summoner: SummonerInfo; games: MatchSummary[] }> {
+    const started = Date.now();
     const api = await this.ensureApi();
     if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
 
     const summoner = await api.getCurrentSummoner();
     if (!summoner.puuid) throw new Error('无法读取当前账号的 puuid');
 
-    const rawGames = await api.getMatchListByPuuid(summoner.puuid, recent);
+    logTag('match', `读取我的最近 ${recent} 场战绩…`);
+    let rawGames;
+    try {
+      rawGames = await api.getMatchListByPuuid(summoner.puuid, recent);
+    } catch (error) {
+      logTag(
+        'match',
+        `读取我的战绩失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
+    }
     const championMap = await api.getChampionMap().catch(() => new Map());
     const games = rawGames
       .map((game) => {
@@ -181,35 +192,75 @@ export class LiveSource implements DataSource {
       })
       .filter((game) => game.gameId > 0);
 
+    logTag(
+      'match',
+      `我的战绩读取完成：${games.length} 场，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
+    );
     return { summoner, games };
   }
 
   /** 某场对局里 10 名玩家的近期战绩 */
   async getMatchDetail(gameId: number, recent: number): Promise<MatchDetail> {
+    const started = Date.now();
     const api = await this.ensureApi();
     if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
 
+    logTag('match', `[${gameId}] 开始读取对局详情（每人最近 ${recent} 场）`);
     const summoner = await api.getCurrentSummoner();
-    const game = await api.getGame(gameId);
+    let game;
+    try {
+      game = await api.getGame(gameId);
+    } catch (error) {
+      logTag(
+        'match',
+        `[${gameId}] 读取对局失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
+    }
+
     const queueId = toNumber(game.queueId);
     const gameMode = modeFromQueue(queueId, game.gameMode);
-    const collector = new ReportCollector(api, { recent });
-    const players = await collector.collectMatch(game, summoner.puuid ?? '', {
-      queueId,
-      mode: gameMode,
-    });
-    const rawDuration = toNumber(game.gameDuration);
+    const participants = game.participants?.length ?? 0;
+    logTag(
+      'match',
+      `[${gameId}] ${queueName(queueId)}，${participants} 名玩家，开始并发读取战绩`,
+    );
 
-    return {
-      gameId,
-      queueId,
-      queueName: queueName(queueId),
-      gameMode,
-      gameCreation: toNumber(game.gameCreation),
-      gameDuration: rawDuration > 100_000 ? Math.round(rawDuration / 1000) : rawDuration,
-      selfPuuid: summoner.puuid,
-      players,
-    };
+    const collector = new ReportCollector(api, { recent });
+    try {
+      const players = await collector.collectMatch(
+        game,
+        summoner.puuid ?? '',
+        { queueId, mode: gameMode },
+        (done, total, name) => {
+          logTag('match', `[${gameId}] ${done}/${total} ${name} 完成`);
+        },
+      );
+      const rawDuration = toNumber(game.gameDuration);
+      logTag(
+        'match',
+        `[${gameId}] 全部完成：${players.length} 人，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
+      );
+
+      return {
+        gameId,
+        queueId,
+        queueName: queueName(queueId),
+        gameMode,
+        gameCreation: toNumber(game.gameCreation),
+        gameDuration: rawDuration > 100_000 ? Math.round(rawDuration / 1000) : rawDuration,
+        selfPuuid: summoner.puuid,
+        players,
+      };
+    } catch (error) {
+      logTag(
+        'match',
+        `[${gameId}] 读取失败（已用时 ${((Date.now() - started) / 1000).toFixed(1)}s）：${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw error;
+    }
   }
 
   stop(): void {
@@ -380,6 +431,8 @@ export class LiveSource implements DataSource {
       modeFromQueue(queueId, game.gameData?.gameMode) ?? this.snapshot.gameMode;
     const context: GameContext | undefined =
       queueId !== undefined || gameMode !== undefined ? { queueId, mode: gameMode } : undefined;
+    const initialCollection = this.snapshot.players.length === 0;
+    let loggedLoaded = 0;
 
     this.busy = true;
     this.patch({
@@ -392,12 +445,23 @@ export class LiveSource implements DataSource {
       message: this.snapshot.players.length ? undefined : '正在读取本局 10 名玩家的战绩…',
       error: undefined,
     });
+    if (initialCollection) {
+      logTag(
+        'match',
+        `本局开始读取 ${members.length} 名玩家（每人最近 ${this.options.recent} 场）…`,
+      );
+    }
 
     try {
       const collector = this.ensureCollector(api);
       const reports = await collector.collectLive(
         members,
         (partial) => {
+          const loaded = partial.filter((player) => !player.loading).length;
+          if (initialCollection && loaded > loggedLoaded) {
+            loggedLoaded = loaded;
+            logTag('match', `本局 ${loaded}/${partial.length} 名玩家完成`);
+          }
           this.patch({ players: partial, collecting: partial.some((player) => player.loading) });
         },
         context,
@@ -420,8 +484,12 @@ export class LiveSource implements DataSource {
             }
           : undefined,
       });
+      if (initialCollection) {
+        logTag('match', `本局数据完成：${reports.length} 名玩家`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      logTag('match', `本局数据读取失败：${message}`);
       this.patch({ collecting: false, error: `读取本局数据失败：${message}` });
     } finally {
       this.busy = false;
@@ -441,6 +509,11 @@ export class LiveSource implements DataSource {
 
     const localMember = session.myTeam.find(
       (member) => member.cellId === session.localPlayerCellId,
+    );
+    let loggedLoaded = 0;
+    logTag(
+      'match',
+      `选人阶段开始读取 ${session.myTeam.length} 名队友（每人最近 ${this.options.recent} 场）…`,
     );
 
     this.patch(
@@ -467,6 +540,11 @@ export class LiveSource implements DataSource {
       const reports = await collector.collect(
         session,
         (partial) => {
+          const loaded = partial.filter((player) => !player.loading).length;
+          if (loaded > loggedLoaded) {
+            loggedLoaded = loaded;
+            logTag('match', `选人阶段 ${loaded}/${partial.length} 名队友完成`);
+          }
           this.patch(
             {
               players: partial,
@@ -489,8 +567,10 @@ export class LiveSource implements DataSource {
         },
         true,
       );
+      logTag('match', `选人阶段读取完成：${reports.length} 名队友`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      logTag('match', `选人阶段读取失败：${message}`);
       this.patch({ collecting: false, error: `读取队友战绩失败：${message}` });
     } finally {
       this.busy = false;

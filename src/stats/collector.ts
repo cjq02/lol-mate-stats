@@ -137,6 +137,7 @@ export class ReportCollector {
     game: RawGame,
     selfPuuid: string,
     context?: GameContext,
+    onProgress?: (done: number, total: number, name: string) => void,
   ): Promise<PlayerReport[]> {
     const participants = game.participants ?? [];
     const identities = game.participantIdentities ?? [];
@@ -211,8 +212,11 @@ export class ReportCollector {
       return { member, base, isEnemy: entry.team !== selfTeam, isBot };
     });
 
+    let done = 0;
     const reports = await mapLimit(prepared, 3, async ({ member, base, isEnemy, isBot }) => {
       const report = isBot ? base : await this.buildFullReport(member, base, championMap, context);
+      done += 1;
+      onProgress?.(done, prepared.length, report.displayName);
       return { ...report, isEnemy, isBot };
     });
 
