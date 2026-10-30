@@ -157,6 +157,7 @@ const state = {
   archiveLoaded: 0,
   archiveTotal: 0,
   archiveLoading: false,
+  itemIcons: null,
 };
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
@@ -243,15 +244,38 @@ function champPath(championId) {
   return `/lol-game-data/assets/v1/champion-icons/${championId}.png`;
 }
 
-function iconHtml(assetPath, label, size) {
+function iconHtml(assetPath, label, size, title) {
   const text = String(label ?? '?');
   const hue = hueFor(text);
   const image = assetPath
     ? `<img src="/api/asset?path=${encodeURIComponent(assetPath)}" alt="" loading="lazy" onerror="this.remove()" />`
     : '';
-  return `<span class="icon ${size}" style="--hue:${hue}"><span class="fb">${escapeHtml(
+  return `<span class="icon ${size}" title="${escapeHtml(title ?? '')}" style="--hue:${hue}"><span class="fb">${escapeHtml(
     text.slice(0, 1),
   )}</span>${image}</span>`;
+}
+
+let itemIconsRequest = null;
+function loadItemIcons() {
+  if (state.itemIcons) return Promise.resolve(state.itemIcons);
+  if (!itemIconsRequest) {
+    itemIconsRequest = fetch('/api/items', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        state.itemIcons =
+          payload?.items && typeof payload.items === 'object' ? payload.items : {};
+        // 装备数据晚到时，如果正在看本局详情，重新渲染一次把图标补上
+        if (state.matchDetail && state.matchTab === 'scoreboard') {
+          renderScoreboard(state.matchDetail);
+        }
+        return state.itemIcons;
+      })
+      .catch(() => {
+        state.itemIcons = {};
+        return state.itemIcons;
+      });
+  }
+  return itemIconsRequest;
 }
 
 /* ------------------------------------------------------------------ */
@@ -532,9 +556,10 @@ function buildCard(player, isLocal, options = {}) {
   const itemRow =
     thisGame && thisGame.items?.length
       ? `<div class="items">${thisGame.items
-          .map((itemId) =>
-            iconHtml(`/lol-game-data/assets/v1/item-icons/${itemId}.png`, String(itemId), 'sm'),
-          )
+          .map((itemId) => {
+            const meta = state.itemIcons?.[String(itemId)];
+            return iconHtml(meta?.icon ?? null, meta?.name ?? String(itemId), 'sm', meta?.name);
+          })
           .join('')}</div>`
       : '';
 
@@ -1441,6 +1466,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 fetchSnapshot();
+void loadItemIcons();
 if (!STATIC_MODE) {
   connectStream();
   setInterval(fetchSnapshot, 20_000);

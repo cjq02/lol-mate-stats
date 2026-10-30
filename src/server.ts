@@ -45,6 +45,7 @@ const STATIC_FILES = new Set(['/', '/index.html', '/app.js', '/style.css']);
 const fileCache = new Map<string, { body: Buffer; type: string }>();
 const assetCache = new Map<string, { at: number; result: { body: Buffer; contentType: string } }>();
 const ASSET_TTL = 60 * 60_000;
+let itemsCache: { at: number; items: Record<string, { icon: string; name: string }> } | undefined;
 const ASSET_CACHE_LIMIT = 300;
 
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
@@ -319,6 +320,36 @@ async function handleRequest(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/items') {
+    const now = Date.now();
+    if (!itemsCache || now - itemsCache.at > ASSET_TTL) {
+      const asset = await source.getAsset('/lol-game-data/assets/v1/items.json');
+      if (!asset) {
+        sendJson(res, 404, { ok: false, error: '无法读取装备数据' });
+        return;
+      }
+      try {
+        const list = JSON.parse(asset.body.toString('utf8')) as Array<{
+          id?: number;
+          name?: string;
+          iconPath?: string;
+        }>;
+        const items: Record<string, { icon: string; name: string }> = {};
+        for (const item of list) {
+          if (typeof item?.id === 'number' && item.iconPath) {
+            items[String(item.id)] = { icon: item.iconPath, name: item.name ?? '' };
+          }
+        }
+        itemsCache = { at: now, items };
+      } catch {
+        sendJson(res, 500, { ok: false, error: '装备数据解析失败' });
+        return;
+      }
+    }
+    sendJson(res, 200, { ok: true, items: itemsCache.items });
     return;
   }
 
