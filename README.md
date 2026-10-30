@@ -58,6 +58,12 @@ npm run doctor     # 诊断：客户端连接、接口、大区、战绩是否�
 
 环境变量：`LCU_PORT`、`LCU_PASSWORD`、`LOL_LOCKFILE`、`LOL_INSTALL_DIR`、`LOL_MATE_DB`（SQLite 数据库路径，兼容旧的 `LOL_MATE_CACHE`）。
 
+想自己指定数据库位置时（设置后需重新打开终端 / VS Code）：
+
+```powershell
+setx LOL_MATE_DB "E:\lol-mate-stats\cache.db"
+```
+
 ### 找不到客户端时
 
 1. 确认客户端已经**登录并进入大厅**（只启动到登录页时接口不可用）。
