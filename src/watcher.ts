@@ -11,14 +11,24 @@ import type {
 } from './types.js';
 import type { AssetResult, DataSource } from './source.js';
 import { LcuApi } from './lcu/api.js';
+import type { ChampionSummary } from './lcu/api.js';
 import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { openEventStream } from './lcu/events.js';
 import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
 import { analyzeParticipant } from './stats/analyze.js';
 import { ReportCollector } from './stats/collector.js';
+import {
+  archiveGames,
+  countPlayerMatches,
+  getPlayerMatches,
+  getSavedSelfPuuid,
+  isGameArchived,
+  saveSelfPuuid,
+  type ArchivedMatch,
+} from './stats/archive.js';
 import { modeFromQueue, queueName } from './stats/constants.js';
 import { gradeOf } from './stats/rating.js';
-import { nowIso, logTag, sleep, toNumber } from './util.js';
+import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
 export interface LiveSourceOptions {
   recent?: number;
@@ -167,6 +177,7 @@ export class LiveSource implements DataSource {
 
     const summoner = await api.getCurrentSummoner();
     if (!summoner.puuid) throw new Error('无法读取当前账号的 puuid');
+    saveSelfPuuid(summoner.puuid);
 
     logTag('match', `读取我的最近 ${recent} 场战绩…`);
     let rawGames;
@@ -202,6 +213,9 @@ export class LiveSource implements DataSource {
       })
       .filter((game) => game.gameId > 0);
 
+    // 后台补齐存档：只请求还没进数据库的对局，不阻塞列表返回
+    void this.archiveMissingGames(api, games, championMap);
+
     logTag(
       'match',
       `我的战绩读取完成：${games.length} 场，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
@@ -221,6 +235,7 @@ export class LiveSource implements DataSource {
 
     logTag('match', `[${gameId}] 开始读取对局详情（每人最近 ${recent} 场）`);
     const summoner = await api.getCurrentSummoner();
+    saveSelfPuuid(summoner.puuid ?? '');
     let game;
     try {
       game = await api.getGame(gameId);
@@ -368,6 +383,45 @@ export class LiveSource implements DataSource {
       );
       throw error;
     }
+  }
+
+  /** 后台把“我的战绩”里尚未归档的对局补进 SQLite，不阻塞列表返回 */
+  private async archiveMissingGames(
+    api: LcuApi,
+    games: MatchSummary[],
+    championMap: Map<number, ChampionSummary>,
+  ): Promise<void> {
+    const missing = [
+      ...new Set(games.map((game) => game.gameId).filter((id) => id > 0 && !isGameArchived(id))),
+    ];
+    if (!missing.length) return;
+
+    logTag('archive', `正在把 ${missing.length} 场对局保存到本地数据库…`);
+    let done = 0;
+    await mapLimit(missing, 2, async (gameId) => {
+      const game = await api.getGame(gameId).catch(() => null);
+      if (game) archiveGames([game], championMap);
+      done += 1;
+      if (done === missing.length) logTag('archive', `已保存 ${done} 场对局`);
+    });
+  }
+
+  /** 长期存档：查询某个玩家（默认自己）的历史对局 */
+  async getArchivedMatches(
+    limit: number,
+    offset: number,
+    puuid?: string,
+  ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }> {
+    let id = puuid?.trim() || getSavedSelfPuuid() || '';
+    if (!id) {
+      const api = await this.ensureApi();
+      const summoner = await api?.getCurrentSummoner().catch(() => null);
+      id = summoner?.puuid ?? '';
+      if (id) saveSelfPuuid(id);
+    }
+    if (!id) return { puuid: '', total: 0, games: [] };
+    const total = countPlayerMatches(id);
+    return { puuid: id, total, games: getPlayerMatches(id, limit, offset) };
   }
 
   async stop(): Promise<void> {

@@ -1,7 +1,3 @@
-import { mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import type {
   AnalyzedGame,
   ChampSelectMember,
@@ -19,8 +15,10 @@ import { mapLimit, round, toNumber, truncate } from '../util.js';
 import type { ChampionSummary, LcuApi } from '../lcu/api.js';
 import { LcuError } from '../lcu/http.js';
 import { analyzeGame } from './analyze.js';
+import { archiveGames } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
 import { summarize } from './rating.js';
+import { getDb } from './store.js';
 
 export interface CollectorOptions {
   /** 拉取最近多少场对局，默认 10 */
@@ -47,10 +45,6 @@ interface CachedReport {
 
 const DAY_MS = 24 * 60 * 60_000;
 const CACHE_VERSION = 1;
-const CACHE_DB =
-  process.env.LOL_MATE_CACHE?.trim() || join(homedir(), '.lol-mate-stats', 'cache.db');
-/** 缓存数据库路径，启动日志里会打印 */
-export const CACHE_DB_PATH = CACHE_DB;
 const CACHE_SAVE_DELAY = 2_000;
 /** 单类缓存最多落盘多少条，避免数据库无限增长 */
 const MAX_PERSISTED = 500;
@@ -91,9 +85,6 @@ export class ReportCollector {
   private saveTimer?: NodeJS.Timeout;
   /** 串行写库，避免多个缓存同时更新时互相覆盖 */
   private saveQueue: Promise<void> = Promise.resolve();
-  /** SQLite 连接，懒加载；失败后本次进程不再重试 */
-  private db?: DatabaseSync;
-  private dbFailed = false;
 
   constructor(
     private readonly api: LcuApi,
@@ -117,12 +108,12 @@ export class ReportCollector {
       clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
     }
-    const db = this.openDb();
+    const db = getDb();
     if (db) {
       try {
         db.exec(
           'DELETE FROM reports; DELETE FROM summoners; DELETE FROM summoners_by_name;' +
-            ' DELETE FROM ranks; DELETE FROM champion_map; DELETE FROM meta;',
+            " DELETE FROM ranks; DELETE FROM champion_map; DELETE FROM meta WHERE k IN ('version', 'savedAt');",
         );
       } catch {
         /* 清缓存失败不影响主流程 */
@@ -146,7 +137,7 @@ export class ReportCollector {
 
   /** 启动时恢复报告/召唤师/段位/英雄缓存；对局原始详情不落盘，避免数据库过大 */
   private restoreCache(): void {
-    const db = this.openDb();
+    const db = getDb();
     if (!db) return;
 
     const now = Date.now();
@@ -232,54 +223,6 @@ export class ReportCollector {
     }
   }
 
-  private openDb(): DatabaseSync | undefined {
-    if (this.db) return this.db;
-    if (this.dbFailed) return undefined;
-    try {
-      mkdirSync(dirname(CACHE_DB), { recursive: true });
-      const db = new DatabaseSync(CACHE_DB);
-      db.exec(`
-        PRAGMA journal_mode = WAL;
-        PRAGMA synchronous = NORMAL;
-        CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS reports (
-          cache_key TEXT PRIMARY KEY,
-          at INTEGER NOT NULL,
-          payload TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_reports_at ON reports(at);
-        CREATE TABLE IF NOT EXISTS summoners (
-          summoner_id INTEGER PRIMARY KEY,
-          at INTEGER NOT NULL,
-          payload TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_summoners_at ON summoners(at);
-        CREATE TABLE IF NOT EXISTS summoners_by_name (
-          name TEXT PRIMARY KEY,
-          at INTEGER NOT NULL,
-          payload TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_summoners_by_name_at ON summoners_by_name(at);
-        CREATE TABLE IF NOT EXISTS ranks (
-          puuid TEXT PRIMARY KEY,
-          at INTEGER NOT NULL,
-          payload TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_ranks_at ON ranks(at);
-        CREATE TABLE IF NOT EXISTS champion_map (
-          id INTEGER PRIMARY KEY CHECK (id = 1),
-          at INTEGER NOT NULL,
-          payload TEXT NOT NULL
-        );
-      `);
-      this.db = db;
-      return db;
-    } catch {
-      this.dbFailed = true;
-      return undefined;
-    }
-  }
-
   private scheduleSave(): void {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(() => {
@@ -335,7 +278,7 @@ export class ReportCollector {
   }
 
   private writeCache(): void {
-    const db = this.openDb();
+    const db = getDb();
     if (!db) return;
 
     const data = this.serializeCache();
@@ -517,6 +460,7 @@ export class ReportCollector {
     if (!participants.length) return [];
 
     const championMap = await this.getChampionMap();
+    archiveGames([game], championMap);
     const entries = participants
       .map((participant, index) => {
         const identity = identities.find(
@@ -1061,7 +1005,9 @@ export class ReportCollector {
       return this.getGameDetail(gameId);
     });
 
-    return detailed.filter((game): game is RawGame => game !== null);
+    const loaded = detailed.filter((game): game is RawGame => game !== null);
+    if (loaded.length) archiveGames(loaded, await this.getChampionMap());
+    return loaded;
   }
 
   /** 战绩服务异常时指数退避：60s → 120s → 240s，封顶 5 分钟 */

@@ -150,6 +150,11 @@ const state = {
   loadingProgress: null,
   matchDetail: null,
   matchTab: 'recent',
+  myGames: [],
+  archiveOffset: 0,
+  archiveLoaded: 0,
+  archiveTotal: 0,
+  archiveLoading: false,
 };
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
@@ -973,31 +978,138 @@ function openMatches(player) {
   showMatchesList(games, title, true, back);
 }
 
+function mergeMatchLists(...lists) {
+  const byId = new Map();
+  for (const list of lists) {
+    for (const game of list ?? []) {
+      if (!game || game.gameId === undefined) continue;
+      const key = String(game.gameId);
+      const previous = byId.get(key);
+      byId.set(key, previous ? { ...previous, ...game } : game);
+    }
+  }
+  return [...byId.values()].sort(
+    (a, b) => (Number(b.gameCreation) || 0) - (Number(a.gameCreation) || 0),
+  );
+}
+
+function renderMyMatches() {
+  const games = state.myGames ?? [];
+  showMatchesList(games, `我的战绩 · ${games.length} 场`, false, () => renderMyMatches());
+
+  if (state.archiveLoaded < state.archiveTotal) {
+    const remaining = state.archiveTotal - state.archiveLoaded;
+    els.matchesList.insertAdjacentHTML(
+      'beforeend',
+      `<div class="archive-more"><button class="btn" type="button" data-action="archive-more">加载更早的战绩（还有 ${remaining} 场）</button></div>`,
+    );
+  } else if (state.archiveTotal > 0) {
+    els.matchesList.insertAdjacentHTML(
+      'beforeend',
+      `<div class="archive-more"><span>已加载全部历史存档（共 ${state.archiveTotal} 场）</span></div>`,
+    );
+  }
+}
+
+async function loadMoreArchive(button) {
+  if (state.archiveLoading) return;
+  state.archiveLoading = true;
+  button.disabled = true;
+  button.textContent = '正在读取历史存档…';
+  try {
+    const response = await fetch(
+      `/api/archive/matches?limit=100&offset=${state.archiveOffset}`,
+      { cache: 'no-store' },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    const incoming = Array.isArray(payload.games) ? payload.games : [];
+    state.archiveTotal = Number(payload.total) || state.archiveTotal;
+    state.archiveOffset += incoming.length;
+    state.archiveLoaded += incoming.length;
+    if (!incoming.length) state.archiveLoaded = state.archiveTotal;
+    state.myGames = mergeMatchLists(state.myGames, incoming);
+    renderMyMatches();
+  } catch (error) {
+    els.notice.textContent = `读取历史存档失败：${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    els.notice.classList.remove('hidden');
+    setTimeout(() => els.notice.classList.add('hidden'), 8000);
+    button.disabled = false;
+    button.textContent = '加载更早的战绩';
+  } finally {
+    state.archiveLoading = false;
+  }
+}
+
 async function openMyMatches() {
   state.matchesBack = null;
+  state.matchDetail = null;
+  state.myGames = [];
+  state.archiveOffset = 0;
+  state.archiveLoaded = 0;
+  state.archiveTotal = 0;
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   els.matchesBack.classList.add('hidden');
   els.matchesTitle.textContent = '我的最近战绩';
   beginMatchesLoading('正在读取最近战绩…');
 
+  let games = [];
+  let lcuError = '';
+
   try {
-    // “我的战绩”只是一次列表请求，不逐场分析，可以比队友的 10 场多展示一些
+    // “我的战绩”只拉列表，不逐场分析，可以比队友的 10 场多展示一些
     const response = await fetch('/api/me/matches?recent=30', { cache: 'no-store' });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok === false) {
       throw new Error(payload?.error ?? `HTTP ${response.status}`);
     }
     state.selfPuuid = payload.summoner?.puuid ?? state.selfPuuid;
-    const games = Array.isArray(payload.games) ? payload.games : [];
-    const title = `我的最近 ${games.length} 场`;
-    const back = () => showMatchesList(games, title, false, back);
-    showMatchesList(games, title, false, back);
+    games = Array.isArray(payload.games) ? payload.games : [];
   } catch (error) {
-    stopLoadingTimer();
-    els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
-      error instanceof Error ? error.message : String(error),
-    )}</div>`;
+    lcuError = error instanceof Error ? error.message : String(error);
+  }
+
+  try {
+    // 客户端战绩读不到时，历史存档仍然可用
+    const response = await fetch('/api/archive/matches?limit=100&offset=0', {
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok && payload?.ok !== false) {
+      const archived = Array.isArray(payload.games) ? payload.games : [];
+      state.archiveTotal = Number(payload.total) || archived.length;
+      state.archiveOffset = archived.length;
+      state.archiveLoaded = archived.length;
+      games = mergeMatchLists(games, archived);
+    } else if (!games.length) {
+      lcuError ||= payload?.error ?? `历史存档 HTTP ${response.status}`;
+    }
+  } catch (error) {
+    if (!games.length) {
+      lcuError ||= error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  stopLoadingTimer();
+  state.myGames = games;
+  if (!games.length) {
+    els.matchesList.innerHTML = `<div class="search-status${
+      lcuError ? ' error' : ''
+    }">${lcuError ? `读取失败：${escapeHtml(lcuError)}` : '还没有对局记录'}</div>`;
+    els.matchesTitle.textContent = '我的战绩';
+    return;
+  }
+
+  renderMyMatches();
+  if (lcuError) {
+    els.notice.textContent = `客户端战绩读取失败，已显示历史存档：${lcuError}`;
+    els.notice.classList.remove('hidden');
+    setTimeout(() => els.notice.classList.add('hidden'), 8000);
   }
 }
 
@@ -1125,6 +1237,11 @@ els.matchesBack.addEventListener('click', () => {
   if (typeof state.matchesBack === 'function') state.matchesBack();
 });
 els.matchesList.addEventListener('click', (event) => {
+  const more = event.target.closest('[data-action="archive-more"]');
+  if (more) {
+    void loadMoreArchive(more);
+    return;
+  }
   const row = event.target.closest('[data-game-id]');
   if (!row) return;
   void openMatchDetail(Number(row.dataset.gameId));

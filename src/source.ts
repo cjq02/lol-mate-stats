@@ -1,4 +1,5 @@
 import type { MatchDetail, MatchSummary, PlayerReport, Snapshot, SummonerInfo } from './types.js';
+import type { ArchivedMatch } from './stats/archive.js';
 
 export interface AssetResult {
   body: Buffer;
@@ -18,6 +19,12 @@ export interface DataSource {
   scanPlayer?(name: string, recent: number): Promise<PlayerReport[]>;
   /** 首页“我的战绩”：当前账号最近对局列表 */
   getMyMatches?(recent: number): Promise<{ summoner: SummonerInfo; games: MatchSummary[] }>;
+  /** 长期存档：某个玩家（默认自己）的历史对局 */
+  getArchivedMatches?(
+    limit: number,
+    offset: number,
+    puuid?: string,
+  ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }>;
   /** 某场对局里 10 名玩家的近期战绩卡片 */
   getMatchDetail?(
     gameId: number,

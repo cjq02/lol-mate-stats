@@ -6,7 +6,8 @@ import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { findClientLogDir, probeEdge, readEdgeDiagnostics } from './lcu/edge.js';
 import { fetchLiveGame, liveMembersOf } from './lcu/live.js';
 import { modeFromQueue } from './stats/constants.js';
-import { CACHE_DB_PATH, ReportCollector } from './stats/collector.js';
+import { ReportCollector } from './stats/collector.js';
+import { DB_PATH } from './stats/store.js';
 import { LiveSource } from './watcher.js';
 import { DemoSource } from './demo.js';
 import { openBrowser, startServer } from './server.js';
@@ -151,7 +152,7 @@ async function startLive(options: CliOptions): Promise<void> {
 
   const source = new LiveSource({ recent: options.recent, quiet: options.quiet });
   if (!options.quiet) {
-    logTag('cache', `其他玩家战绩缓存 24 小时；自己的战绩每次实时读取（数据库：${CACHE_DB_PATH}）`);
+    logTag('cache', `其他玩家战绩缓存 24 小时；自己的战绩每次实时读取（数据库：${DB_PATH}）`);
   }
 
   const running = await startServer({

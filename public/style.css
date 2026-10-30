@@ -408,6 +408,17 @@ body::before {
   padding: 6px 9px;
 }
 
+.archive-more {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px;
+}
+
+.archive-more span {
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
 .match-list .who {
   display: flex;
   align-items: center;

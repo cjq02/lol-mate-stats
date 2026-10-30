@@ -226,6 +226,30 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/archive/matches') {
+    if (!source.getArchivedMatches) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持历史存档' });
+      return;
+    }
+    const rawLimit = Number(url.searchParams.get('limit') ?? 100);
+    const rawOffset = Number(url.searchParams.get('offset') ?? 0);
+    const limit = Number.isFinite(rawLimit)
+      ? Math.min(200, Math.max(1, Math.trunc(rawLimit)))
+      : 100;
+    const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.trunc(rawOffset)) : 0;
+    const puuid = url.searchParams.get('puuid')?.trim() || undefined;
+    try {
+      const data = await source.getArchivedMatches(limit, offset, puuid);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (error) {
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   const matchStreamRoute = /^\/api\/match\/(\d+)\/stream$/.exec(url.pathname);
   if (method === 'GET' && matchStreamRoute) {
     if (!source.getMatchDetail) {
