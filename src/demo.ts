@@ -224,6 +224,7 @@ function generateGames(player: DemoPlayer, seed: number): AnalyzedGame[] {
       csPerMin: round(csPerMin, 1),
       gold: Math.round(300 + durationMin * (320 + random() * 120)),
       damage,
+      heal: Math.round(damage * (0.15 + random() * 0.5)),
       damageShare: round(damageShare, 3),
       damagePerMin: Math.round(damagePerMin),
       tankShare: round(tankShare, 3),

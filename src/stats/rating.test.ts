@@ -33,6 +33,7 @@ interface GameOverrides {
   queueId?: number;
   championId?: number;
   gameCreation?: number;
+  heal?: number;
 }
 
 function makeGame(index: number, lane: Lane, overrides: GameOverrides = {}): AnalyzedGame {
@@ -68,6 +69,7 @@ function makeGame(index: number, lane: Lane, overrides: GameOverrides = {}): Ana
     csPerMin,
     gold: 12_000,
     damage,
+    heal: overrides.heal ?? 4_000,
     damageShare,
     damagePerMin: Math.round(damagePerMin),
     tankShare,

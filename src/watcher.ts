@@ -316,6 +316,7 @@ export class LiveSource implements DataSource {
           gold: toNumber(stats.goldEarned),
           damage: toNumber(stats.totalDamageDealtToChampions),
           damageTaken: toNumber(stats.totalDamageTaken),
+          heal: toNumber(stats.totalHeal),
           vision: toNumber(stats.visionScore),
           win: stats.win === true || stats.win === 1,
           items: [

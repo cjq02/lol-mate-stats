@@ -206,6 +206,7 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
   const avgKillParticipation = average(sorted.map((game) => game.killParticipation));
   const avgCsPerMin = average(sorted.map((game) => game.csPerMin));
   const avgVisionPerMin = average(sorted.map((game) => game.visionPerMin));
+  const avgHeal = average(sorted.map((game) => game.heal));
   const avgDurationMin = average(sorted.map((game) => game.durationMin));
   const avgAssists = average(sorted.map((game) => game.assists));
   const avgTankShare = average(sorted.map((game) => game.tankShare));
@@ -299,6 +300,7 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
     avgCsPerMin: round(avgCsPerMin, 1),
     avgVisionPerMin: round(avgVisionPerMin, 2),
     avgDeaths: round(avgDeaths, 1),
+    avgHeal: Math.round(avgHeal),
     avgDurationMin: round(avgDurationMin, 1),
     streak,
     rating: ratingRounded,

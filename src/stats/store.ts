@@ -172,6 +172,7 @@ export function getDb(): DatabaseSync | undefined {
         gold INTEGER NOT NULL,
         damage INTEGER NOT NULL,
         damage_taken INTEGER NOT NULL,
+        heal INTEGER NOT NULL DEFAULT 0,
         vision INTEGER NOT NULL,
         is_bot INTEGER NOT NULL DEFAULT 0,
         score INTEGER,
@@ -181,6 +182,17 @@ export function getDb(): DatabaseSync | undefined {
       CREATE INDEX IF NOT EXISTS idx_mp_puuid ON match_participants(puuid);
       CREATE INDEX IF NOT EXISTS idx_mp_game ON match_participants(game_id);
     `);
+    // 旧版本数据库没有 heal 列，启动时补上
+    try {
+      const columns = connection
+        .prepare('PRAGMA table_info(match_participants)')
+        .all() as unknown as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === 'heal')) {
+        connection.exec('ALTER TABLE match_participants ADD COLUMN heal INTEGER NOT NULL DEFAULT 0');
+      }
+    } catch {
+      /* 补列失败时按 0 处理 */
+    }
     db = connection;
     return db;
   } catch {

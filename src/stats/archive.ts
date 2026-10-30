@@ -23,6 +23,7 @@ export interface ArchivedMatch {
   gold: number;
   damage: number;
   damageTaken: number;
+  heal: number;
   vision: number;
   score?: number;
   tags: string[];
@@ -87,8 +88,8 @@ export function archiveGames(games: RawGame[], championMap: Map<number, Champion
     `INSERT OR REPLACE INTO match_participants
      (game_id, participant_id, puuid, summoner_id, display_name, team_id, champion_id,
       champion_name, position, win, kills, deaths, assists, cs, gold, damage, damage_taken,
-      vision, is_bot, score, tags)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      heal, vision, is_bot, score, tags)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const now = Date.now();
@@ -151,6 +152,7 @@ export function archiveGames(games: RawGame[], championMap: Map<number, Champion
           stat(stats, 'goldEarned'),
           stat(stats, 'totalDamageDealtToChampions'),
           stat(stats, 'totalDamageTaken'),
+          stat(stats, 'totalHeal'),
           stat(stats, 'visionScore'),
           bot ? 1 : 0,
           analyzed?.score ?? null,
@@ -225,7 +227,7 @@ export function getPlayerMatches(
         `SELECT m.game_id, m.queue_id, m.game_creation, m.duration_seconds,
                 p.champion_id, p.champion_name, p.position, p.win,
                 p.kills, p.deaths, p.assists, p.cs, p.gold, p.damage,
-                p.damage_taken, p.vision, p.score, p.tags
+                p.damage_taken, p.heal, p.vision, p.score, p.tags
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
          WHERE p.puuid = ?
@@ -248,6 +250,7 @@ export function getPlayerMatches(
       gold: number;
       damage: number;
       damage_taken: number;
+      heal: number;
       vision: number;
       score: number | null;
       tags: string | null;
@@ -280,6 +283,7 @@ export function getPlayerMatches(
         gold: Number(row.gold),
         damage: Number(row.damage),
         damageTaken: Number(row.damage_taken),
+        heal: Number(row.heal),
         vision: Number(row.vision),
         score: row.score === null ? undefined : Number(row.score),
         tags,

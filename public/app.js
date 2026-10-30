@@ -447,6 +447,7 @@ function buildCard(player, isLocal, options = {}) {
         }
         <div class="metric"><span>场均死亡</span><b>${num(recent.avgDeaths, 1)}</b></div>
         <div class="metric"><span>场均伤害</span><b>${kilo(recent.avgDamage)}</b></div>
+        <div class="metric"><span>场均治疗</span><b>${kilo(recent.avgHeal ?? 0)}</b></div>
         ${
           recent.afkGames
             ? `<div class="metric afk-metric"><span>疑似挂机</span><b>${recent.afkGames} 场</b></div>`
@@ -506,6 +507,7 @@ function buildCard(player, isLocal, options = {}) {
         <span class="live-stat">经济 <b>${kilo(thisGame.gold)}</b></span>
         <span class="live-stat">伤害 <b>${kilo(thisGame.damage)}</b></span>
         <span class="live-stat">承伤 <b>${kilo(thisGame.damageTaken)}</b></span>
+        <span class="live-stat">治疗 <b>${kilo(thisGame.heal)}</b></span>
         ${
           visionGame
             ? `<span class="live-stat">视野 <b>${thisGame.vision}</b></span>`
@@ -893,6 +895,122 @@ function matchRow(game, showScore) {
   </button>`;
 }
 
+function buildRadarPanel(detail) {
+  const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
+  const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
+  const self = scoreboard.find((player) => player.puuid && player.puuid === selfPuuid);
+  if (!self) return null;
+
+  const teamKills = (player) =>
+    scoreboard
+      .filter((item) => item.teamId === player.teamId)
+      .reduce((sum, item) => sum + (Number(item.kills) || 0), 0);
+
+  const metrics = [
+    {
+      label: '参团',
+      value: (player) => {
+        const kills = teamKills(player);
+        return kills > 0 ? ((player.kills + player.assists) / kills) * 100 : 0;
+      },
+      format: (value) => `${Math.round(value)}%`,
+    },
+    { label: '经济', value: (player) => Number(player.gold) || 0, format: kilo },
+    {
+      label: 'KDA',
+      value: (player) =>
+        (Number(player.kills) + Number(player.assists)) / Math.max(1, Number(player.deaths)),
+      format: (value) => num(value, 2),
+    },
+    { label: '承伤', value: (player) => Number(player.damageTaken) || 0, format: kilo },
+    { label: '伤害', value: (player) => Number(player.damage) || 0, format: kilo },
+    { label: '治疗', value: (player) => Number(player.heal) || 0, format: kilo },
+  ];
+
+  const series = metrics.map((metric) => {
+    const values = scoreboard.map((player) => metric.value(player));
+    const max = Math.max(1, ...values);
+    const selfValue = metric.value(self);
+    const avgValue = values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+    return {
+      ...metric,
+      selfValue,
+      avgValue,
+      selfRatio: (selfValue / max) * 100,
+      avgRatio: (avgValue / max) * 100,
+    };
+  });
+
+  const width = 280;
+  const height = 250;
+  const cx = 140;
+  const cy = 116;
+  const radius = 80;
+  const angle = (index) => -Math.PI / 2 + (index * Math.PI) / 3;
+  const at = (index, ratio) => [
+    cx + Math.cos(angle(index)) * radius * (ratio / 100),
+    cy + Math.sin(angle(index)) * radius * (ratio / 100),
+  ];
+  const polygon = (ratios) =>
+    ratios
+      .map((ratio, index) =>
+        at(index, Math.max(0, Math.min(100, ratio)))
+          .map((value) => value.toFixed(1))
+          .join(','),
+      )
+      .join(' ');
+
+  const rings = [25, 50, 75, 100]
+    .map((level) => `<polygon points="${polygon(series.map(() => level))}" class="radar-ring"/>`)
+    .join('');
+  const axes = series
+    .map((_, index) => {
+      const [x, y] = at(index, 100);
+      return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="radar-axis"/>`;
+    })
+    .join('');
+  const labels = series
+    .map((metric, index) => {
+      const point = angle(index);
+      const x = cx + Math.cos(point) * radius * 1.28;
+      const y = cy + Math.sin(point) * radius * 1.28;
+      const anchor =
+        Math.cos(point) > 0.25 ? 'start' : Math.cos(point) < -0.25 ? 'end' : 'middle';
+      const dy = Math.sin(point) > 0.6 ? '0.9em' : Math.sin(point) < -0.6 ? '-0.2em' : '0.35em';
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" dy="${dy}" class="radar-label">${metric.label}</text>`;
+    })
+    .join('');
+
+  const panel = document.createElement('section');
+  panel.className = 'radar-panel';
+  panel.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="本局数据对比">
+      ${rings}
+      ${axes}
+      <polygon points="${polygon(series.map((metric) => metric.avgRatio))}" class="radar-avg"/>
+      <polygon points="${polygon(series.map((metric) => metric.selfRatio))}" class="radar-self"/>
+      ${labels}
+    </svg>
+    <div class="radar-side">
+      <div class="radar-head"><b>本局六边形</b><span>你 vs 10 人平均</span></div>
+      <div class="radar-legend">
+        <span><i class="radar-dot self"></i>你</span>
+        <span><i class="radar-dot avg"></i>本局平均</span>
+      </div>
+      <div class="radar-values">
+        ${series
+          .map(
+            (metric) =>
+              `<span><b>${metric.label}</b> 你 ${metric.format(
+                metric.selfValue,
+              )} · 平均 ${metric.format(metric.avgValue)}</span>`,
+          )
+          .join('')}
+      </div>
+    </div>`;
+  return panel;
+}
+
 function renderScoreboard(detail) {
   const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
   const players = Array.isArray(detail.players) ? detail.players : [];
@@ -929,7 +1047,8 @@ function renderScoreboard(detail) {
   });
 
   els.matchesList.className = 'match-list match-cards';
-  els.matchesList.replaceChildren(...nodes);
+  const radar = buildRadarPanel(detail);
+  els.matchesList.replaceChildren(...(radar ? [radar, ...nodes] : nodes));
 }
 
 function renderMatchTab(tab) {

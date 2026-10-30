@@ -128,6 +128,7 @@ export interface AnalyzedGame {
   csPerMin: number;
   gold: number;
   damage: number;
+  heal: number;
   damageShare: number;
   damagePerMin: number;
   tankShare: number;
@@ -184,6 +185,8 @@ export interface RecentSummary {
   avgCsPerMin: number;
   avgVisionPerMin: number;
   avgDeaths: number;
+  /** 场均治疗量 */
+  avgHeal: number;
   avgDurationMin: number;
   streak: Streak | null;
   rating: number;
@@ -285,6 +288,7 @@ export interface MatchScoreboardPlayer {
   gold: number;
   damage: number;
   damageTaken: number;
+  heal: number;
   vision: number;
   win: boolean;
   items: number[];

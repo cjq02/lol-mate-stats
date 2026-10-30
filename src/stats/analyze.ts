@@ -206,6 +206,7 @@ export function analyzeParticipant(
     csPerMin: Math.round(csPerMin * 10) / 10,
     gold,
     damage,
+    heal: totalHeal,
     damageShare: Math.round(damageShare * 1000) / 1000,
     damagePerMin: Math.round(damagePerMin),
     tankShare: Math.round(tankShare * 1000) / 1000,

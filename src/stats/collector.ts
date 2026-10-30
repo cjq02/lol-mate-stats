@@ -44,7 +44,7 @@ interface CachedReport {
 }
 
 const DAY_MS = 24 * 60 * 60_000;
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const CACHE_SAVE_DELAY = 2_000;
 /** 单类缓存最多落盘多少条，避免数据库无限增长 */
 const MAX_PERSISTED = 500;
