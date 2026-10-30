@@ -177,6 +177,28 @@ export function isGameArchived(gameId: number): boolean {
   return loadArchivedIds(db).has(gameId);
 }
 
+/** 批量读取某个玩家在这些对局里的评分 */
+export function getPlayerScores(puuid: string, gameIds: number[]): Map<number, number> {
+  const scores = new Map<number, number>();
+  const ids = [...new Set(gameIds.filter((id) => id > 0))];
+  const db = getDb();
+  if (!db || !puuid || !ids.length) return scores;
+
+  try {
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = db
+      .prepare(
+        `SELECT game_id, score FROM match_participants
+         WHERE puuid = ? AND score IS NOT NULL AND game_id IN (${placeholders})`,
+      )
+      .all(puuid, ...ids) as unknown as Array<{ game_id: number; score: number }>;
+    for (const row of rows) scores.set(Number(row.game_id), Number(row.score));
+  } catch {
+    /* 查询失败时按无评分处理 */
+  }
+  return scores;
+}
+
 export function countPlayerMatches(puuid: string): number {
   const db = getDb();
   if (!db || !puuid) return 0;

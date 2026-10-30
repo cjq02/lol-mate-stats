@@ -888,7 +888,7 @@ function matchRow(game, showScore) {
     }</small></span>
     <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
     <span class="pts"${score === null ? '' : ` style="color:${ratingColor(score)}"`}>${
-      score === null ? '›' : score
+      score === null ? (showScore ? '--' : '›') : score
     }</span>
   </button>`;
 }
@@ -1025,7 +1025,7 @@ function mergeMatchLists(...lists) {
 
 function renderMyMatches() {
   const games = state.myGames ?? [];
-  renderMatchesView(games, `我的战绩 · ${games.length} 场`, false);
+  renderMatchesView(games, `我的战绩 · ${games.length} 场`, true);
   state.currentView = renderMyMatches;
 
   if (state.archiveLoaded < state.archiveTotal) {
@@ -1090,7 +1090,7 @@ async function openMyMatches() {
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   els.matchesBack.classList.add('hidden');
   els.matchesTitle.textContent = '我的最近战绩';
-  beginMatchesLoading('正在读取最近战绩…');
+  beginMatchesLoading('正在读取最近战绩和评分…');
 
   let games = [];
   let lcuError = '';

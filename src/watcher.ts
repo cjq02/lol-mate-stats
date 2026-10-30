@@ -17,12 +17,13 @@ import { openEventStream } from './lcu/events.js';
 import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
 import { analyzeParticipant } from './stats/analyze.js';
 import { ReportCollector } from './stats/collector.js';
+import { analyzeGame } from './stats/analyze.js';
 import {
   archiveGames,
   countPlayerMatches,
   getPlayerMatches,
+  getPlayerScores,
   getSavedSelfPuuid,
-  isGameArchived,
   saveSelfPuuid,
   type ArchivedMatch,
 } from './stats/archive.js';
@@ -213,14 +214,15 @@ export class LiveSource implements DataSource {
       })
       .filter((game) => game.gameId > 0);
 
-    // 后台补齐存档：只请求还没进数据库的对局，不阻塞列表返回
-    void this.archiveMissingGames(api, games, championMap);
+    // 读取/补算每场评分；还没归档的对局会顺便写入历史存档
+    const scores = await this.fillMissingScores(api, games, championMap, summoner);
+    const scored = games.map((game) => ({ ...game, score: scores.get(game.gameId) }));
 
     logTag(
       'match',
-      `我的战绩读取完成：${games.length} 场，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
+      `我的战绩读取完成：${scored.length} 场（含评分），用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
     );
-    return { summoner, games };
+    return { summoner, games: scored };
   }
 
   /** 某场对局里 10 名玩家的近期战绩 */
@@ -385,25 +387,41 @@ export class LiveSource implements DataSource {
     }
   }
 
-  /** 后台把“我的战绩”里尚未归档的对局补进 SQLite，不阻塞列表返回 */
-  private async archiveMissingGames(
+  /** 读取或补算“我的战绩”每场的评分 */
+  private async fillMissingScores(
     api: LcuApi,
     games: MatchSummary[],
     championMap: Map<number, ChampionSummary>,
-  ): Promise<void> {
-    const missing = [
-      ...new Set(games.map((game) => game.gameId).filter((id) => id > 0 && !isGameArchived(id))),
-    ];
-    if (!missing.length) return;
+    summoner: SummonerInfo,
+  ): Promise<Map<number, number>> {
+    const scores = getPlayerScores(
+      summoner.puuid ?? '',
+      games.map((game) => game.gameId),
+    );
+    const missing = games.filter((game) => game.gameId > 0 && !scores.has(game.gameId));
+    if (!missing.length) return scores;
 
-    logTag('archive', `正在把 ${missing.length} 场对局保存到本地数据库…`);
+    logTag('archive', `正在计算 ${missing.length} 场对局的评分…`);
     let done = 0;
-    await mapLimit(missing, 2, async (gameId) => {
-      const game = await api.getGame(gameId).catch(() => null);
-      if (game) archiveGames([game], championMap);
+    await mapLimit(missing, 3, async (game) => {
+      const detail = await api.getGame(game.gameId).catch(() => null);
+      if (detail) {
+        archiveGames([detail], championMap);
+        const analyzed = analyzeGame(
+          detail,
+          {
+            puuid: summoner.puuid,
+            summonerId: summoner.summonerId,
+            accountId: summoner.accountId,
+          },
+          championMap,
+        );
+        if (analyzed) scores.set(game.gameId, analyzed.score);
+      }
       done += 1;
-      if (done === missing.length) logTag('archive', `已保存 ${done} 场对局`);
+      if (done === missing.length) logTag('archive', `评分计算完成：${done} 场`);
     });
+    return scores;
   }
 
   /** 长期存档：查询某个玩家（默认自己）的历史对局 */
