@@ -145,7 +145,9 @@ const state = {
   live: false,
   refreshing: false,
   selfPuuid: '',
-  matchesBack: null,
+  matchRequestToken: 0,
+  backStack: [],
+  currentView: null,
   loadingTimer: null,
   loadingProgress: null,
   matchDetail: null,
@@ -932,11 +934,12 @@ function renderScoreboard(detail) {
 
 function renderMatchTab(tab) {
   state.matchTab = tab;
+  const detail = state.matchDetail;
+  if (!detail) return;
+  state.currentView = () => renderMatchDetailView(detail, tab);
   for (const button of els.matchTabs.querySelectorAll('[data-match-tab]')) {
     button.classList.toggle('active', button.dataset.matchTab === tab);
   }
-  const detail = state.matchDetail;
-  if (!detail) return;
 
   if (tab === 'scoreboard') {
     renderScoreboard(detail);
@@ -955,27 +958,54 @@ function renderMatchTab(tab) {
   els.matchesList.replaceChildren(...nodes);
 }
 
-function showMatchesList(games, title, showScore, back) {
+function updateMatchesBackButton() {
+  els.matchesBack.classList.toggle('hidden', state.backStack.length === 0);
+}
+
+function renderMatchesView(games, title, showScore) {
   stopLoadingTimer();
   state.matchDetail = null;
-  state.matchesBack = back;
+  state.matchTab = 'recent';
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
-  els.matchesBack.classList.add('hidden');
   els.matchTabs.classList.add('hidden');
   els.matchesTitle.textContent = title;
   els.matchesList.className = 'match-list';
   els.matchesList.innerHTML = games.length
     ? games.map((game) => matchRow(game, showScore)).join('')
     : '<div class="search-status">没有对局记录</div>';
+  updateMatchesBackButton();
+}
+
+function renderPlayerMatches(games, title) {
+  renderMatchesView(games, title, true);
+  state.currentView = () => renderPlayerMatches(games, title);
 }
 
 function openMatches(player) {
   const games = player.games ?? [];
   const name = `${player.displayName ?? '玩家'}${player.tagLine ? `#${player.tagLine}` : ''}`;
   const title = `${name} · 最近 ${games.length} 场`;
-  const back = () => showMatchesList(games, title, true, back);
-  showMatchesList(games, title, true, back);
+
+  // 在某一局详情里点玩家卡片时，把当前详情压栈，返回时回到原页签
+  const inDetail =
+    !els.matchesModal.classList.contains('hidden') &&
+    Boolean(state.matchDetail) &&
+    typeof state.currentView === 'function';
+  if (inDetail) {
+    state.backStack.push(state.currentView);
+  } else {
+    state.backStack = [];
+    state.currentView = null;
+  }
+  renderPlayerMatches(games, title);
+}
+
+function goMatchesBack() {
+  state.matchRequestToken += 1;
+  const previous = state.backStack.pop();
+  if (previous) previous();
+  else closeMatches();
 }
 
 function mergeMatchLists(...lists) {
@@ -995,7 +1025,8 @@ function mergeMatchLists(...lists) {
 
 function renderMyMatches() {
   const games = state.myGames ?? [];
-  showMatchesList(games, `我的战绩 · ${games.length} 场`, false, () => renderMyMatches());
+  renderMatchesView(games, `我的战绩 · ${games.length} 场`, false);
+  state.currentView = renderMyMatches;
 
   if (state.archiveLoaded < state.archiveTotal) {
     const remaining = state.archiveTotal - state.archiveLoaded;
@@ -1046,12 +1077,15 @@ async function loadMoreArchive(button) {
 }
 
 async function openMyMatches() {
-  state.matchesBack = null;
+  state.backStack = [];
+  state.currentView = null;
+  state.matchRequestToken += 1;
   state.matchDetail = null;
   state.myGames = [];
   state.archiveOffset = 0;
   state.archiveLoaded = 0;
   state.archiveTotal = 0;
+  state.matchTab = 'recent';
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   els.matchesBack.classList.add('hidden');
@@ -1113,12 +1147,31 @@ async function openMyMatches() {
   }
 }
 
-async function openMatchDetail(gameId) {
+function renderMatchDetailView(detail, tab = 'recent') {
+  stopLoadingTimer();
+  state.matchDetail = detail;
+  state.matchTab = tab;
+  state.currentView = () => renderMatchDetailView(detail, tab);
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
-  els.matchesBack.classList.toggle('hidden', !state.matchesBack);
-  els.matchesTitle.textContent = '对局详情';
+  els.matchTabs.classList.remove('hidden');
+  els.matchesTitle.textContent = `${detail.queueName ?? '对局'} · ${formatGameTime(
+    detail.gameCreation,
+  )} · 对局详情`;
+  updateMatchesBackButton();
+  renderMatchTab(tab);
+}
+
+async function openMatchDetail(gameId) {
+  state.matchRequestToken += 1;
+  const token = state.matchRequestToken;
+  if (typeof state.currentView === 'function') state.backStack.push(state.currentView);
+
+  els.matchesModal.classList.remove('hidden');
+  els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
   els.matchTabs.classList.add('hidden');
+  els.matchesTitle.textContent = '对局详情';
+  updateMatchesBackButton();
   beginMatchesLoading('正在读取 10 名玩家的战绩…');
 
   try {
@@ -1148,16 +1201,10 @@ async function openMatchDetail(gameId) {
       detail = payload;
     }
 
-    stopLoadingTimer();
-    state.matchDetail = detail;
-    state.matchTab = 'recent';
-    els.matchTabs.classList.remove('hidden');
-    els.matchesTitle.textContent = `${detail.queueName ?? '对局'} · ${formatGameTime(
-      detail.gameCreation,
-    )} · 对局详情`;
-    els.matchesBack.classList.toggle('hidden', !state.matchesBack);
-    renderMatchTab('recent');
+    if (token !== state.matchRequestToken) return;
+    renderMatchDetailView(detail, 'recent');
   } catch (error) {
+    if (token !== state.matchRequestToken) return;
     stopLoadingTimer();
     state.matchDetail = null;
     els.matchTabs.classList.add('hidden');
@@ -1165,18 +1212,22 @@ async function openMatchDetail(gameId) {
     els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
       error instanceof Error ? error.message : String(error),
     )}</div>`;
+    updateMatchesBackButton();
   }
 }
 
 function closeMatches() {
   stopLoadingTimer();
+  state.matchRequestToken += 1;
   state.matchDetail = null;
+  state.backStack = [];
+  state.currentView = null;
+  state.myGames = [];
   els.matchesModal.classList.add('hidden');
   els.matchesList.replaceChildren();
   els.matchTabs.classList.add('hidden');
   els.matchesBack.classList.add('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
-  state.matchesBack = null;
 }
 
 async function submitSearch(event) {
@@ -1234,7 +1285,7 @@ els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
 els.matchesClose.addEventListener('click', closeMatches);
 els.matchesBack.addEventListener('click', () => {
-  if (typeof state.matchesBack === 'function') state.matchesBack();
+  goMatchesBack();
 });
 els.matchesList.addEventListener('click', (event) => {
   const more = event.target.closest('[data-action="archive-more"]');
