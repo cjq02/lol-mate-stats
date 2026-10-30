@@ -1,7 +1,7 @@
-import { readFileSync, unlinkSync } from 'node:fs';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import type {
   AnalyzedGame,
   ChampSelectMember,
@@ -47,10 +47,12 @@ interface CachedReport {
 
 const DAY_MS = 24 * 60 * 60_000;
 const CACHE_VERSION = 1;
-const CACHE_FILE =
-  process.env.LOL_MATE_CACHE?.trim() || join(homedir(), '.lol-mate-stats', 'cache.json');
+const CACHE_DB =
+  process.env.LOL_MATE_CACHE?.trim() || join(homedir(), '.lol-mate-stats', 'cache.db');
+/** 缓存数据库路径，启动日志里会打印 */
+export const CACHE_DB_PATH = CACHE_DB;
 const CACHE_SAVE_DELAY = 2_000;
-/** 单类缓存最多落盘多少条，避免文件无限增长 */
+/** 单类缓存最多落盘多少条，避免数据库无限增长 */
 const MAX_PERSISTED = 500;
 
 interface PersistedCache {
@@ -85,10 +87,13 @@ export class ReportCollector {
   /** 当前登录账号的 puuid：命中时不读报告缓存，保证自己的战绩实时 */
   private selfPuuid?: string;
   private selfRetryAt = 0;
-  /** 磁盘缓存写盘防抖，避免采集过程中频繁写大文件 */
+  /** 磁盘缓存写盘防抖，避免采集过程中频繁写库 */
   private saveTimer?: NodeJS.Timeout;
-  /** 串行写盘，避免多个缓存同时更新时互相覆盖 */
+  /** 串行写库，避免多个缓存同时更新时互相覆盖 */
   private saveQueue: Promise<void> = Promise.resolve();
+  /** SQLite 连接，懒加载；失败后本次进程不再重试 */
+  private db?: DatabaseSync;
+  private dbFailed = false;
 
   constructor(
     private readonly api: LcuApi,
@@ -112,12 +117,22 @@ export class ReportCollector {
       clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
     }
-    try {
-      unlinkSync(CACHE_FILE);
-    } catch {
-      /* 缓存文件可能还不存在 */
+    const db = this.openDb();
+    if (db) {
+      try {
+        db.exec(
+          'DELETE FROM reports; DELETE FROM summoners; DELETE FROM summoners_by_name;' +
+            ' DELETE FROM ranks; DELETE FROM champion_map; DELETE FROM meta;',
+        );
+      } catch {
+        /* 清缓存失败不影响主流程 */
+      }
+      try {
+        db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      } catch {
+        /* WAL 回收失败不影响主流程 */
+      }
     }
-    void this.queueSave();
   }
 
   /** 立即把缓存写盘；退出前调用，避免防抖计时器被 unref 后丢失最后一次写入 */
@@ -129,86 +144,139 @@ export class ReportCollector {
     await this.queueSave();
   }
 
-  /** 启动时恢复报告/召唤师/段位/英雄缓存；对局原始详情不落盘，避免文件过大 */
+  /** 启动时恢复报告/召唤师/段位/英雄缓存；对局原始详情不落盘，避免数据库过大 */
   private restoreCache(): void {
-    let text: string;
-    try {
-      text = readFileSync(CACHE_FILE, 'utf8');
-    } catch {
-      return;
-    }
-
-    let data: Partial<PersistedCache>;
-    try {
-      data = JSON.parse(text) as Partial<PersistedCache>;
-    } catch {
-      return;
-    }
-    if (!data || data.version !== CACHE_VERSION) return;
+    const db = this.openDb();
+    if (!db) return;
 
     const now = Date.now();
-    const fresh = (at: unknown, ttl: number): at is number =>
-      typeof at === 'number' && Number.isFinite(at) && now - at >= 0 && now - at < ttl;
+    const fresh = (at: number, ttl: number): boolean =>
+      Number.isFinite(at) && now - at >= 0 && now - at < ttl;
 
-    if (Array.isArray(data.reports)) {
-      for (const item of data.reports) {
-        if (!Array.isArray(item) || item.length < 2) continue;
-        const [key, entry] = item;
-        if (typeof key !== 'string' || !entry || typeof entry !== 'object') continue;
-        const cached = entry as CachedReport;
-        if (fresh(cached.at, this.options.ttlMs) && cached.report) {
-          this.reportCache.set(key, cached);
+    try {
+      const version = db
+        .prepare('SELECT v FROM meta WHERE k = ?')
+        .get('version') as unknown as { v?: string } | undefined;
+      if (version?.v !== String(CACHE_VERSION)) return;
+
+      const reports = db
+        .prepare('SELECT cache_key, at, payload FROM reports')
+        .all() as unknown as Array<{ cache_key: string; at: number; payload: string }>;
+      for (const row of reports) {
+        if (!fresh(row.at, this.options.ttlMs)) continue;
+        try {
+          const report = JSON.parse(row.payload) as PlayerReport;
+          if (report) this.reportCache.set(row.cache_key, { at: row.at, report });
+        } catch {
+          /* 单条损坏不影响其它缓存 */
         }
       }
-    }
 
-    if (Array.isArray(data.summoners)) {
-      for (const item of data.summoners) {
-        if (!Array.isArray(item) || item.length < 2) continue;
-        const [summonerId, entry] = item;
-        if (typeof summonerId !== 'number' || !entry || typeof entry !== 'object') continue;
-        const cached = entry as { at: number; info: SummonerInfo | null };
-        if (fresh(cached.at, DAY_MS)) this.summonerCache.set(summonerId, cached);
+      const summoners = db
+        .prepare('SELECT summoner_id, at, payload FROM summoners')
+        .all() as unknown as Array<{ summoner_id: number; at: number; payload: string }>;
+      for (const row of summoners) {
+        if (!fresh(row.at, DAY_MS)) continue;
+        try {
+          this.summonerCache.set(row.summoner_id, {
+            at: row.at,
+            info: JSON.parse(row.payload) as SummonerInfo | null,
+          });
+        } catch {
+          /* 忽略损坏行 */
+        }
       }
-    }
 
-    if (Array.isArray(data.summonersByName)) {
-      for (const item of data.summonersByName) {
-        if (!Array.isArray(item) || item.length < 2) continue;
-        const [name, entry] = item;
-        if (typeof name !== 'string' || !entry || typeof entry !== 'object') continue;
-        const cached = entry as { at: number; info: SummonerInfo | null };
-        if (fresh(cached.at, DAY_MS)) this.summonerByNameCache.set(name, cached);
+      const summonersByName = db
+        .prepare('SELECT name, at, payload FROM summoners_by_name')
+        .all() as unknown as Array<{ name: string; at: number; payload: string }>;
+      for (const row of summonersByName) {
+        if (!fresh(row.at, DAY_MS)) continue;
+        try {
+          this.summonerByNameCache.set(row.name, {
+            at: row.at,
+            info: JSON.parse(row.payload) as SummonerInfo | null,
+          });
+        } catch {
+          /* 忽略损坏行 */
+        }
       }
-    }
 
-    if (Array.isArray(data.ranks)) {
-      for (const item of data.ranks) {
-        if (!Array.isArray(item) || item.length < 2) continue;
-        const [puuid, entry] = item;
-        if (typeof puuid !== 'string' || !entry || typeof entry !== 'object') continue;
-        const cached = entry as { at: number; rank: RankInfo | null };
-        if (fresh(cached.at, DAY_MS)) this.rankCache.set(puuid, cached);
+      const ranks = db
+        .prepare('SELECT puuid, at, payload FROM ranks')
+        .all() as unknown as Array<{ puuid: string; at: number; payload: string }>;
+      for (const row of ranks) {
+        if (!fresh(row.at, DAY_MS)) continue;
+        try {
+          this.rankCache.set(row.puuid, {
+            at: row.at,
+            rank: JSON.parse(row.payload) as RankInfo | null,
+          });
+        } catch {
+          /* 忽略损坏行 */
+        }
       }
-    }
 
-    const championMap = data.championMap;
-    if (
-      championMap &&
-      fresh(championMap.at, DAY_MS) &&
-      Array.isArray(championMap.entries)
-    ) {
-      const entries = championMap.entries.filter(
-        (item): item is [number, ChampionSummary] =>
-          Array.isArray(item) &&
-          typeof item[0] === 'number' &&
-          Boolean(item[1]) &&
-          typeof item[1] === 'object',
-      );
-      if (entries.length) {
-        this.championMap = new Map(entries);
-        this.championMapAt = championMap.at;
+      const champion = db
+        .prepare('SELECT at, payload FROM champion_map WHERE id = 1')
+        .get() as unknown as { at: number; payload: string } | undefined;
+      if (champion && fresh(champion.at, DAY_MS)) {
+        const entries = JSON.parse(champion.payload) as unknown;
+        if (Array.isArray(entries) && entries.length) {
+          this.championMap = new Map(entries as Array<[number, ChampionSummary]>);
+          this.championMapAt = champion.at;
+        }
       }
+    } catch {
+      /* 缓存读取失败不影响主流程 */
+    }
+  }
+
+  private openDb(): DatabaseSync | undefined {
+    if (this.db) return this.db;
+    if (this.dbFailed) return undefined;
+    try {
+      mkdirSync(dirname(CACHE_DB), { recursive: true });
+      const db = new DatabaseSync(CACHE_DB);
+      db.exec(`
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+        CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS reports (
+          cache_key TEXT PRIMARY KEY,
+          at INTEGER NOT NULL,
+          payload TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_reports_at ON reports(at);
+        CREATE TABLE IF NOT EXISTS summoners (
+          summoner_id INTEGER PRIMARY KEY,
+          at INTEGER NOT NULL,
+          payload TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_summoners_at ON summoners(at);
+        CREATE TABLE IF NOT EXISTS summoners_by_name (
+          name TEXT PRIMARY KEY,
+          at INTEGER NOT NULL,
+          payload TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_summoners_by_name_at ON summoners_by_name(at);
+        CREATE TABLE IF NOT EXISTS ranks (
+          puuid TEXT PRIMARY KEY,
+          at INTEGER NOT NULL,
+          payload TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_ranks_at ON ranks(at);
+        CREATE TABLE IF NOT EXISTS champion_map (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          at INTEGER NOT NULL,
+          payload TEXT NOT NULL
+        );
+      `);
+      this.db = db;
+      return db;
+    } catch {
+      this.dbFailed = true;
+      return undefined;
     }
   }
 
@@ -266,15 +334,90 @@ export class ReportCollector {
     };
   }
 
-  private async writeCache(): Promise<void> {
+  private writeCache(): void {
+    const db = this.openDb();
+    if (!db) return;
+
+    const data = this.serializeCache();
+    const cutoff = Date.now() - Math.max(this.options.ttlMs, DAY_MS);
+
     try {
-      const data = this.serializeCache();
-      await mkdir(dirname(CACHE_FILE), { recursive: true });
-      const temp = `${CACHE_FILE}.tmp`;
-      await writeFile(temp, JSON.stringify(data), 'utf8');
-      await rename(temp, CACHE_FILE);
+      db.exec('BEGIN IMMEDIATE');
+
+      db.prepare('DELETE FROM reports WHERE at < ?').run(cutoff);
+      const insertReport = db.prepare(
+        `INSERT INTO reports (cache_key, at, payload) VALUES (?, ?, ?)
+         ON CONFLICT(cache_key) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
+      );
+      for (const [key, entry] of data.reports) {
+        insertReport.run(key, entry.at, JSON.stringify(entry.report));
+      }
+      db.prepare(
+        `DELETE FROM reports WHERE cache_key NOT IN
+         (SELECT cache_key FROM reports ORDER BY at DESC LIMIT ?)`,
+      ).run(MAX_PERSISTED);
+
+      db.prepare('DELETE FROM summoners WHERE at < ?').run(cutoff);
+      const insertSummoner = db.prepare(
+        `INSERT INTO summoners (summoner_id, at, payload) VALUES (?, ?, ?)
+         ON CONFLICT(summoner_id) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
+      );
+      for (const [summonerId, entry] of data.summoners) {
+        insertSummoner.run(summonerId, entry.at, JSON.stringify(entry.info));
+      }
+      db.prepare(
+        `DELETE FROM summoners WHERE summoner_id NOT IN
+         (SELECT summoner_id FROM summoners ORDER BY at DESC LIMIT ?)`,
+      ).run(MAX_PERSISTED);
+
+      db.prepare('DELETE FROM summoners_by_name WHERE at < ?').run(cutoff);
+      const insertSummonerByName = db.prepare(
+        `INSERT INTO summoners_by_name (name, at, payload) VALUES (?, ?, ?)
+         ON CONFLICT(name) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
+      );
+      for (const [name, entry] of data.summonersByName) {
+        insertSummonerByName.run(name, entry.at, JSON.stringify(entry.info));
+      }
+      db.prepare(
+        `DELETE FROM summoners_by_name WHERE name NOT IN
+         (SELECT name FROM summoners_by_name ORDER BY at DESC LIMIT ?)`,
+      ).run(MAX_PERSISTED);
+
+      db.prepare('DELETE FROM ranks WHERE at < ?').run(cutoff);
+      const insertRank = db.prepare(
+        `INSERT INTO ranks (puuid, at, payload) VALUES (?, ?, ?)
+         ON CONFLICT(puuid) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
+      );
+      for (const [puuid, entry] of data.ranks) {
+        insertRank.run(puuid, entry.at, JSON.stringify(entry.rank));
+      }
+      db.prepare(
+        `DELETE FROM ranks WHERE puuid NOT IN
+         (SELECT puuid FROM ranks ORDER BY at DESC LIMIT ?)`,
+      ).run(MAX_PERSISTED);
+
+      if (data.championMap) {
+        db.prepare(
+          `INSERT INTO champion_map (id, at, payload) VALUES (1, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
+        ).run(data.championMap.at, JSON.stringify(data.championMap.entries));
+      } else {
+        db.prepare('DELETE FROM champion_map WHERE id = 1').run();
+      }
+
+      const setMeta = db.prepare(
+        'INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v',
+      );
+      setMeta.run('version', String(CACHE_VERSION));
+      setMeta.run('savedAt', String(Date.now()));
+
+      db.exec('COMMIT');
     } catch {
-      /* 缓存写入失败不影响主流程 */
+      try {
+        db.exec('ROLLBACK');
+      } catch {
+        /* 回滚失败时忽略 */
+      }
     }
   }
 
@@ -494,7 +637,7 @@ export class ReportCollector {
     if (player.isBot) return { ...base, loading: false, rating: null };
     if (!base.summonerId || !base.puuid) return { ...base, loading: false };
 
-    const cacheKey = reportCacheKey(base.summonerId, context);
+    const cacheKey = reportCacheKey(base.summonerId, context, this.options.recent);
     const cached = this.reportCache.get(cacheKey);
     if (cached && Date.now() - cached.at < this.options.ttlMs) {
       return this.withLiveData(cached.report, base);
@@ -592,7 +735,8 @@ export class ReportCollector {
         : undefined;
     const cached =
       info && !this.isKnownSelf(info.puuid)
-        ? this.reportCache.get(reportCacheKey(info.summonerId, context))?.report
+        ? this.reportCache.get(reportCacheKey(info.summonerId, context, this.options.recent))
+            ?.report
         : undefined;
 
     const base: PlayerReport = {
@@ -648,7 +792,7 @@ export class ReportCollector {
     championMap: Map<number, ChampionSummary>,
     context?: GameContext,
   ): Promise<PlayerReport> {
-    const cacheKey = reportCacheKey(member.summonerId, context);
+    const cacheKey = reportCacheKey(member.summonerId, context, this.options.recent);
     const self = await this.isSelf(base.puuid ?? member.puuid);
     const cached = self ? undefined : this.reportCache.get(cacheKey);
     if (cached && Date.now() - cached.at < this.options.ttlMs) {
@@ -760,7 +904,9 @@ export class ReportCollector {
     const puuid = info?.puuid ?? member.puuid;
     const cached = this.isKnownSelf(puuid)
       ? undefined
-      : this.reportCache.get(reportCacheKey(member.summonerId, context))?.report;
+      : this.reportCache.get(
+          reportCacheKey(member.summonerId, context, this.options.recent),
+        )?.report;
     // 国服 LCU 的 displayName 常常是空字符串，真实名字只在 gameName 里
     const displayName =
       info?.displayName?.trim() ||
@@ -966,9 +1112,13 @@ function effectiveChampionId(member: ChampSelectMember): number {
   return member.championId || member.championPickIntent || 0;
 }
 
-function reportCacheKey(summonerId: number, context?: GameContext): string {
+function reportCacheKey(
+  summonerId: number,
+  context: GameContext | undefined,
+  recent: number,
+): string {
   const group = context ? currentQueueGroup(context.queueId, context.mode) : 'all';
-  return `${summonerId}:${group}`;
+  return `${summonerId}:${group}:${recent}`;
 }
 
 function contextLabel(context?: GameContext): string {
