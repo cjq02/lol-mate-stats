@@ -547,6 +547,7 @@ export class LiveSource implements DataSource {
         localPlayer: undefined,
         queueId: undefined,
         gameMode: undefined,
+        gameTime: undefined,
         error: undefined,
       },
       false,
@@ -612,6 +613,7 @@ export class LiveSource implements DataSource {
     const queueId = game.gameData?.queue?.id ?? this.snapshot.queueId;
     const gameMode =
       modeFromQueue(queueId, game.gameData?.gameMode) ?? this.snapshot.gameMode;
+    const gameTime = toNumber(game.gameData?.gameTime) || undefined;
     const context: GameContext | undefined =
       queueId !== undefined || gameMode !== undefined ? { queueId, mode: gameMode } : undefined;
     const initialCollection = this.snapshot.players.length === 0;
@@ -624,6 +626,7 @@ export class LiveSource implements DataSource {
       inGame: true,
       queueId,
       gameMode,
+      gameTime,
       collecting: this.snapshot.players.length === 0,
       message: this.snapshot.players.length ? undefined : '正在读取本局 10 名玩家的战绩…',
       error: undefined,
@@ -648,6 +651,7 @@ export class LiveSource implements DataSource {
           this.patch({ players: partial, collecting: partial.some((player) => player.loading) });
         },
         context,
+        gameTime,
       );
 
       const selfIndex = self ? members.indexOf(self) : -1;

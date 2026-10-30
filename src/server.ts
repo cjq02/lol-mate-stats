@@ -45,7 +45,9 @@ const STATIC_FILES = new Set(['/', '/index.html', '/app.js', '/style.css']);
 const fileCache = new Map<string, { body: Buffer; type: string }>();
 const assetCache = new Map<string, { at: number; result: { body: Buffer; contentType: string } }>();
 const ASSET_TTL = 60 * 60_000;
-let itemsCache: { at: number; items: Record<string, { icon: string; name: string }> } | undefined;
+let itemsCache:
+  | { at: number; items: Record<string, { icon: string; name: string; price: number }> }
+  | undefined;
 const ASSET_CACHE_LIMIT = 300;
 
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
@@ -336,11 +338,17 @@ async function handleRequest(
           id?: number;
           name?: string;
           iconPath?: string;
+          price?: number;
+          priceTotal?: number;
         }>;
-        const items: Record<string, { icon: string; name: string }> = {};
+        const items: Record<string, { icon: string; name: string; price: number }> = {};
         for (const item of list) {
           if (typeof item?.id === 'number' && item.iconPath) {
-            items[String(item.id)] = { icon: item.iconPath, name: item.name ?? '' };
+            items[String(item.id)] = {
+              icon: item.iconPath,
+              name: item.name ?? '',
+              price: Number(item.priceTotal ?? item.price ?? 0) || 0,
+            };
           }
         }
         itemsCache = { at: now, items };

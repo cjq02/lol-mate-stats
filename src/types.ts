@@ -225,6 +225,21 @@ export interface LiveStats {
   wardScore?: number;
   championLevel?: number;
   isDead?: boolean;
+  /** 对局已进行分钟数（用于分均指标） */
+  gameMinutes?: number;
+  /** 队伍总击杀，用于实时参团率 */
+  teamKills?: number;
+  /** 参团率 0-1 */
+  killParticipation?: number;
+  /** 装备总价值：官方实时接口不提供金币，用已购装备价格近似 */
+  gold?: number;
+  /** KDA（(击杀+助攻)/死亡） */
+  kda?: number;
+  csPerMin?: number;
+  goldPerMin?: number;
+  visionPerMin?: number;
+  /** 当前装备（物品 id） */
+  items?: number[];
 }
 
 /** Live Client Data API 返回的玩家结构（只保留用得到的字段） */
@@ -240,6 +255,8 @@ export interface LiveGamePlayer {
   riotIdTagLine?: string;
   summonerName?: string;
   team?: string;
+  /** 装备栏物品 id */
+  items?: number[];
   scores?: {
     kills?: number;
     deaths?: number;
@@ -328,6 +345,8 @@ export interface LiveGameData {
   gameData?: {
     gameMode?: string;
     queue?: { id?: number };
+    /** 对局已进行秒数 */
+    gameTime?: number;
   };
   allPlayers?: LiveGamePlayer[];
 }
@@ -379,6 +398,8 @@ export interface Snapshot {
   region?: string;
   /** 当前对局队列（用于只统计同模式战绩） */
   queueId?: number;
+  /** 对局已进行秒数（游戏进行中） */
+  gameTime?: number;
   /** 当前模式分组 */
   gameMode?: GameModeKey;
   localPlayer?: {

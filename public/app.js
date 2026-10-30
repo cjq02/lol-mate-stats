@@ -216,6 +216,12 @@ function num(value, digits = 1, fallback = '-') {
   return Number(value).toFixed(digits);
 }
 
+function gameClock(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(total / 60);
+  return `${minutes}:${String(total % 60).padStart(2, '0')}`;
+}
+
 function kilo(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
   const number = Number(value);
@@ -264,9 +270,13 @@ function loadItemIcons() {
       .then((payload) => {
         state.itemIcons =
           payload?.items && typeof payload.items === 'object' ? payload.items : {};
-        // 装备数据晚到时，如果正在看本局详情，重新渲染一次把图标补上
+        // 装备数据晚到时，如果正在看本局详情/对局中，重新渲染一次把图标补上
         if (state.matchDetail && state.matchTab === 'scoreboard') {
           renderScoreboard(state.matchDetail);
+        }
+        if (state.snapshot?.inGame && state.snapshot.players?.length) {
+          cardCache.clear();
+          render();
         }
         return state.itemIcons;
       })
@@ -318,6 +328,7 @@ function render() {
 function renderBoard(players) {
   const localId = state.snapshot?.localPlayer?.summonerId;
   const localName = state.snapshot?.localPlayer?.displayName;
+  const liveView = Boolean(state.snapshot?.inGame);
   const currentKeys = new Set([...els.board.children].map((node) => node.dataset.key));
   const nodes = players.map((player) => {
     const key = String(player.puuid ?? (player.summonerId || player.displayName));
@@ -327,7 +338,7 @@ function renderBoard(players) {
     const sig = `${key}|${isLocal}|${JSON.stringify(player)}`;
     const cached = cardCache.get(key);
     if (cached && cached.sig === sig) return cached.node;
-    const node = buildCard(player, isLocal);
+    const node = buildCard(player, isLocal, { liveView });
     node.dataset.key = key;
     // 只有新出现的卡片才播放入场动画，避免数据刷新时整块闪一下
     if (!currentKeys.has(key)) enterCard(node);
@@ -515,6 +526,11 @@ function buildCard(player, isLocal, options = {}) {
         <span class="live-stat">补刀 <b>${Math.round(live.cs ?? 0)}</b></span>
         <span class="live-stat">等级 <b>${live.championLevel ?? '-'}</b></span>
         ${
+          live.gold !== undefined
+            ? `<span class="live-stat">装备 <b>${kilo(live.gold)}</b></span>`
+            : ''
+        }
+        ${
           visionGame
             ? `<span class="live-stat">视野 <b>${num(live.wardScore, 0)}</b></span>`
             : ''
@@ -544,18 +560,17 @@ function buildCard(player, isLocal, options = {}) {
     thisGame && options.radar?.length
       ? `<div class="card-radar" title="${escapeHtml(
           options.radar.map((item) => item.title).join('；'),
-        )}">
-          ${miniRadarSvg(options.radar)}
-          <div class="card-radar-legend">
-            <span><i class="radar-dot self"></i>玩家</span>
-            <span><i class="radar-dot avg"></i>平均</span>
-          </div>
-        </div>`
+        )}">${miniRadarSvg(options.radar)}</div>`
       : '';
 
+  const itemIds = thisGame
+    ? thisGame.items
+    : options.liveView
+      ? live?.items
+      : undefined;
   const itemRow =
-    thisGame && thisGame.items?.length
-      ? `<div class="items">${thisGame.items
+    itemIds?.length
+      ? `<div class="items">${itemIds
           .map((itemId) => {
             const meta = state.itemIcons?.[String(itemId)];
             return iconHtml(meta?.icon ?? null, meta?.name ?? String(itemId), 'sm', meta?.name);
@@ -577,6 +592,26 @@ function buildCard(player, isLocal, options = {}) {
             ? `<div class="metric"><span>分均视野</span><b>${num(thisGame.visionPerMin, 2)}</b></div>`
             : ''
         }
+      </div>`
+    : '';
+
+  const liveMetrics = options.liveView && live
+    ? `<div class="metrics live-metrics">
+        <div class="metric"><span>参团率</span><b>${pct(live.killParticipation)}</b></div>
+        <div class="metric"><span>分均经济</span><b>${
+          live.goldPerMin === undefined ? '-' : Math.round(live.goldPerMin)
+        }</b></div>
+        <div class="metric"><span>分均补刀</span><b>${num(live.csPerMin, 1)}</b></div>
+        ${
+          visionGame
+            ? `<div class="metric"><span>分均视野</span><b>${num(live.visionPerMin, 2)}</b></div>`
+            : ''
+        }
+        <div class="metric"><span>KDA</span><b>${num(live.kda, 2)}</b></div>
+        <div class="metric"><span>队伍击杀</span><b>${live.teamKills ?? '-'}</b></div>
+        <div class="metric pending-metric" title="官方实时接口不提供伤害与承伤，对局结算后才会出现在「本局详情」里">
+          <span>伤害 / 承伤</span><b>结算后</b>
+        </div>
       </div>`
     : '';
 
@@ -623,8 +658,8 @@ function buildCard(player, isLocal, options = {}) {
 
     ${thisGame ? gameRow : liveRow}
     ${thisGame ? radarBlock : ''}
-    ${thisGame ? thisGameMetrics : ''}
-    ${thisGame ? itemRow : ''}
+    ${thisGame ? thisGameMetrics : liveMetrics}
+    ${thisGame || options.liveView ? itemRow : ''}
     ${thisGame ? '' : gameChips ? `<div class="games">${gameChips}</div>` : ''}
     ${thisGame ? '' : loading}
     ${thisGame ? '' : metrics}
@@ -690,7 +725,8 @@ function renderHeader(snapshot, players, collecting) {
       const risky = players.filter(
         (player) => player.recent?.risk && player.recent.risk.level === 'severe',
       ).length;
-      els.status.textContent = `本局 ${allies} 己方 / ${enemies} 敌方 · 实时数据${
+      const clock = snapshot.gameTime ? `${gameClock(snapshot.gameTime)} · ` : '';
+      els.status.textContent = `本局 ${allies} 己方 / ${enemies} 敌方 · ${clock}实时数据${
         risky ? ` · ${risky} 人高风险` : ''
       }`;
     }
@@ -719,7 +755,7 @@ function renderHeader(snapshot, players, collecting) {
     els.recentHint.textContent = recent
       ? `${currentModeLabel()}最近 ${recent.games} 场 · 评分 0-100`
       : snapshot?.inGame
-        ? '本局实时数据 · 评分来自最近对局'
+        ? '本局实时数据 · 伤害与承伤需对局结算后才有'
         : '';
   }
 }
@@ -1029,12 +1065,21 @@ function miniRadarSvg(series) {
     })
     .join('');
 
+  // 图例放在六边形标签那一圈的上方，省掉底部一行
+  const legend = `<g class="radar-legend">
+    <circle cx="6" cy="7" r="2.4" class="radar-legend-dot self"/>
+    <text x="11" y="9.7" class="radar-legend-label">玩家</text>
+    <circle cx="128" cy="7" r="2.4" class="radar-legend-dot avg"/>
+    <text x="133" y="9.7" class="radar-legend-label">平均</text>
+  </g>`;
+
   return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="本局数据对比">
     ${rings}
     ${axes}
     <polygon points="${polygon(series.map((metric) => metric.avgRatio))}" class="radar-avg"/>
     <polygon points="${polygon(series.map((metric) => metric.selfRatio))}" class="radar-self"/>
     ${labels}
+    ${legend}
   </svg>`;
 }
 

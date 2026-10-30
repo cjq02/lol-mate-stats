@@ -75,6 +75,9 @@ export class ReportCollector {
   private readonly rankCache = new Map<string, { at: number; rank: RankInfo | null }>();
   private championMap: Map<number, ChampionSummary> | null = null;
   private championMapAt = 0;
+  private itemPrices?: Map<number, number>;
+  private itemPricesAt = 0;
+  private itemPriceRetryAt = 0;
   /** 战绩服务 5xx 时的退避截止时间（指数增长），避免每 3 秒重复轰炸 */
   private historyRetryAt = 0;
   private historyBackoffMs = 0;
@@ -102,6 +105,9 @@ export class ReportCollector {
     this.gameCache.clear();
     this.championMap = null;
     this.championMapAt = 0;
+    this.itemPrices = undefined;
+    this.itemPricesAt = 0;
+    this.itemPriceRetryAt = 0;
     this.historyRetryAt = 0;
     this.historyBackoffMs = 0;
     if (this.saveTimer) {
@@ -546,18 +552,37 @@ export class ReportCollector {
   /**
    * 游戏进行中：用 Live Client Data 的玩家列表构建报告。
    * 召唤师信息通过名字查询 LCU，战绩接口仍然可用。
+   * gameTime 为对局已进行秒数，用于换算分均数据。
    */
   async collectLive(
     players: LiveMember[],
     onProgress?: (players: PlayerReport[]) => void,
     context?: GameContext,
+    gameTime?: number,
   ): Promise<PlayerReport[]> {
     if (!players.length) return [];
 
     const championMap = await this.getChampionMap();
+    const gameMinutes = Math.max(0, toNumber(gameTime) / 60);
+
+    // 官方实时接口不返回金币/伤害，参团率用队伍总击杀算，经济用装备价值近似
+    const teamKills = new Map<string, number>();
+    for (const player of players) {
+      const team = player.team ?? '';
+      teamKills.set(
+        team,
+        (teamKills.get(team) ?? 0) + toNumber(player.scores?.kills),
+      );
+    }
+    const itemPrices = await this.getItemPrices();
+
     const bases = await mapLimit(players, 5, async (player) => {
       const info = await this.getSummonerByName(liveName(player));
-      return this.buildLiveBase(player, info, championMap, context);
+      return this.buildLiveBase(player, info, championMap, context, {
+        teamKills: teamKills.get(player.team ?? '') ?? 0,
+        gameMinutes,
+        itemPrices,
+      });
     });
     onProgress?.(bases);
 
@@ -664,6 +689,11 @@ export class ReportCollector {
     info: SummonerInfo | null,
     championMap: Map<number, ChampionSummary>,
     context?: GameContext,
+    liveContext?: {
+      teamKills?: number;
+      gameMinutes?: number;
+      itemPrices?: Map<number, number>;
+    },
   ): PlayerReport {
     const championId = this.championIdFor(player.rawChampionName, player.championName);
     const name = liveName(player);
@@ -702,7 +732,7 @@ export class ReportCollector {
       rank: cached?.rank,
       isBot: Boolean(player.isBot),
       isEnemy: Boolean(player.isEnemy),
-      live: liveStats(player),
+      live: liveStats(player, liveContext),
       loading: !player.isBot && !cached,
     };
 
@@ -1052,6 +1082,23 @@ export class ReportCollector {
     }
     return this.championMap;
   }
+
+  /** 装备价格表：实时接口没有金币，用装备总价近似“经济” */
+  private async getItemPrices(): Promise<Map<number, number>> {
+    if (this.itemPrices && Date.now() - this.itemPricesAt < 24 * 60 * 60_000) {
+      return this.itemPrices;
+    }
+    if (Date.now() < this.itemPriceRetryAt) return this.itemPrices ?? new Map();
+    try {
+      this.itemPrices = await this.api.getItemPrices();
+      this.itemPricesAt = Date.now();
+      this.itemPriceRetryAt = 0;
+    } catch {
+      // 读取失败时先按空表处理，1 分钟后再试
+      this.itemPriceRetryAt = Date.now() + 60_000;
+    }
+    return this.itemPrices ?? new Map();
+  }
 }
 
 function effectiveChampionId(member: ChampSelectMember): number {
@@ -1122,15 +1169,57 @@ function stripTag(name: string): string {
   return name.split('#')[0]?.trim() ?? '';
 }
 
-function liveStats(player: LiveGamePlayer): LiveStats {
+function liveStats(
+  player: LiveGamePlayer,
+  context?: {
+    teamKills?: number;
+    gameMinutes?: number;
+    itemPrices?: Map<number, number>;
+  },
+): LiveStats {
+  const kills = toNumber(player.scores?.kills);
+  const deaths = toNumber(player.scores?.deaths);
+  const assists = toNumber(player.scores?.assists);
+  const cs = toNumber(player.scores?.creepScore);
+  const gameMinutes =
+    context?.gameMinutes && context.gameMinutes > 0.5 ? context.gameMinutes : 0;
+  const perMin = (value: number): number | undefined =>
+    gameMinutes > 0 ? round(value / gameMinutes, 2) : undefined;
+
+  const teamKills = context?.teamKills ?? 0;
+  const killParticipation =
+    teamKills > 0
+      ? round(Math.min(1, (kills + assists) / teamKills), 3)
+      : undefined;
+
+  const items = Array.isArray(player.items)
+    ? player.items.map((itemId) => toNumber(itemId)).filter((itemId) => itemId > 0)
+    : [];
+  const prices = context?.itemPrices;
+  const gold =
+    prices && items.length
+      ? items.reduce((sum, itemId) => sum + (prices.get(itemId) ?? 0), 0)
+      : undefined;
+  const wardScore =
+    typeof player.scores?.wardScore === 'number' ? player.scores.wardScore : undefined;
+
   return {
-    kills: toNumber(player.scores?.kills),
-    deaths: toNumber(player.scores?.deaths),
-    assists: toNumber(player.scores?.assists),
-    cs: toNumber(player.scores?.creepScore),
-    wardScore: player.scores?.wardScore,
+    kills,
+    deaths,
+    assists,
+    cs,
+    wardScore,
     championLevel: player.level,
     isDead: player.isDead,
+    gameMinutes: gameMinutes > 0 ? round(gameMinutes, 2) : undefined,
+    teamKills: teamKills || undefined,
+    killParticipation,
+    gold,
+    kda: round((kills + assists) / Math.max(1, deaths), 2),
+    csPerMin: perMin(cs),
+    goldPerMin: gold === undefined ? undefined : perMin(gold),
+    visionPerMin: wardScore === undefined ? undefined : perMin(wardScore),
+    items: items.length ? items : undefined,
   };
 }
 

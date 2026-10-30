@@ -21,6 +21,7 @@ export interface GameflowPhaseResponse {
 export class LcuApi {
   readonly http: LcuHttp;
   private championMapPromise?: Promise<Map<number, ChampionSummary>>;
+  private itemPricePromise?: Promise<Map<number, number>>;
 
   constructor(readonly conn: LcuConnection) {
     this.http = new LcuHttp(conn);
@@ -154,6 +155,33 @@ export class LcuApi {
       if (champion && typeof champion.id === 'number' && champion.id > 0) {
         map.set(champion.id, champion);
       }
+    }
+    return map;
+  }
+
+  /**
+   * 装备价格表。游戏内实时接口不返回金币，用装备总价近似经济。
+   * 数据来自客户端本地资源，不需要网络。
+   */
+  async getItemPrices(): Promise<Map<number, number>> {
+    if (!this.itemPricePromise) {
+      this.itemPricePromise = this.loadItemPrices().catch((error) => {
+        this.itemPricePromise = undefined;
+        throw error;
+      });
+    }
+    return this.itemPricePromise;
+  }
+
+  private async loadItemPrices(): Promise<Map<number, number>> {
+    const list = await this.http.get<
+      Array<{ id?: number; price?: number; priceTotal?: number }>
+    >('/lol-game-data/assets/v1/items.json', 20_000);
+    const map = new Map<number, number>();
+    for (const item of list ?? []) {
+      if (!item || typeof item.id !== 'number' || item.id <= 0) continue;
+      const price = Number(item.priceTotal ?? item.price ?? 0);
+      map.set(item.id, Number.isFinite(price) && price > 0 ? price : 0);
     }
     return map;
   }
