@@ -459,25 +459,25 @@ body::before {
   height: max-content;
 }
 
-.radar-panel {
-  grid-column: 1 / -1;
-  justify-self: center;
-  width: min(100%, 1080px);
+.card-radar {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 18px;
-  padding: 10px 16px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: linear-gradient(120deg, rgba(94, 234, 212, 0.06), rgba(255, 255, 255, 0.02));
+  gap: 2px;
+  padding: 2px 0 4px;
 }
 
-.radar-panel svg {
-  width: 260px;
-  height: 232px;
-  flex: none;
+.card-radar svg {
+  width: 156px;
+  height: 146px;
   overflow: visible;
+}
+
+.card-radar-legend {
+  display: flex;
+  gap: 12px;
+  color: var(--muted-2);
+  font-size: 9.5px;
 }
 
 .radar-ring {
@@ -506,44 +506,14 @@ body::before {
 
 .radar-label {
   fill: var(--muted);
-  font-size: 10px;
-}
-
-.radar-side {
-  flex: 0 1 760px;
-  min-width: 0;
-}
-
-.radar-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.radar-head b {
-  color: #dbe6ff;
-  font-size: 12.5px;
-  font-weight: 650;
-}
-
-.radar-head span {
-  color: var(--muted-2);
-  font-size: 10px;
-}
-
-.radar-legend {
-  display: flex;
-  gap: 14px;
-  margin: 6px 0 8px;
-  color: var(--muted);
-  font-size: 10.5px;
+  font-size: 8px;
 }
 
 .radar-dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 5px;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
   border-radius: 50%;
 }
 
@@ -553,35 +523,6 @@ body::before {
 
 .radar-dot.avg {
   background: #9aa8c7;
-}
-
-.radar-values {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px 14px;
-  color: var(--muted);
-  font-size: 10.5px;
-}
-
-.radar-values b {
-  margin-right: 4px;
-  color: #dbe6ff;
-  font-weight: 600;
-}
-
-@media (max-width: 900px) {
-  .radar-panel {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .radar-panel svg {
-    align-self: center;
-  }
-
-  .radar-values {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 .match-cards::-webkit-scrollbar {

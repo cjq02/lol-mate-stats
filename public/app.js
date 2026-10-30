@@ -516,6 +516,19 @@ function buildCard(player, isLocal, options = {}) {
       </div>`
     : liveRow;
 
+  const radarBlock =
+    thisGame && options.radar?.length
+      ? `<div class="card-radar" title="${escapeHtml(
+          options.radar.map((item) => item.title).join('；'),
+        )}">
+          ${miniRadarSvg(options.radar)}
+          <div class="card-radar-legend">
+            <span><i class="radar-dot self"></i>玩家</span>
+            <span><i class="radar-dot avg"></i>平均</span>
+          </div>
+        </div>`
+      : '';
+
   const itemRow =
     thisGame && thisGame.items?.length
       ? `<div class="items">${thisGame.items
@@ -584,6 +597,7 @@ function buildCard(player, isLocal, options = {}) {
     </div>
 
     ${thisGame ? gameRow : liveRow}
+    ${thisGame ? radarBlock : ''}
     ${thisGame ? thisGameMetrics : ''}
     ${thisGame ? itemRow : ''}
     ${thisGame ? '' : gameChips ? `<div class="games">${gameChips}</div>` : ''}
@@ -895,11 +909,8 @@ function matchRow(game, showScore) {
   </button>`;
 }
 
-function buildRadarPanel(detail) {
-  const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
-  const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
-  const self = scoreboard.find((player) => player.puuid && player.puuid === selfPuuid);
-  if (!self) return null;
+function buildRadarContext(scoreboard) {
+  if (!scoreboard.length) return null;
 
   const teamKills = (player) =>
     scoreboard
@@ -927,25 +938,37 @@ function buildRadarPanel(detail) {
     { label: '治疗', value: (player) => Number(player.heal) || 0, format: kilo },
   ];
 
-  const series = metrics.map((metric) => {
+  return metrics.map((metric) => {
     const values = scoreboard.map((player) => metric.value(player));
     const max = Math.max(1, ...values);
-    const selfValue = metric.value(self);
-    const avgValue = values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+    const avg = values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+    return { ...metric, max, avg };
+  });
+}
+
+function buildRadarSeries(player, context) {
+  return context.map((metric) => {
+    const value = metric.value(player);
+    const selfRatio = Math.max(0, Math.min(100, (value / metric.max) * 100));
+    const avgRatio = Math.max(0, Math.min(100, (metric.avg / metric.max) * 100));
+    const plain = (input) => String(input).replace(/<[^>]*>/g, '');
     return {
-      ...metric,
-      selfValue,
-      avgValue,
-      selfRatio: (selfValue / max) * 100,
-      avgRatio: (avgValue / max) * 100,
+      label: metric.label,
+      selfRatio,
+      avgRatio,
+      title: `${metric.label} 玩家 ${plain(metric.format(value))} · 平均 ${plain(
+        metric.format(metric.avg),
+      )}`,
     };
   });
+}
 
-  const width = 280;
-  const height = 250;
-  const cx = 140;
-  const cy = 116;
-  const radius = 80;
+function miniRadarSvg(series) {
+  const width = 156;
+  const height = 146;
+  const cx = 78;
+  const cy = 72;
+  const radius = 44;
   const angle = (index) => -Math.PI / 2 + (index * Math.PI) / 3;
   const at = (index, ratio) => [
     cx + Math.cos(angle(index)) * radius * (ratio / 100),
@@ -960,7 +983,7 @@ function buildRadarPanel(detail) {
       )
       .join(' ');
 
-  const rings = [25, 50, 75, 100]
+  const rings = [50, 100]
     .map((level) => `<polygon points="${polygon(series.map(() => level))}" class="radar-ring"/>`)
     .join('');
   const axes = series
@@ -972,8 +995,8 @@ function buildRadarPanel(detail) {
   const labels = series
     .map((metric, index) => {
       const point = angle(index);
-      const x = cx + Math.cos(point) * radius * 1.28;
-      const y = cy + Math.sin(point) * radius * 1.28;
+      const x = cx + Math.cos(point) * radius * 1.3;
+      const y = cy + Math.sin(point) * radius * 1.3;
       const anchor =
         Math.cos(point) > 0.25 ? 'start' : Math.cos(point) < -0.25 ? 'end' : 'middle';
       const dy = Math.sin(point) > 0.6 ? '0.9em' : Math.sin(point) < -0.6 ? '-0.2em' : '0.35em';
@@ -981,34 +1004,13 @@ function buildRadarPanel(detail) {
     })
     .join('');
 
-  const panel = document.createElement('section');
-  panel.className = 'radar-panel';
-  panel.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="本局数据对比">
-      ${rings}
-      ${axes}
-      <polygon points="${polygon(series.map((metric) => metric.avgRatio))}" class="radar-avg"/>
-      <polygon points="${polygon(series.map((metric) => metric.selfRatio))}" class="radar-self"/>
-      ${labels}
-    </svg>
-    <div class="radar-side">
-      <div class="radar-head"><b>本局六边形</b><span>你 vs 10 人平均</span></div>
-      <div class="radar-legend">
-        <span><i class="radar-dot self"></i>你</span>
-        <span><i class="radar-dot avg"></i>本局平均</span>
-      </div>
-      <div class="radar-values">
-        ${series
-          .map(
-            (metric) =>
-              `<span><b>${metric.label}</b> 你 ${metric.format(
-                metric.selfValue,
-              )} · 平均 ${metric.format(metric.avgValue)}</span>`,
-          )
-          .join('')}
-      </div>
-    </div>`;
-  return panel;
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="本局数据对比">
+    ${rings}
+    ${axes}
+    <polygon points="${polygon(series.map((metric) => metric.avgRatio))}" class="radar-avg"/>
+    <polygon points="${polygon(series.map((metric) => metric.selfRatio))}" class="radar-self"/>
+    ${labels}
+  </svg>`;
 }
 
 function renderScoreboard(detail) {
@@ -1023,6 +1025,7 @@ function renderScoreboard(detail) {
   const byPuuid = new Map(players.filter((player) => player.puuid).map((p) => [p.puuid, p]));
   const byName = new Map(players.map((player) => [player.displayName, player]));
   const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
+  const radarContext = buildRadarContext(scoreboard);
 
   const nodes = scoreboard.map((row) => {
     const report = (row.puuid && byPuuid.get(row.puuid)) || byName.get(row.name);
@@ -1042,13 +1045,13 @@ function renderScoreboard(detail) {
         mode: detail.gameMode ?? null,
         modeLabel: detail.queueName ?? '本局',
         thisGame: row,
+        radar: radarContext ? buildRadarSeries(row, radarContext) : undefined,
       },
     );
   });
 
   els.matchesList.className = 'match-list match-cards';
-  const radar = buildRadarPanel(detail);
-  els.matchesList.replaceChildren(...(radar ? [radar, ...nodes] : nodes));
+  els.matchesList.replaceChildren(...nodes);
 }
 
 function renderMatchTab(tab) {
