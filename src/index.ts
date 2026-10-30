@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './env.js';
 import process from 'node:process';
 import type { ChampSelectSession, Snapshot } from './types.js';
 import { LcuApi } from './lcu/api.js';

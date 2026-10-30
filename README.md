@@ -56,13 +56,18 @@ npm run doctor     # 诊断：客户端连接、接口、大区、战绩是否�
 | `--quiet` | 减少日志 |
 | `--token <token>` | 手动指定 LCU remoting token |
 
-环境变量：`LCU_PORT`、`LCU_PASSWORD`、`LOL_LOCKFILE`、`LOL_INSTALL_DIR`、`LOL_MATE_DB`（SQLite 数据库路径，兼容旧的 `LOL_MATE_CACHE`）。
+环境变量支持写在项目根目录的 `.env` 里（复制 `.env.example` 后修改），真实的系统环境变量优先：
 
-想自己指定数据库位置时（设置后需重新打开终端 / VS Code）：
+```dotenv
+# 数据库放到 E 盘
+LOL_MATE_DB=E:\lol-mate-stats\cache.db
 
-```powershell
-setx LOL_MATE_DB "E:\lol-mate-stats\cache.db"
+# 可选
+PORT=51730
+RECENT_GAMES=10
 ```
+
+也兼容 `LOL_MATE_CACHE`（旧名字）、`LCU_PORT`、`LCU_PASSWORD`、`LOL_LOCKFILE`、`LOL_INSTALL_DIR`。
 
 ### 找不到客户端时
 

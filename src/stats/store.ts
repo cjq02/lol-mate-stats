@@ -1,3 +1,4 @@
+import '../env.js';
 import { execFileSync } from 'node:child_process';
 import {
   copyFileSync,
