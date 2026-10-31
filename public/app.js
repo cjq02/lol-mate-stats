@@ -30,6 +30,7 @@ const els = {
   matchesRefresh: document.getElementById('matches-refresh'),
   matchTabs: document.getElementById('match-tabs'),
   myMatches: document.getElementById('my-matches'),
+  latestMatch: document.getElementById('latest-match'),
   clearCache: document.getElementById('clear-cache'),
 };
 
@@ -169,6 +170,7 @@ const state = {
   searchPlayers: [],
   matchesRefreshHandler: null,
   matchesRefreshing: false,
+  latestLoading: false,
 };
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
@@ -1445,6 +1447,58 @@ async function openMyMatches() {
   }
 }
 
+/** 首页「最近一局」：读取我最近一场对局并直接打开详情 */
+async function openLatestMatch() {
+  if (state.latestLoading) return;
+  state.latestLoading = true;
+  els.latestMatch.disabled = true;
+  els.latestMatch.textContent = '读取中…';
+
+  try {
+    let gameId = 0;
+    let lcuError = '';
+
+    try {
+      const response = await fetch('/api/me/matches?recent=1', { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error ?? `HTTP ${response.status}`);
+      }
+      state.selfPuuid = payload.summoner?.puuid ?? state.selfPuuid;
+      const game = Array.isArray(payload.games) ? payload.games[0] : null;
+      if (game?.gameId) gameId = Number(game.gameId);
+    } catch (error) {
+      lcuError = error instanceof Error ? error.message : String(error);
+    }
+
+    // 客户端战绩读不到时，用本地历史存档兜底
+    if (!gameId) {
+      const response = await fetch('/api/archive/matches?limit=1', { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && payload?.ok !== false) {
+        const game = Array.isArray(payload.games) ? payload.games[0] : null;
+        if (game?.gameId) gameId = Number(game.gameId);
+      } else if (!lcuError) {
+        lcuError = payload?.error ?? `历史存档 HTTP ${response.status}`;
+      }
+    }
+
+    if (!gameId) throw new Error(lcuError || '还没有可查看的对局记录');
+    // 等待期间用户已经打开了别的弹窗，不要覆盖
+    if (!els.matchesModal.classList.contains('hidden')) return;
+    await openMatchDetail(gameId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    els.notice.textContent = `读取最近一局失败：${message}`;
+    els.notice.classList.remove('hidden');
+    setTimeout(() => els.notice.classList.add('hidden'), 8000);
+  } finally {
+    state.latestLoading = false;
+    els.latestMatch.disabled = false;
+    els.latestMatch.textContent = '最近一局';
+  }
+}
+
 function renderMatchDetailView(detail, tab = 'recent') {
   stopLoadingTimer();
   state.matchDetail = detail;
@@ -1596,6 +1650,7 @@ async function submitSearch(event) {
 
 els.refresh.addEventListener('click', () => void refresh());
 els.myMatches.addEventListener('click', () => void openMyMatches());
+els.latestMatch.addEventListener('click', () => void openLatestMatch());
 els.clearCache.addEventListener('click', () => void clearCache());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
