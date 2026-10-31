@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DataSource } from './source.js';
+import type { GameContext, GameModeKey } from './types.js';
 import { logTag } from './util.js';
 
 const execFileAsync = promisify(execFile);
@@ -208,6 +209,46 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'POST' && url.pathname === '/api/player/refresh') {
+    if (!source.refreshPlayer) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持更新玩家战绩' });
+      return;
+    }
+    const summonerId = Number(url.searchParams.get('summonerId'));
+    if (!Number.isFinite(summonerId) || summonerId <= 0) {
+      sendJson(res, 400, { ok: false, error: '缺少有效的 summonerId' });
+      return;
+    }
+    const rawRecent = Number(url.searchParams.get('recent') ?? 0);
+    const recent =
+      Number.isFinite(rawRecent) && rawRecent > 0
+        ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
+        : undefined;
+    const rawQueueId = Number(url.searchParams.get('queueId') ?? 0);
+    const queueId =
+      Number.isFinite(rawQueueId) && rawQueueId > 0 ? rawQueueId : undefined;
+    const rawMode = url.searchParams.get('mode');
+    const mode: GameModeKey | undefined =
+      rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    const context: GameContext | undefined = queueId || mode ? { queueId, mode } : undefined;
+    try {
+      logTag('api', `更新玩家战绩：summonerId=${summonerId}`);
+      const player = await source.refreshPlayer(summonerId, { recent, context });
+      logTag('api', `更新玩家战绩完成：${player.displayName}`);
+      sendJson(res, 200, { ok: true, player });
+    } catch (error) {
+      logTag(
+        'api',
+        `更新玩家战绩失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/me/matches') {
     if (!source.getMyMatches) {
       sendJson(res, 501, { ok: false, error: '当前模式不支持查询战绩' });
@@ -264,6 +305,7 @@ async function handleRequest(
     const recent = Number.isFinite(rawRecent)
       ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
       : 10;
+    const force = url.searchParams.get('refresh') === '1';
     const started = Date.now();
 
     res.writeHead(200, {
@@ -282,7 +324,7 @@ async function handleRequest(
     try {
       const detail = await source.getMatchDetail(gameId, recent, (done, total, name) => {
         sendEvent({ type: 'progress', done, total, name });
-      });
+      }, { force });
       sendEvent({ type: 'done', data: detail });
       logTag(
         'api',
@@ -308,9 +350,10 @@ async function handleRequest(
     const recent = Number.isFinite(rawRecent)
       ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
       : 10;
+    const force = url.searchParams.get('refresh') === '1';
     try {
       logTag('api', `读取对局 ${gameId} 详情（最近 ${recent} 场）…`);
-      const detail = await source.getMatchDetail(gameId, recent);
+      const detail = await source.getMatchDetail(gameId, recent, undefined, { force });
       sendJson(res, 200, { ok: true, ...detail });
     } catch (error) {
       logTag(

@@ -27,6 +27,7 @@ const els = {
   matchesList: document.getElementById('matches-list'),
   matchesClose: document.getElementById('matches-close'),
   matchesBack: document.getElementById('matches-back'),
+  matchesRefresh: document.getElementById('matches-refresh'),
   matchTabs: document.getElementById('match-tabs'),
   myMatches: document.getElementById('my-matches'),
   clearCache: document.getElementById('clear-cache'),
@@ -139,6 +140,13 @@ function currentModeLabel() {
   return '近期';
 }
 
+function snapshotContext() {
+  const snapshot = state.snapshot;
+  if (!snapshot) return undefined;
+  if (!snapshot.queueId && !snapshot.gameMode) return undefined;
+  return { queueId: snapshot.queueId, mode: snapshot.gameMode };
+}
+
 const state = {
   snapshot: null,
   snapshotSig: '',
@@ -158,6 +166,9 @@ const state = {
   archiveTotal: 0,
   archiveLoading: false,
   itemIcons: null,
+  searchPlayers: [],
+  matchesRefreshHandler: null,
+  matchesRefreshing: false,
 };
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
@@ -338,7 +349,10 @@ function renderBoard(players) {
     const sig = `${key}|${isLocal}|${JSON.stringify(player)}`;
     const cached = cardCache.get(key);
     if (cached && cached.sig === sig) return cached.node;
-    const node = buildCard(player, isLocal, { liveView });
+    const node = buildCard(player, isLocal, {
+      liveView,
+      context: snapshotContext(),
+    });
     node.dataset.key = key;
     // 只有新出现的卡片才播放入场动画，避免数据刷新时整块闪一下
     if (!currentKeys.has(key)) enterCard(node);
@@ -672,7 +686,7 @@ function buildCard(player, isLocal, options = {}) {
 
   const matchesButton = card.querySelector('[data-action="matches"]');
   if (matchesButton) {
-    matchesButton.addEventListener('click', () => openMatches(player));
+    matchesButton.addEventListener('click', () => openMatches(player, options.context));
   }
 
   return card;
@@ -883,6 +897,7 @@ async function clearCache() {
 function closeSearch() {
   els.searchPanel.classList.add('hidden');
   els.searchBoard.replaceChildren();
+  state.searchPlayers = [];
   els.searchStatus.textContent = '';
   els.searchStatus.classList.remove('error');
 }
@@ -1144,6 +1159,7 @@ function renderMatchTab(tab) {
     buildCard(player, Boolean(selfPuuid && player.puuid === selfPuuid), {
       mode: detail.gameMode ?? null,
       modeLabel: detail.queueName ?? '近期',
+      context: { queueId: detail.queueId, mode: detail.gameMode },
     }),
   );
   els.matchesList.className = 'match-list match-cards';
@@ -1169,15 +1185,102 @@ function renderMatchesView(games, title, showScore) {
   updateMatchesBackButton();
 }
 
-function renderPlayerMatches(games, title) {
-  renderMatchesView(games, title, true);
-  state.currentView = () => renderPlayerMatches(games, title);
+function setMatchesRefresh(handler) {
+  state.matchesRefreshHandler = typeof handler === 'function' ? handler : null;
+  const available = Boolean(state.matchesRefreshHandler);
+  els.matchesRefresh.classList.toggle('hidden', !available);
+  els.matchesRefresh.disabled = false;
+  els.matchesRefresh.classList.remove('spinning');
 }
 
-function openMatches(player) {
-  const games = player.games ?? [];
+async function refreshMatchesView() {
+  const handler = state.matchesRefreshHandler;
+  if (!handler || state.matchesRefreshing) return;
+  state.matchesRefreshing = true;
+  els.matchesRefresh.disabled = true;
+  els.matchesRefresh.classList.add('spinning');
+  els.matchesRefresh.textContent = '更新中…';
+  try {
+    await handler();
+  } catch (error) {
+    els.notice.textContent = `更新失败：${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    els.notice.classList.remove('hidden');
+    setTimeout(() => els.notice.classList.add('hidden'), 8000);
+  } finally {
+    state.matchesRefreshing = false;
+    els.matchesRefresh.disabled = false;
+    els.matchesRefresh.classList.remove('spinning');
+    els.matchesRefresh.textContent = '更新';
+  }
+}
+
+function playerMatchesTitle(player) {
   const name = `${player.displayName ?? '玩家'}${player.tagLine ? `#${player.tagLine}` : ''}`;
-  const title = `${name} · 最近 ${games.length} 场`;
+  return `${name} · 最近 ${(player.games ?? []).length} 场`;
+}
+
+async function refreshPlayerMatches(player, context) {
+  if (!player.summonerId) throw new Error('缺少玩家 ID，无法更新');
+  const token = state.matchRequestToken;
+  const params = new URLSearchParams({ summonerId: String(player.summonerId) });
+  if (context?.queueId) params.set('queueId', String(context.queueId));
+  if (context?.mode) params.set('mode', context.mode);
+
+  const response = await fetch(`/api/player/refresh?${params}`, { method: 'POST' });
+  const payload = await response.json().catch(() => ({}));
+  if (token !== state.matchRequestToken) return;
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(payload?.error ?? `HTTP ${response.status}`);
+  }
+  const updated = payload.player;
+  if (!updated) throw new Error('没有返回战绩数据');
+
+  // 保留当前页面才有的字段（位置、英雄、敌方标记、实时数据），其余用新报告覆盖
+  mergeRefreshedPlayer(player, updated);
+
+  const boardPlayer = state.snapshot?.players?.find(
+    (item) => item.summonerId === player.summonerId,
+  );
+  if (boardPlayer) {
+    if (boardPlayer !== player) mergeRefreshedPlayer(boardPlayer, updated);
+    render();
+  }
+  if (state.searchPlayers.some((item) => item.summonerId === player.summonerId)) {
+    for (const item of state.searchPlayers) {
+      if (item.summonerId === player.summonerId) mergeRefreshedPlayer(item, updated);
+    }
+    renderSearchPlayers(state.searchPlayers);
+  }
+  renderPlayerMatches(player.games ?? [], playerMatchesTitle(player), player, context);
+}
+
+function mergeRefreshedPlayer(target, updated) {
+  const keep = {
+    position: target.position,
+    championId: target.championId,
+    championName: target.championName,
+    isEnemy: target.isEnemy,
+    isBot: target.isBot,
+    live: target.live,
+  };
+  Object.assign(target, updated, keep);
+  target.loading = false;
+}
+
+function renderPlayerMatches(games, title, player, context) {
+  renderMatchesView(games, title, true);
+  state.currentView = () => renderPlayerMatches(games, title, player, context);
+  setMatchesRefresh(
+    player?.summonerId ? () => refreshPlayerMatches(player, context) : null,
+  );
+}
+
+function openMatches(player, context) {
+  state.matchRequestToken += 1;
+  const games = player.games ?? [];
+  const title = playerMatchesTitle(player);
 
   // 在某一局详情里点玩家卡片时，把当前详情压栈，返回时回到原页签
   const inDetail =
@@ -1190,7 +1293,7 @@ function openMatches(player) {
     state.backStack = [];
     state.currentView = null;
   }
-  renderPlayerMatches(games, title);
+  renderPlayerMatches(games, title, player, context);
 }
 
 function goMatchesBack() {
@@ -1219,6 +1322,7 @@ function renderMyMatches() {
   const games = state.myGames ?? [];
   renderMatchesView(games, `我的战绩 · ${games.length} 场`, true);
   state.currentView = renderMyMatches;
+  setMatchesRefresh(() => openMyMatches());
 
   if (state.archiveLoaded < state.archiveTotal) {
     const remaining = state.archiveTotal - state.archiveLoaded;
@@ -1282,6 +1386,7 @@ async function openMyMatches() {
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   els.matchesBack.classList.add('hidden');
   els.matchesTitle.textContent = '我的最近战绩';
+  setMatchesRefresh(null);
   beginMatchesLoading('正在读取最近战绩和评分…');
 
   let games = [];
@@ -1328,6 +1433,7 @@ async function openMyMatches() {
       lcuError ? ' error' : ''
     }">${lcuError ? `读取失败：${escapeHtml(lcuError)}` : '还没有对局记录'}</div>`;
     els.matchesTitle.textContent = '我的战绩';
+    setMatchesRefresh(() => openMyMatches());
     return;
   }
 
@@ -1344,6 +1450,7 @@ function renderMatchDetailView(detail, tab = 'recent') {
   state.matchDetail = detail;
   state.matchTab = tab;
   state.currentView = () => renderMatchDetailView(detail, tab);
+  setMatchesRefresh(() => openMatchDetail(detail.gameId, { push: false, tab, force: true }));
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
   els.matchTabs.classList.remove('hidden');
@@ -1354,20 +1461,23 @@ function renderMatchDetailView(detail, tab = 'recent') {
   renderMatchTab(tab);
 }
 
-async function openMatchDetail(gameId) {
+async function openMatchDetail(gameId, options = {}) {
+  const push = options.push !== false;
   state.matchRequestToken += 1;
   const token = state.matchRequestToken;
-  if (typeof state.currentView === 'function') state.backStack.push(state.currentView);
+  if (push && typeof state.currentView === 'function') state.backStack.push(state.currentView);
 
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
   els.matchTabs.classList.add('hidden');
   els.matchesTitle.textContent = '对局详情';
   updateMatchesBackButton();
+  setMatchesRefresh(null);
   beginMatchesLoading('正在读取 10 名玩家的战绩…');
 
   try {
-    const response = await fetch(`/api/match/${gameId}/stream?recent=10`, {
+    const refreshQuery = options.force ? '&refresh=1' : '';
+    const response = await fetch(`/api/match/${gameId}/stream?recent=10${refreshQuery}`, {
       cache: 'no-store',
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1385,7 +1495,9 @@ async function openMatchDetail(gameId) {
 
     // 浏览器不支持流式响应时退回到普通 JSON 接口
     if (!detail) {
-      const fallback = await fetch(`/api/match/${gameId}?recent=10`, { cache: 'no-store' });
+      const fallback = await fetch(`/api/match/${gameId}?recent=10${refreshQuery}`, {
+        cache: 'no-store',
+      });
       const payload = await fallback.json().catch(() => ({}));
       if (!fallback.ok || payload?.ok === false) {
         throw new Error(payload?.error ?? `HTTP ${fallback.status}`);
@@ -1394,7 +1506,7 @@ async function openMatchDetail(gameId) {
     }
 
     if (token !== state.matchRequestToken) return;
-    renderMatchDetailView(detail, 'recent');
+    renderMatchDetailView(detail, options.tab ?? 'recent');
   } catch (error) {
     if (token !== state.matchRequestToken) return;
     stopLoadingTimer();
@@ -1404,6 +1516,11 @@ async function openMatchDetail(gameId) {
     els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
       error instanceof Error ? error.message : String(error),
     )}</div>`;
+    setMatchesRefresh(() => openMatchDetail(gameId, {
+      push: false,
+      tab: options.tab,
+      force: options.force,
+    }));
     updateMatchesBackButton();
   }
 }
@@ -1419,7 +1536,17 @@ function closeMatches() {
   els.matchesList.replaceChildren();
   els.matchTabs.classList.add('hidden');
   els.matchesBack.classList.add('hidden');
+  setMatchesRefresh(null);
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
+}
+
+function renderSearchPlayers(players) {
+  state.searchPlayers = Array.isArray(players) ? players : [];
+  els.searchBoard.replaceChildren(
+    ...state.searchPlayers.map((player) =>
+      buildCard(player, false, { mode: null, modeLabel: '近期' }),
+    ),
+  );
 }
 
 async function submitSearch(event) {
@@ -1450,10 +1577,7 @@ async function submitSearch(event) {
       return;
     }
 
-    const nodes = players.map((player) =>
-      buildCard(player, false, { mode: null, modeLabel: '近期' }),
-    );
-    els.searchBoard.replaceChildren(...nodes);
+    renderSearchPlayers(players);
     const games = players[0]?.recent?.games;
     els.searchStatus.textContent = games
       ? `查到 ${players.length} 名玩家，最近 ${games} 场`
@@ -1476,6 +1600,7 @@ els.clearCache.addEventListener('click', () => void clearCache());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
 els.matchesClose.addEventListener('click', closeMatches);
+els.matchesRefresh.addEventListener('click', () => void refreshMatchesView());
 els.matchesBack.addEventListener('click', () => {
   goMatchesBack();
 });

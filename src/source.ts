@@ -1,4 +1,4 @@
-import type { MatchDetail, MatchSummary, PlayerReport, Snapshot, SummonerInfo } from './types.js';
+import type { GameContext, MatchDetail, MatchSummary, PlayerReport, Snapshot, SummonerInfo } from './types.js';
 import type { ArchivedMatch } from './stats/archive.js';
 
 export interface AssetResult {
@@ -17,6 +17,11 @@ export interface DataSource {
   getAsset(path: string): Promise<AssetResult | null>;
   /** 按名字查询任意玩家的近期战绩（可选，demo 模式不支持） */
   scanPlayer?(name: string, recent: number): Promise<PlayerReport[]>;
+  /** 强制更新单个玩家的近期战绩（绕过 24 小时报告缓存） */
+  refreshPlayer?(
+    summonerId: number,
+    options?: { recent?: number; context?: GameContext },
+  ): Promise<PlayerReport>;
   /** 首页“我的战绩”：当前账号最近对局列表 */
   getMyMatches?(recent: number): Promise<{ summoner: SummonerInfo; games: MatchSummary[] }>;
   /** 长期存档：某个玩家（默认自己）的历史对局 */
@@ -30,6 +35,7 @@ export interface DataSource {
     gameId: number,
     recent: number,
     onProgress?: (done: number, total: number, name: string) => void,
+    options?: { force?: boolean },
   ): Promise<MatchDetail>;
   stop(): void | Promise<void>;
 }

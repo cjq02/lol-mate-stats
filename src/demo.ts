@@ -308,6 +308,15 @@ export class DemoSource implements DataSource {
     // 演示模式没有真实缓存
   }
 
+  async refreshPlayer(summonerId: number): Promise<PlayerReport> {
+    const current = this.snapshot.players.find((player) => player.summonerId === summonerId);
+    if (!current) throw new Error('演示模式中没有该玩家');
+    this.regenerate();
+    return (
+      this.snapshot.players.find((player) => player.summonerId === summonerId) ?? current
+    );
+  }
+
   async getAsset(): Promise<AssetResult | null> {
     return null;
   }

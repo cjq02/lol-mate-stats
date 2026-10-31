@@ -168,6 +168,48 @@ export class LiveSource implements DataSource {
     return collector.collect(session);
   }
 
+  /** 强制更新单个玩家的报告缓存，用于战绩列表里的「更新」按钮 */
+  async refreshPlayer(
+    summonerId: number,
+    options: { recent?: number; context?: GameContext } = {},
+  ): Promise<PlayerReport> {
+    const api = await this.ensureApi();
+    if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
+
+    const summoner = await api.getSummonerById(summonerId);
+    if (!summoner?.summonerId) throw new Error(`未找到召唤师：${summonerId}`);
+
+    const rawRecent = options.recent ?? this.options.recent;
+    const recent = Math.min(30, Math.max(1, Math.trunc(rawRecent)));
+    // 所有 recent 值对应不同 collector，内存缓存都要失效，避免换个入口又读到旧数据
+    for (const collector of this.collectors.values()) {
+      collector.invalidateReport(summoner.summonerId);
+    }
+
+    const session: ChampSelectSession = {
+      localPlayerCellId: 0,
+      myTeam: [
+        {
+          cellId: 0,
+          summonerId: summoner.summonerId,
+          puuid: summoner.puuid,
+          championId: 0,
+          team: 1,
+        },
+      ],
+    };
+    const collector = this.ensureCollector(api, recent);
+    const reports = await collector.collect(session, undefined, options.context);
+    const report = reports[0];
+    if (!report) {
+      throw new Error(
+        `未读取到 ${summoner.gameName ?? summoner.displayName ?? summonerId} 的战绩`,
+      );
+    }
+    logTag('match', `已更新玩家战绩：${report.displayName}（最近 ${recent} 场）`);
+    return report;
+  }
+
   /** 当前账号最近对局列表 */
   async getMyMatches(
     recent: number,
@@ -230,6 +272,7 @@ export class LiveSource implements DataSource {
     gameId: number,
     recent: number,
     onProgress?: (done: number, total: number, name: string) => void,
+    options: { force?: boolean } = {},
   ): Promise<MatchDetail> {
     const started = Date.now();
     const api = await this.ensureApi();
@@ -359,6 +402,7 @@ export class LiveSource implements DataSource {
           logTag('match', `[${gameId}] ${done}/${total} ${name} 完成`);
           onProgress?.(done, total, name);
         },
+        { force: options.force },
       );
       const rawDuration = toNumber(game.gameDuration);
       logTag(

@@ -132,6 +132,24 @@ export class ReportCollector {
     }
   }
 
+  /**
+   * 只让某个玩家的报告缓存失效（内存 + SQLite），其它玩家不受影响。
+   * 下次读取该玩家时会重新拉取战绩；未过期时仍会复用其它缓存。
+   */
+  invalidateReport(summonerId: number): void {
+    const prefix = `${summonerId}:`;
+    for (const key of [...this.reportCache.keys()]) {
+      if (key.startsWith(prefix)) this.reportCache.delete(key);
+    }
+    const db = getDb();
+    if (!db) return;
+    try {
+      db.prepare('DELETE FROM reports WHERE cache_key LIKE ?').run(`${prefix}%`);
+    } catch {
+      /* 删除失败时内存缓存仍然已失效，下次读取会重新拉取 */
+    }
+  }
+
   /** 立即把缓存写盘；退出前调用，避免防抖计时器被 unref 后丢失最后一次写入 */
   async flush(): Promise<void> {
     if (this.saveTimer) {
@@ -460,6 +478,7 @@ export class ReportCollector {
     selfPuuid: string,
     context?: GameContext,
     onProgress?: (done: number, total: number, name: string) => void,
+    options: { force?: boolean } = {},
   ): Promise<PlayerReport[]> {
     const participants = game.participants ?? [];
     const identities = game.participantIdentities ?? [];
@@ -537,7 +556,7 @@ export class ReportCollector {
 
     let done = 0;
     const reports = await mapLimit(prepared, 3, async ({ member, base, isEnemy, isBot }) => {
-      const report = isBot ? base : await this.buildFullReport(member, base, championMap, context);
+      const report = isBot ? base : await this.buildFullReport(member, base, championMap, context, options.force);
       done += 1;
       onProgress?.(done, prepared.length, report.displayName);
       return { ...report, isEnemy, isBot };
@@ -765,10 +784,11 @@ export class ReportCollector {
     base: PlayerReport,
     championMap: Map<number, ChampionSummary>,
     context?: GameContext,
+    force = false,
   ): Promise<PlayerReport> {
     const cacheKey = reportCacheKey(member.summonerId, context, this.options.recent);
     const self = await this.isSelf(base.puuid ?? member.puuid);
-    const cached = self ? undefined : this.reportCache.get(cacheKey);
+    const cached = self || force ? undefined : this.reportCache.get(cacheKey);
     if (cached && Date.now() - cached.at < this.options.ttlMs) {
       return this.withSessionData(cached.report, member, base, championMap);
     }
