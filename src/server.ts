@@ -231,7 +231,7 @@ async function handleRequest(
         `lol-mate-live-${sessionKey}`,
       );
       if (!content.trim()) {
-        throw new Error('AI 没有返回内容，请点「重新分析」再试一次。');
+        throw new Error('AI 没有返回正式内容（可能推理被截断），请点「重新分析」再试一次。');
       }
       const saved =
         !abort.signal.aborted &&
@@ -576,7 +576,7 @@ async function handleRequest(
           ? saveAiAnalysis(gameId, config.model, content.trim())
           : false;
       if (!content.trim()) {
-        throw new Error('AI 没有返回内容，请点「重新分析」再试一次。');
+        throw new Error('AI 没有返回正式内容（可能推理被截断），请点「重新分析」再试一次。');
       }
       sendEvent({ type: 'done', model: config.model, saved });
       logTag(

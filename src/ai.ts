@@ -356,7 +356,8 @@ export async function streamChatCompletion(
         messages,
         stream: true,
         temperature: 0.4,
-        max_tokens: 5000,
+        // DeepSeek V4.1 Flash 会先输出 reasoning_content，预算太小会导致正式回答为空
+        max_tokens: 16000,
       }),
       signal: controller.signal,
     });

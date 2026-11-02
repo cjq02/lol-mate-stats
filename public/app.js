@@ -1139,7 +1139,7 @@ function renderAiView() {
       ? `<div class="ai-status"><span class="spinner"></span><span>${escapeHtml(
           ai.status ?? '正在分析…',
         )}</span></div>`
-      : '<div class="ai-error">AI 没有返回内容，请点「重新分析」再试一次。</div>';
+      : '<div class="ai-error">AI 没有返回正式内容（可能推理被截断），请点「重新分析」再试一次。</div>';
   } else {
     const cursor = ai.running ? '<span class="ai-cursor"></span>' : '';
     const foot =
@@ -1218,7 +1218,7 @@ async function streamAiAnalysis(url, meta) {
         ai.savedAt = Date.now();
         ai.model = event.model ?? ai.model;
         if (!ai.text.trim()) {
-          ai.error = 'AI 没有返回内容，请点「重新分析」再试一次。';
+          ai.error = 'AI 没有返回正式内容（可能推理被截断），请点「重新分析」再试一次。';
         }
         renderAiView();
       } else if (event.type === 'error') {
