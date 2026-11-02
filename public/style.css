@@ -327,19 +327,25 @@ body::before {
 
 .ai-modal {
   z-index: 60;
+  padding: 18px;
 }
 
 .ai-modal-card {
-  width: min(920px, 94vw);
-  max-height: 82vh;
+  width: min(1280px, 97vw);
+  height: min(860px, 92vh);
+  max-height: 92vh;
 }
 
 .ai-modal-card .modal-head {
-  padding: 14px 20px;
+  padding: 16px 24px;
+}
+
+.ai-modal-card .modal-head h2 {
+  font-size: 17px;
 }
 
 .ai-meta {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted-2);
 }
 
@@ -347,9 +353,9 @@ body::before {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 14px 20px 20px;
-  font-size: 13px;
-  line-height: 1.7;
+  padding: 18px 26px 26px;
+  font-size: 14px;
+  line-height: 1.75;
   color: #d7e2f6;
 }
 
@@ -367,7 +373,7 @@ body::before {
 
 .ai-content h4 {
   margin: 11px 0 5px;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 650;
   color: var(--accent);
 }
