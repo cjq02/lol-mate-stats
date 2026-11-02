@@ -82,10 +82,16 @@ export class LcuApi {
 
   /* ----------------------------- 战绩 ----------------------------- */
 
-  /** 最近对局（LCU 会代理到当前大区，无需 Riot API Key） */
-  async getMatchListByPuuid(puuid: string, count: number): Promise<RawGame[]> {
+  /** 最近对局（LCU 会代理到当前大区，无需 Riot API Key）；offset 用于继续往前翻页 */
+  async getMatchListByPuuid(
+    puuid: string,
+    count: number,
+    offset = 0,
+  ): Promise<RawGame[]> {
+    const begIndex = Math.max(0, Math.trunc(offset));
+    const endIndex = begIndex + Math.max(0, Math.trunc(count) - 1);
     const payload = await this.http.get<unknown>(
-      `/lol-match-history/v1/products/lol/${encodeURIComponent(puuid)}/matches?begIndex=0&endIndex=${Math.max(0, count - 1)}`,
+      `/lol-match-history/v1/products/lol/${encodeURIComponent(puuid)}/matches?begIndex=${begIndex}&endIndex=${endIndex}`,
       10_000,
     );
     return unwrapGames(payload);

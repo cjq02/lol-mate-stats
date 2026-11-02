@@ -256,10 +256,12 @@ async function handleRequest(
     }
     const rawRecent = Number(url.searchParams.get('recent') ?? 10);
     const recent = Number.isFinite(rawRecent)
-      ? Math.min(30, Math.max(1, Math.trunc(rawRecent)))
+      ? Math.min(100, Math.max(1, Math.trunc(rawRecent)))
       : 10;
+    const rawOffset = Number(url.searchParams.get('offset') ?? 0);
+    const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.trunc(rawOffset)) : 0;
     try {
-      const data = await source.getMyMatches(recent);
+      const data = await source.getMyMatches(recent, offset);
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
       sendJson(res, 502, {

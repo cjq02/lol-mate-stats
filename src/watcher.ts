@@ -210,9 +210,10 @@ export class LiveSource implements DataSource {
     return report;
   }
 
-  /** 当前账号最近对局列表 */
+  /** 当前账号最近对局列表；offset 用于继续往前翻页 */
   async getMyMatches(
     recent: number,
+    offset = 0,
   ): Promise<{ summoner: SummonerInfo; games: MatchSummary[] }> {
     const started = Date.now();
     const api = await this.ensureApi();
@@ -222,10 +223,15 @@ export class LiveSource implements DataSource {
     if (!summoner.puuid) throw new Error('无法读取当前账号的 puuid');
     saveSelfPuuid(summoner.puuid);
 
-    logTag('match', `读取我的最近 ${recent} 场战绩…`);
+    logTag(
+      'match',
+      offset > 0
+        ? `读取我的战绩第 ${offset + 1}-${offset + recent} 场…`
+        : `读取我的最近 ${recent} 场战绩…`,
+    );
     let rawGames;
     try {
-      rawGames = await api.getMatchListByPuuid(summoner.puuid, recent);
+      rawGames = await api.getMatchListByPuuid(summoner.puuid, recent, offset);
     } catch (error) {
       logTag(
         'match',

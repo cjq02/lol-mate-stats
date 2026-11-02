@@ -22,8 +22,11 @@ export interface DataSource {
     summonerId: number,
     options?: { recent?: number; context?: GameContext },
   ): Promise<PlayerReport>;
-  /** 首页“我的战绩”：当前账号最近对局列表 */
-  getMyMatches?(recent: number): Promise<{ summoner: SummonerInfo; games: MatchSummary[] }>;
+  /** 首页“我的战绩”：当前账号最近对局列表；offset 用于继续往前翻页 */
+  getMyMatches?(
+    recent: number,
+    offset?: number,
+  ): Promise<{ summoner: SummonerInfo; games: MatchSummary[] }>;
   /** 长期存档：某个玩家（默认自己）的历史对局 */
   getArchivedMatches?(
     limit: number,

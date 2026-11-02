@@ -162,6 +162,8 @@ const state = {
   matchDetail: null,
   matchTab: 'recent',
   myGames: [],
+  myLcuOffset: 0,
+  lcuExhausted: false,
   archiveOffset: 0,
   archiveLoaded: 0,
   archiveTotal: 0,
@@ -172,6 +174,9 @@ const state = {
   matchesRefreshing: false,
   latestLoading: false,
 };
+
+/** “我的战绩”每次从客户端翻页读取的场次 */
+const MY_MATCH_PAGE = 30;
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
 const STATIC_MODE = new URLSearchParams(window.location.search).has('static');
@@ -1326,16 +1331,19 @@ function renderMyMatches() {
   state.currentView = renderMyMatches;
   setMatchesRefresh(() => openMyMatches());
 
-  if (state.archiveLoaded < state.archiveTotal) {
-    const remaining = state.archiveTotal - state.archiveLoaded;
+  const archiveRemaining = Math.max(0, state.archiveTotal - state.archiveLoaded);
+  const hasMore = !state.lcuExhausted || archiveRemaining > 0;
+  if (hasMore) {
+    const hint =
+      archiveRemaining > 0 ? `（本地存档还有 ${archiveRemaining} 场）` : '';
     els.matchesList.insertAdjacentHTML(
       'beforeend',
-      `<div class="archive-more"><button class="btn" type="button" data-action="archive-more">加载更早的战绩（还有 ${remaining} 场）</button></div>`,
+      `<div class="archive-more"><button class="btn" type="button" data-action="archive-more">加载更早的战绩${hint}</button></div>`,
     );
-  } else if (state.archiveTotal > 0) {
+  } else {
     els.matchesList.insertAdjacentHTML(
       'beforeend',
-      `<div class="archive-more"><span>已加载全部历史存档（共 ${state.archiveTotal} 场）</span></div>`,
+      `<div class="archive-more"><span>已加载全部历史战绩（共 ${games.length} 场）</span></div>`,
     );
   }
 }
@@ -1344,25 +1352,63 @@ async function loadMoreArchive(button) {
   if (state.archiveLoading) return;
   state.archiveLoading = true;
   button.disabled = true;
-  button.textContent = '正在读取历史存档…';
+  button.textContent = '正在读取更早的战绩…';
+  let lcuError = '';
   try {
-    const response = await fetch(
-      `/api/archive/matches?limit=100&offset=${state.archiveOffset}`,
-      { cache: 'no-store' },
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.ok === false) {
-      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    let incoming = [];
+
+    // 先继续往前翻客户端战绩；客户端翻到底或不可用时再读本地历史存档
+    if (!state.lcuExhausted) {
+      try {
+        // 存档里可能已经有这几页，跳过重复页直到翻出没见过的对局
+        const knownIds = new Set(state.myGames.map((game) => String(game.gameId)));
+        let pages = 0;
+        while (!state.lcuExhausted && pages < 10) {
+          pages += 1;
+          const response = await fetch(
+            `/api/me/matches?recent=${MY_MATCH_PAGE}&offset=${state.myLcuOffset}`,
+            { cache: 'no-store' },
+          );
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || payload?.ok === false) {
+            throw new Error(payload?.error ?? `HTTP ${response.status}`);
+          }
+          const page = Array.isArray(payload.games) ? payload.games : [];
+          state.selfPuuid = payload.summoner?.puuid ?? state.selfPuuid;
+          state.myLcuOffset += page.length;
+          if (page.length < MY_MATCH_PAGE) state.lcuExhausted = true;
+          if (!page.length) break;
+          incoming = mergeMatchLists(incoming, page);
+          if (page.some((game) => !knownIds.has(String(game.gameId)))) break;
+        }
+      } catch (error) {
+        lcuError = error instanceof Error ? error.message : String(error);
+        // 客户端读不到时不再重试，改走本地历史存档
+        state.lcuExhausted = true;
+      }
     }
-    const incoming = Array.isArray(payload.games) ? payload.games : [];
-    state.archiveTotal = Number(payload.total) || state.archiveTotal;
-    state.archiveOffset += incoming.length;
-    state.archiveLoaded += incoming.length;
-    if (!incoming.length) state.archiveLoaded = state.archiveTotal;
+
+    if (!incoming.length && state.archiveLoaded < state.archiveTotal) {
+      const response = await fetch(
+        `/api/archive/matches?limit=100&offset=${state.archiveOffset}`,
+        { cache: 'no-store' },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error ?? `HTTP ${response.status}`);
+      }
+      incoming = Array.isArray(payload.games) ? payload.games : [];
+      state.archiveTotal = Number(payload.total) || state.archiveTotal;
+      state.archiveOffset += incoming.length;
+      state.archiveLoaded += incoming.length;
+      if (!incoming.length) state.archiveLoaded = state.archiveTotal;
+    }
+
+    if (!incoming.length && lcuError) throw new Error(lcuError);
     state.myGames = mergeMatchLists(state.myGames, incoming);
     renderMyMatches();
   } catch (error) {
-    els.notice.textContent = `读取历史存档失败：${
+    els.notice.textContent = `读取更早战绩失败：${
       error instanceof Error ? error.message : String(error)
     }`;
     els.notice.classList.remove('hidden');
@@ -1380,6 +1426,8 @@ async function openMyMatches() {
   state.matchRequestToken += 1;
   state.matchDetail = null;
   state.myGames = [];
+  state.myLcuOffset = 0;
+  state.lcuExhausted = false;
   state.archiveOffset = 0;
   state.archiveLoaded = 0;
   state.archiveTotal = 0;
@@ -1395,14 +1443,19 @@ async function openMyMatches() {
   let lcuError = '';
 
   try {
-    // “我的战绩”只拉列表，不逐场分析，可以比队友的 10 场多展示一些
-    const response = await fetch('/api/me/matches?recent=30', { cache: 'no-store' });
+    // “我的战绩”只拉列表，不逐场分析；先取最近一页，往下可以继续翻页
+    const response = await fetch(
+      `/api/me/matches?recent=${MY_MATCH_PAGE}&offset=0`,
+      { cache: 'no-store' },
+    );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok === false) {
       throw new Error(payload?.error ?? `HTTP ${response.status}`);
     }
     state.selfPuuid = payload.summoner?.puuid ?? state.selfPuuid;
     games = Array.isArray(payload.games) ? payload.games : [];
+    state.myLcuOffset = games.length;
+    state.lcuExhausted = games.length < MY_MATCH_PAGE;
   } catch (error) {
     lcuError = error instanceof Error ? error.message : String(error);
   }
@@ -1586,6 +1639,11 @@ function closeMatches() {
   state.backStack = [];
   state.currentView = null;
   state.myGames = [];
+  state.myLcuOffset = 0;
+  state.lcuExhausted = false;
+  state.archiveOffset = 0;
+  state.archiveLoaded = 0;
+  state.archiveTotal = 0;
   els.matchesModal.classList.add('hidden');
   els.matchesList.replaceChildren();
   els.matchTabs.classList.add('hidden');
