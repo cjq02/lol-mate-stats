@@ -337,6 +337,8 @@ export interface MatchDetail {
   selfPuuid?: string;
   players: PlayerReport[];
   scoreboard: MatchScoreboardPlayer[];
+  /** 本局标记：重开、队友逃跑等 */
+  tags?: string[];
 }
 
 export interface LiveGameData {

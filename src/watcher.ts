@@ -471,6 +471,11 @@ export class LiveSource implements DataSource {
         { force: options.force },
       );
       const rawDuration = toNumber(game.gameDuration);
+      const flags = gameFlags(
+        game,
+        selfParticipant ? toNumber(selfParticipant.participantId) : undefined,
+        championMap,
+      );
       logTag(
         'match',
         `[${gameId}] 全部完成：${players.length} 人，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
@@ -486,6 +491,7 @@ export class LiveSource implements DataSource {
         selfPuuid: summoner.puuid,
         players,
         scoreboard,
+        tags: gameFlagTags(flags),
       };
     } catch (error) {
       logTag(

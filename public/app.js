@@ -1395,6 +1395,18 @@ async function loadAiStatus() {
   setAiButton(false);
 }
 
+function matchFlagsHtml(tags) {
+  return (tags ?? [])
+    .map((tag) =>
+      tag === '重开' || tag === '队友逃跑'
+        ? `<b class="match-flag ${tag === '重开' ? 'remake' : 'afk'}">${escapeHtml(
+            tag,
+          )}</b>`
+        : escapeHtml(tag),
+    )
+    .join(' / ');
+}
+
 function matchRow(game, showScore) {
   const durationMin = game.durationMin ?? Math.round((Number(game.gameDuration) || 0) / 60);
   const score = showScore && Number.isFinite(Number(game.score)) ? Math.round(game.score) : null;
@@ -1409,17 +1421,7 @@ function matchRow(game, showScore) {
     )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b><small>${escapeHtml(
       game.queueName ?? '',
     )} · ${durationMin} 分钟 · ${formatGameTime(game.gameCreation)}${
-      game.tags?.length
-        ? ` · ${game.tags
-            .map((tag) =>
-              tag === '重开' || tag === '队友逃跑'
-                ? `<b class="match-flag ${tag === '重开' ? 'remake' : 'afk'}">${escapeHtml(
-                    tag,
-                  )}</b>`
-                : escapeHtml(tag),
-            )
-            .join(' / ')}`
-        : ''
+      game.tags?.length ? ` · ${matchFlagsHtml(game.tags)}` : ''
     }</small></span>
     <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
     <span class="pts"${score === null ? '' : ` style="color:${ratingColor(score)}"`}>${
@@ -2032,9 +2034,11 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
   els.matchTabs.classList.remove('hidden');
   els.matchesAi.classList.remove('hidden');
   setAiButton(Boolean(state.ai?.running));
-  els.matchesTitle.textContent = `${detail.queueName ?? '对局'} · ${formatGameTime(
-    detail.gameCreation,
-  )} · 对局详情`;
+  els.matchesTitle.innerHTML = `${escapeHtml(detail.queueName ?? '对局')} · ${escapeHtml(
+    formatGameTime(detail.gameCreation),
+  )} · 对局详情${
+    detail.tags?.length ? ` · ${matchFlagsHtml(detail.tags)}` : ''
+  }`;
   updateMatchesBackButton();
   renderMatchTab(tab);
 }
