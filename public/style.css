@@ -610,6 +610,10 @@ body::before {
   color: #ffab5e;
 }
 
+.match-flag.enemy-afk {
+  color: #ff6b81;
+}
+
 .modal-card.wide {
   width: min(1520px, 96vw);
 }

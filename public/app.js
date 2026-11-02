@@ -1397,13 +1397,17 @@ async function loadAiStatus() {
 
 function matchFlagsHtml(tags) {
   return (tags ?? [])
-    .map((tag) =>
-      tag === '重开' || tag === '队友逃跑'
-        ? `<b class="match-flag ${tag === '重开' ? 'remake' : 'afk'}">${escapeHtml(
-            tag,
-          )}</b>`
-        : escapeHtml(tag),
-    )
+    .map((tag) => {
+      if (tag === '重开') {
+        return `<b class="match-flag remake">${escapeHtml(tag)}</b>`;
+      }
+      if (tag === '队友逃跑' || tag === '对手逃跑') {
+        return `<b class="match-flag ${tag === '队友逃跑' ? 'afk' : 'enemy-afk'}">${escapeHtml(
+          tag,
+        )}</b>`;
+      }
+      return escapeHtml(tag);
+    })
     .join(' / ');
 }
 

@@ -9,6 +9,8 @@ export interface GameFlags {
   remake: boolean;
   /** 是否有队友表现出明显的挂机/逃跑特征（数据推断） */
   teammateAfk: boolean;
+  /** 是否有对手表现出明显的挂机/逃跑特征（数据推断） */
+  opponentAfk: boolean;
 }
 
 function durationSeconds(game: RawGame): number {
@@ -45,22 +47,26 @@ export function gameFlags(
     participantId === undefined
       ? undefined
       : participants.find((item) => toNumber(item.participantId) === participantId);
-  if (!self) return { remake, teammateAfk: false };
+  if (!self) return { remake, teammateAfk: false, opponentAfk: false };
 
   const teamId = toNumber(self.teamId);
-  const teammateAfk = participants.some((other) => {
-    if (toNumber(other.participantId) === participantId) return false;
-    if (toNumber(other.teamId) !== teamId) return false;
+  let teammateAfk = false;
+  let opponentAfk = false;
+  for (const other of participants) {
+    if (toNumber(other.participantId) === participantId) continue;
     const analyzed = analyzeParticipant(game, other, championMap);
-    return analyzed ? isAfkLike(analyzed) : false;
-  });
+    if (!analyzed || !isAfkLike(analyzed)) continue;
+    if (toNumber(other.teamId) === teamId) teammateAfk = true;
+    else opponentAfk = true;
+  }
 
-  return { remake, teammateAfk };
+  return { remake, teammateAfk, opponentAfk };
 }
 
 export function gameFlagTags(flags: GameFlags): string[] {
   const tags: string[] = [];
   if (flags.remake) tags.push('重开');
   if (flags.teammateAfk) tags.push('队友逃跑');
+  if (flags.opponentAfk) tags.push('对手逃跑');
   return tags;
 }

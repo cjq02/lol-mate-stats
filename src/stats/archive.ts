@@ -381,12 +381,12 @@ export function getPlayerMatches(
       ) {
         tags.unshift('重开');
       }
-      const teammateAfk = (participantsByGame.get(gameId) ?? []).some(
-        (participant) =>
-          participant.team_id === Number(row.team_id) &&
-          Boolean(participant.puuid) &&
-          participant.puuid !== puuid &&
-          isAfkLikeStats({
+      let teammateAfk = false;
+      let opponentAfk = false;
+      for (const participant of participantsByGame.get(gameId) ?? []) {
+        if (!participant.puuid || participant.puuid === puuid) continue;
+        if (
+          !isAfkLikeStats({
             durationMin,
             gold: Number(participant.gold),
             damage: Number(participant.damage),
@@ -396,9 +396,15 @@ export function getPlayerMatches(
             assists: Number(participant.assists),
             visionScore: Number(participant.vision),
             position: (participant.position as Lane | null) ?? undefined,
-          }),
-      );
+          })
+        ) {
+          continue;
+        }
+        if (participant.team_id === Number(row.team_id)) teammateAfk = true;
+        else opponentAfk = true;
+      }
       if (teammateAfk && !tags.includes('队友逃跑')) tags.push('队友逃跑');
+      if (opponentAfk && !tags.includes('对手逃跑')) tags.push('对手逃跑');
       return {
         gameId,
         queueId: Number(row.queue_id),
