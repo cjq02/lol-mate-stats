@@ -688,11 +688,11 @@ function buildCard(player, isLocal, options = {}) {
             tag ? `<span class="tag">#${escapeHtml(tag)}</span>` : ''
           }</span>
           ${isLocal ? '<span class="you-badge">你</span>' : ''}
-          ${player.isEnemy ? '<span class="side-badge enemy">敌方</span>' : ''}
           ${player.isBot ? '<span class="bot-badge">人机</span>' : ''}
         </div>
         <div class="sub">
           <span class="pos-pill">${escapeHtml(positionLabel(player, cardMode))}</span>
+          ${player.isEnemy ? '<span class="side-badge enemy">敌方</span>' : ''}
           <span>${escapeHtml(rankLabel(player.rank))}</span>
           ${streak}
         </div>
