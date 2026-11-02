@@ -19,10 +19,12 @@
     "scan": "tsx --disable-warning=ExperimentalWarning src/index.ts scan",
     "demo": "tsx --disable-warning=ExperimentalWarning src/index.ts demo",
     "doctor": "tsx --disable-warning=ExperimentalWarning src/index.ts doctor",
+    "db:migrate": "tsx --disable-warning=ExperimentalWarning src/tools/migrate-sqlite-to-mysql.ts",
     "test": "tsx --disable-warning=ExperimentalWarning src/stats/rating.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "mysql2": "^3.24.6",
     "ws": "^8.18.0"
   },
   "devDependencies": {

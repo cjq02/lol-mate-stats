@@ -236,7 +236,7 @@ export class LiveSource implements DataSource {
     const summoner = await api.getCurrentSummoner();
     const puuid = summoner.puuid;
     if (!puuid) throw new Error('无法读取当前账号的 puuid');
-    saveSelfPuuid(puuid);
+    await saveSelfPuuid(puuid);
 
     logTag(
       'match',
@@ -300,7 +300,7 @@ export class LiveSource implements DataSource {
 
     // 读取/补算每场评分；还没归档的对局会顺便写入历史存档
     const scores = await this.fillMissingScores(api, games, championMap, summoner);
-    const archivedTags = getPlayerMatchTags(
+    const archivedTags = await getPlayerMatchTags(
       puuid,
       games.map((game) => game.gameId),
     );
@@ -352,7 +352,7 @@ export class LiveSource implements DataSource {
 
     logTag('match', `[${gameId}] 开始读取对局详情（每人最近 ${recent} 场）`);
     const summoner = await api.getCurrentSummoner();
-    saveSelfPuuid(summoner.puuid ?? '');
+    await saveSelfPuuid(summoner.puuid ?? '');
     let game;
     try {
       game = await api.getGame(gameId);
@@ -573,7 +573,7 @@ export class LiveSource implements DataSource {
     championMap: Map<number, ChampionSummary>,
     summoner: SummonerInfo,
   ): Promise<Map<number, number>> {
-    const scores = getPlayerScores(
+    const scores = await getPlayerScores(
       summoner.puuid ?? '',
       games.map((game) => game.gameId),
     );
@@ -585,7 +585,7 @@ export class LiveSource implements DataSource {
     await mapLimit(missing, 3, async (game) => {
       const detail = await api.getGame(game.gameId).catch(() => null);
       if (detail) {
-        archiveGames([detail], championMap);
+        await archiveGames([detail], championMap);
         const analyzed = analyzeGame(
           detail,
           {
@@ -609,16 +609,16 @@ export class LiveSource implements DataSource {
     offset: number,
     puuid?: string,
   ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }> {
-    let id = puuid?.trim() || getSavedSelfPuuid() || '';
+    let id = puuid?.trim() || (await getSavedSelfPuuid()) || '';
     if (!id) {
       const api = await this.ensureApi();
       const summoner = await api?.getCurrentSummoner().catch(() => null);
       id = summoner?.puuid ?? '';
-      if (id) saveSelfPuuid(id);
+      if (id) await saveSelfPuuid(id);
     }
     if (!id) return { puuid: '', total: 0, games: [] };
-    const total = countPlayerMatches(id);
-    return { puuid: id, total, games: getPlayerMatches(id, limit, offset) };
+    const total = await countPlayerMatches(id);
+    return { puuid: id, total, games: await getPlayerMatches(id, limit, offset) };
   }
 
   async stop(): Promise<void> {

@@ -8,7 +8,7 @@ import { findClientLogDir, probeEdge, readEdgeDiagnostics } from './lcu/edge.js'
 import { fetchLiveGame, liveMembersOf } from './lcu/live.js';
 import { modeFromQueue } from './stats/constants.js';
 import { ReportCollector } from './stats/collector.js';
-import { DB_PATH } from './stats/store.js';
+import { closeDb, DB_CONFIGURED, DB_DESCRIPTION, initDb } from './stats/store.js';
 import { LiveSource } from './watcher.js';
 import { DemoSource } from './demo.js';
 import { openBrowser, startServer } from './server.js';
@@ -108,6 +108,15 @@ async function main(): Promise<void> {
     return;
   }
 
+  const dbReady = await initDb();
+  if (!options.quiet) {
+    if (!DB_CONFIGURED) {
+      logTag('db', '未配置远程 MySQL：战绩缓存、历史存档和 AI 分析不会被保存');
+    } else if (!dbReady) {
+      logTag('db', `远程 MySQL 连接失败（${DB_DESCRIPTION}），本次运行不会保存数据`);
+    }
+  }
+
   switch (options.command) {
     case 'start':
     case 'watch':
@@ -138,6 +147,15 @@ async function main(): Promise<void> {
       printHelp();
       process.exitCode = 1;
   }
+
+  // once / scan / doctor 等一次性命令结束后关闭连接池；start / demo 需要保持连接
+  if (
+    options.command !== 'start' &&
+    options.command !== 'watch' &&
+    options.command !== 'demo'
+  ) {
+    await closeDb();
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -147,13 +165,13 @@ async function main(): Promise<void> {
 async function startLive(options: CliOptions): Promise<void> {
   if (!options.quiet) {
     console.log(colorize('英雄联盟队友战绩面板', 'cyan'));
-    console.log(dim('数据全部来自本地客户端 LCU 接口，不会上传任何信息'));
+    console.log(dim('数据来自本地客户端 LCU 接口；缓存、历史存档和 AI 分析会写入配置的 MySQL'));
     console.log('');
   }
 
   const source = new LiveSource({ recent: options.recent, quiet: options.quiet });
   if (!options.quiet) {
-    logTag('cache', `其他玩家战绩缓存 24 小时；自己的战绩每次实时读取（数据库：${DB_PATH}）`);
+    logTag('cache', `其他玩家战绩缓存 24 小时；自己的战绩每次实时读取（数据库：${DB_DESCRIPTION}）`);
   }
 
   const running = await startServer({
@@ -182,6 +200,7 @@ async function startLive(options: CliOptions): Promise<void> {
     logTag('app', '正在退出…');
     await source.stop();
     await running.close();
+    await closeDb();
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown());
@@ -205,6 +224,7 @@ async function startDemo(options: CliOptions): Promise<void> {
   const shutdown = async (): Promise<void> => {
     await source.stop();
     await running.close();
+    await closeDb();
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown());
@@ -255,6 +275,7 @@ async function runOnce(options: CliOptions): Promise<void> {
       }
       await collector.flush();
       api.destroy();
+      await closeDb();
       return;
     }
 
@@ -283,6 +304,7 @@ async function runOnce(options: CliOptions): Promise<void> {
     }
     await collector.flush();
     api.destroy();
+    await closeDb();
   } catch (error) {
     handleError(error);
   }
@@ -333,6 +355,7 @@ async function runScan(options: CliOptions): Promise<void> {
     }
     await collector.flush();
     api.destroy();
+    await closeDb();
   } catch (error) {
     handleError(error);
   }
@@ -347,6 +370,13 @@ async function runDoctor(options: CliOptions): Promise<void> {
   let api: LcuApi | undefined;
   let connection;
   let edgeFailure = false;
+
+  const dbReady = await initDb();
+  checks.push({
+    label: '数据库',
+    ok: dbReady,
+    detail: DB_CONFIGURED ? DB_DESCRIPTION : '未配置远程 MySQL（LOL_MATE_MYSQL_*）',
+  });
 
   try {
     connection = await discoverConnection({
@@ -522,6 +552,8 @@ async function runDoctor(options: CliOptions): Promise<void> {
     console.log(dim('  先退出客户端重登 / 换网络（手机热点）/ 修复客户端；'));
     console.log(dim('  只有部分玩家失败时，是那几名玩家所在分片超时，稍后刷新即可。'));
   }
+
+  await closeDb();
 }
 
 /* ------------------------------------------------------------------ */

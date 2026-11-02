@@ -16,7 +16,7 @@ import type { DataSource } from './source.js';
 import type { GameContext, GameModeKey } from './types.js';
 import { buildAnalysisMessages, buildLiveAnalysisMessages, getAiConfig, streamChatCompletion } from './ai.js';
 import {
-  DB_PATH,
+  DATA_DIR,
   getAiAnalysis,
   getLiveAiAnalysis,
   saveAiAnalysis,
@@ -61,7 +61,7 @@ const fileCache = new Map<string, { body: Buffer; type: string }>();
 const assetCache = new Map<string, { at: number; result: { body: Buffer; contentType: string } }>();
 const ASSET_TTL = 60 * 60_000;
 /** 装备图标等静态资源落盘，客户端关闭后也能显示 */
-const ASSET_DIR = join(dirname(DB_PATH), 'assets');
+const ASSET_DIR = join(DATA_DIR, 'assets');
 const ITEMS_ASSET_PATH = '/lol-game-data/assets/v1/items.json';
 const ITEMS_DISK_PATH = join(ASSET_DIR, 'items.json');
 const ITEMS_PREFETCH_MARKER = join(ASSET_DIR, 'items-prefetch.json');
@@ -161,7 +161,7 @@ async function handleRequest(
     const sessionKey = snapshot.inGame ? snapshot.liveSessionId : undefined;
     sendJson(res, 200, {
       ok: true,
-      analysis: sessionKey ? getLiveAiAnalysis(sessionKey) ?? null : null,
+      analysis: sessionKey ? (await getLiveAiAnalysis(sessionKey)) ?? null : null,
     });
     return;
   }
@@ -235,7 +235,7 @@ async function handleRequest(
       }
       const saved =
         !abort.signal.aborted &&
-        saveLiveAiAnalysis(sessionKey, config.model, content.trim());
+        (await saveLiveAiAnalysis(sessionKey, config.model, content.trim()));
       sendEvent({ type: 'done', model: config.model, saved });
       logTag(
         'ai',
@@ -504,7 +504,7 @@ async function handleRequest(
   const matchAiRoute = /^\/api\/match\/(\d+)\/ai$/.exec(url.pathname);
   if (method === 'GET' && matchAiRoute) {
     const gameId = Number(matchAiRoute[1]);
-    sendJson(res, 200, { ok: true, analysis: getAiAnalysis(gameId) ?? null });
+    sendJson(res, 200, { ok: true, analysis: (await getAiAnalysis(gameId)) ?? null });
     return;
   }
   if (method === 'POST' && matchAiRoute) {
@@ -573,7 +573,7 @@ async function handleRequest(
       );
       const saved =
         !abort.signal.aborted && content.trim()
-          ? saveAiAnalysis(gameId, config.model, content.trim())
+          ? await saveAiAnalysis(gameId, config.model, content.trim())
           : false;
       if (!content.trim()) {
         throw new Error('AI 没有返回正式内容（可能推理被截断），请点「重新分析」再试一次。');

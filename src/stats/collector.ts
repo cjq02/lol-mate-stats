@@ -1,3 +1,4 @@
+import type { RowDataPacket } from 'mysql2/promise';
 import type {
   AnalyzedGame,
   ChampSelectMember,
@@ -18,7 +19,7 @@ import { analyzeGame } from './analyze.js';
 import { archiveGames } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
 import { summarize } from './rating.js';
-import { getDb } from './store.js';
+import { getDb, withTransaction } from './store.js';
 
 export interface CollectorOptions {
   /** 拉取最近多少场对局，默认 10 */
@@ -94,7 +95,7 @@ export class ReportCollector {
     options: Partial<CollectorOptions> = {},
   ) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
-    this.restoreCache();
+    void this.restoreCache();
   }
 
   clearCache(): void {
@@ -114,22 +115,24 @@ export class ReportCollector {
       clearTimeout(this.saveTimer);
       this.saveTimer = undefined;
     }
-    const db = getDb();
-    if (db) {
+    void (async () => {
+      const db = await getDb();
+      if (!db) return;
       try {
-        db.exec(
-          'DELETE FROM reports; DELETE FROM summoners; DELETE FROM summoners_by_name;' +
-            " DELETE FROM ranks; DELETE FROM champion_map; DELETE FROM meta WHERE k IN ('version', 'savedAt');",
-        );
+        for (const table of [
+          'reports',
+          'summoners',
+          'summoners_by_name',
+          'ranks',
+          'champion_map',
+        ]) {
+          await db.query(`DELETE FROM ${table}`);
+        }
+        await db.query("DELETE FROM meta WHERE k IN ('version', 'savedAt')");
       } catch {
         /* 清缓存失败不影响主流程 */
       }
-      try {
-        db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
-      } catch {
-        /* WAL 回收失败不影响主流程 */
-      }
-    }
+    })();
   }
 
   /**
@@ -141,13 +144,15 @@ export class ReportCollector {
     for (const key of [...this.reportCache.keys()]) {
       if (key.startsWith(prefix)) this.reportCache.delete(key);
     }
-    const db = getDb();
-    if (!db) return;
-    try {
-      db.prepare('DELETE FROM reports WHERE cache_key LIKE ?').run(`${prefix}%`);
-    } catch {
-      /* 删除失败时内存缓存仍然已失效，下次读取会重新拉取 */
-    }
+    void (async () => {
+      const db = await getDb();
+      if (!db) return;
+      try {
+        await db.query('DELETE FROM reports WHERE cache_key LIKE ?', [`${prefix}%`]);
+      } catch {
+        /* 删除失败时内存缓存仍然已失效，下次读取会重新拉取 */
+      }
+    })();
   }
 
   /** 立即把缓存写盘；退出前调用，避免防抖计时器被 unref 后丢失最后一次写入 */
@@ -160,8 +165,8 @@ export class ReportCollector {
   }
 
   /** 启动时恢复报告/召唤师/段位/英雄缓存；对局原始详情不落盘，避免数据库过大 */
-  private restoreCache(): void {
-    const db = getDb();
+  private async restoreCache(): Promise<void> {
+    const db = await getDb();
     if (!db) return;
 
     const now = Date.now();
@@ -169,77 +174,81 @@ export class ReportCollector {
       Number.isFinite(at) && now - at >= 0 && now - at < ttl;
 
     try {
-      const version = db
-        .prepare('SELECT v FROM meta WHERE k = ?')
-        .get('version') as unknown as { v?: string } | undefined;
-      if (version?.v !== String(CACHE_VERSION)) return;
+      const [versionRows] = await db.query<RowDataPacket[]>(
+        'SELECT v FROM meta WHERE k = ?',
+        ['version'],
+      );
+      if (versionRows[0]?.v !== String(CACHE_VERSION)) return;
 
-      const reports = db
-        .prepare('SELECT cache_key, at, payload FROM reports')
-        .all() as unknown as Array<{ cache_key: string; at: number; payload: string }>;
+      const [reports] = await db.query<RowDataPacket[]>(
+        'SELECT cache_key, at, payload FROM reports',
+      );
       for (const row of reports) {
-        if (!fresh(row.at, this.options.ttlMs)) continue;
+        const at = Number(row.at);
+        if (!fresh(at, this.options.ttlMs)) continue;
         try {
-          const report = JSON.parse(row.payload) as PlayerReport;
-          if (report) this.reportCache.set(row.cache_key, { at: row.at, report });
+          const report = JSON.parse(row.payload as string) as PlayerReport;
+          if (report) this.reportCache.set(String(row.cache_key), { at, report });
         } catch {
           /* 单条损坏不影响其它缓存 */
         }
       }
 
-      const summoners = db
-        .prepare('SELECT summoner_id, at, payload FROM summoners')
-        .all() as unknown as Array<{ summoner_id: number; at: number; payload: string }>;
+      const [summoners] = await db.query<RowDataPacket[]>(
+        'SELECT summoner_id, at, payload FROM summoners',
+      );
       for (const row of summoners) {
-        if (!fresh(row.at, DAY_MS)) continue;
+        const at = Number(row.at);
+        if (!fresh(at, DAY_MS)) continue;
         try {
-          this.summonerCache.set(row.summoner_id, {
-            at: row.at,
-            info: JSON.parse(row.payload) as SummonerInfo | null,
+          this.summonerCache.set(Number(row.summoner_id), {
+            at,
+            info: JSON.parse(row.payload as string) as SummonerInfo | null,
           });
         } catch {
           /* 忽略损坏行 */
         }
       }
 
-      const summonersByName = db
-        .prepare('SELECT name, at, payload FROM summoners_by_name')
-        .all() as unknown as Array<{ name: string; at: number; payload: string }>;
+      const [summonersByName] = await db.query<RowDataPacket[]>(
+        'SELECT name, at, payload FROM summoners_by_name',
+      );
       for (const row of summonersByName) {
-        if (!fresh(row.at, DAY_MS)) continue;
+        const at = Number(row.at);
+        if (!fresh(at, DAY_MS)) continue;
         try {
-          this.summonerByNameCache.set(row.name, {
-            at: row.at,
-            info: JSON.parse(row.payload) as SummonerInfo | null,
+          this.summonerByNameCache.set(String(row.name), {
+            at,
+            info: JSON.parse(row.payload as string) as SummonerInfo | null,
           });
         } catch {
           /* 忽略损坏行 */
         }
       }
 
-      const ranks = db
-        .prepare('SELECT puuid, at, payload FROM ranks')
-        .all() as unknown as Array<{ puuid: string; at: number; payload: string }>;
+      const [ranks] = await db.query<RowDataPacket[]>('SELECT puuid, at, payload FROM ranks');
       for (const row of ranks) {
-        if (!fresh(row.at, DAY_MS)) continue;
+        const at = Number(row.at);
+        if (!fresh(at, DAY_MS)) continue;
         try {
-          this.rankCache.set(row.puuid, {
-            at: row.at,
-            rank: JSON.parse(row.payload) as RankInfo | null,
+          this.rankCache.set(String(row.puuid), {
+            at,
+            rank: JSON.parse(row.payload as string) as RankInfo | null,
           });
         } catch {
           /* 忽略损坏行 */
         }
       }
 
-      const champion = db
-        .prepare('SELECT at, payload FROM champion_map WHERE id = 1')
-        .get() as unknown as { at: number; payload: string } | undefined;
-      if (champion && fresh(champion.at, DAY_MS)) {
-        const entries = JSON.parse(champion.payload) as unknown;
+      const [championRows] = await db.query<RowDataPacket[]>(
+        'SELECT at, payload FROM champion_map WHERE id = 1',
+      );
+      const champion = championRows[0];
+      if (champion && fresh(Number(champion.at), DAY_MS)) {
+        const entries = JSON.parse(champion.payload as string) as unknown;
         if (Array.isArray(entries) && entries.length) {
           this.championMap = new Map(entries as Array<[number, ChampionSummary]>);
-          this.championMapAt = champion.at;
+          this.championMapAt = Number(champion.at);
         }
       }
     } catch {
@@ -301,90 +310,116 @@ export class ReportCollector {
     };
   }
 
-  private writeCache(): void {
-    const db = getDb();
+  private async writeCache(): Promise<void> {
+    const db = await getDb();
     if (!db) return;
 
     const data = this.serializeCache();
     const cutoff = Date.now() - Math.max(this.options.ttlMs, DAY_MS);
 
     try {
-      db.exec('BEGIN IMMEDIATE');
+      await withTransaction(async (connection) => {
+        await connection.query('DELETE FROM reports WHERE at < ?', [cutoff]);
+        if (data.reports.length) {
+          await connection.query(
+            `INSERT INTO reports (cache_key, at, payload) VALUES ?
+             ON DUPLICATE KEY UPDATE at = VALUES(at), payload = VALUES(payload)`,
+            [
+              data.reports.map(([key, entry]) => [
+                key,
+                entry.at,
+                JSON.stringify(entry.report),
+              ]),
+            ],
+          );
+        }
+        await connection.query(
+          `DELETE FROM reports WHERE cache_key NOT IN
+             (SELECT cache_key FROM
+                (SELECT cache_key FROM reports ORDER BY at DESC LIMIT ?) AS keep)`,
+          [MAX_PERSISTED],
+        );
 
-      db.prepare('DELETE FROM reports WHERE at < ?').run(cutoff);
-      const insertReport = db.prepare(
-        `INSERT INTO reports (cache_key, at, payload) VALUES (?, ?, ?)
-         ON CONFLICT(cache_key) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
-      );
-      for (const [key, entry] of data.reports) {
-        insertReport.run(key, entry.at, JSON.stringify(entry.report));
-      }
-      db.prepare(
-        `DELETE FROM reports WHERE cache_key NOT IN
-         (SELECT cache_key FROM reports ORDER BY at DESC LIMIT ?)`,
-      ).run(MAX_PERSISTED);
+        await connection.query('DELETE FROM summoners WHERE at < ?', [cutoff]);
+        if (data.summoners.length) {
+          await connection.query(
+            `INSERT INTO summoners (summoner_id, at, payload) VALUES ?
+             ON DUPLICATE KEY UPDATE at = VALUES(at), payload = VALUES(payload)`,
+            [
+              data.summoners.map(([summonerId, entry]) => [
+                summonerId,
+                entry.at,
+                JSON.stringify(entry.info),
+              ]),
+            ],
+          );
+        }
+        await connection.query(
+          `DELETE FROM summoners WHERE summoner_id NOT IN
+             (SELECT summoner_id FROM
+                (SELECT summoner_id FROM summoners ORDER BY at DESC LIMIT ?) AS keep)`,
+          [MAX_PERSISTED],
+        );
 
-      db.prepare('DELETE FROM summoners WHERE at < ?').run(cutoff);
-      const insertSummoner = db.prepare(
-        `INSERT INTO summoners (summoner_id, at, payload) VALUES (?, ?, ?)
-         ON CONFLICT(summoner_id) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
-      );
-      for (const [summonerId, entry] of data.summoners) {
-        insertSummoner.run(summonerId, entry.at, JSON.stringify(entry.info));
-      }
-      db.prepare(
-        `DELETE FROM summoners WHERE summoner_id NOT IN
-         (SELECT summoner_id FROM summoners ORDER BY at DESC LIMIT ?)`,
-      ).run(MAX_PERSISTED);
+        await connection.query('DELETE FROM summoners_by_name WHERE at < ?', [cutoff]);
+        if (data.summonersByName.length) {
+          await connection.query(
+            `INSERT INTO summoners_by_name (name, at, payload) VALUES ?
+             ON DUPLICATE KEY UPDATE at = VALUES(at), payload = VALUES(payload)`,
+            [
+              data.summonersByName.map(([name, entry]) => [
+                name,
+                entry.at,
+                JSON.stringify(entry.info),
+              ]),
+            ],
+          );
+        }
+        await connection.query(
+          `DELETE FROM summoners_by_name WHERE name NOT IN
+             (SELECT name FROM
+                (SELECT name FROM summoners_by_name ORDER BY at DESC LIMIT ?) AS keep)`,
+          [MAX_PERSISTED],
+        );
 
-      db.prepare('DELETE FROM summoners_by_name WHERE at < ?').run(cutoff);
-      const insertSummonerByName = db.prepare(
-        `INSERT INTO summoners_by_name (name, at, payload) VALUES (?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
-      );
-      for (const [name, entry] of data.summonersByName) {
-        insertSummonerByName.run(name, entry.at, JSON.stringify(entry.info));
-      }
-      db.prepare(
-        `DELETE FROM summoners_by_name WHERE name NOT IN
-         (SELECT name FROM summoners_by_name ORDER BY at DESC LIMIT ?)`,
-      ).run(MAX_PERSISTED);
+        await connection.query('DELETE FROM ranks WHERE at < ?', [cutoff]);
+        if (data.ranks.length) {
+          await connection.query(
+            `INSERT INTO ranks (puuid, at, payload) VALUES ?
+             ON DUPLICATE KEY UPDATE at = VALUES(at), payload = VALUES(payload)`,
+            [
+              data.ranks.map(([puuid, entry]) => [
+                puuid,
+                entry.at,
+                JSON.stringify(entry.rank),
+              ]),
+            ],
+          );
+        }
+        await connection.query(
+          `DELETE FROM ranks WHERE puuid NOT IN
+             (SELECT puuid FROM
+                (SELECT puuid FROM ranks ORDER BY at DESC LIMIT ?) AS keep)`,
+          [MAX_PERSISTED],
+        );
 
-      db.prepare('DELETE FROM ranks WHERE at < ?').run(cutoff);
-      const insertRank = db.prepare(
-        `INSERT INTO ranks (puuid, at, payload) VALUES (?, ?, ?)
-         ON CONFLICT(puuid) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
-      );
-      for (const [puuid, entry] of data.ranks) {
-        insertRank.run(puuid, entry.at, JSON.stringify(entry.rank));
-      }
-      db.prepare(
-        `DELETE FROM ranks WHERE puuid NOT IN
-         (SELECT puuid FROM ranks ORDER BY at DESC LIMIT ?)`,
-      ).run(MAX_PERSISTED);
+        if (data.championMap) {
+          await connection.query(
+            `INSERT INTO champion_map (id, at, payload) VALUES (1, ?, ?)
+             ON DUPLICATE KEY UPDATE at = VALUES(at), payload = VALUES(payload)`,
+            [data.championMap.at, JSON.stringify(data.championMap.entries)],
+          );
+        } else {
+          await connection.query('DELETE FROM champion_map WHERE id = 1');
+        }
 
-      if (data.championMap) {
-        db.prepare(
-          `INSERT INTO champion_map (id, at, payload) VALUES (1, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET at = excluded.at, payload = excluded.payload`,
-        ).run(data.championMap.at, JSON.stringify(data.championMap.entries));
-      } else {
-        db.prepare('DELETE FROM champion_map WHERE id = 1').run();
-      }
-
-      const setMeta = db.prepare(
-        'INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v',
-      );
-      setMeta.run('version', String(CACHE_VERSION));
-      setMeta.run('savedAt', String(Date.now()));
-
-      db.exec('COMMIT');
+        const setMeta =
+          'INSERT INTO meta (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)';
+        await connection.query(setMeta, ['version', String(CACHE_VERSION)]);
+        await connection.query(setMeta, ['savedAt', String(Date.now())]);
+      });
     } catch {
-      try {
-        db.exec('ROLLBACK');
-      } catch {
-        /* 回滚失败时忽略 */
-      }
+      /* 写盘失败时保留内存缓存，下次防抖会重试 */
     }
   }
 
@@ -485,7 +520,7 @@ export class ReportCollector {
     if (!participants.length) return [];
 
     const championMap = await this.getChampionMap();
-    archiveGames([game], championMap);
+    await archiveGames([game], championMap);
     const entries = participants
       .map((participant, index) => {
         const identity = identities.find(
@@ -1056,7 +1091,7 @@ export class ReportCollector {
     });
 
     const loaded = detailed.filter((game): game is RawGame => game !== null);
-    if (loaded.length) archiveGames(loaded, await this.getChampionMap());
+    if (loaded.length) await archiveGames(loaded, await this.getChampionMap());
     return loaded;
   }
 

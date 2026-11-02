@@ -1,16 +1,13 @@
 import '../env.js';
 import { execFileSync } from 'node:child_process';
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  rmdirSync,
-  statSync,
-  unlinkSync,
-} from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { join } from 'node:path';
+import mysql, {
+  type Pool,
+  type PoolConnection,
+  type ResultSetHeader,
+  type RowDataPacket,
+} from 'mysql2/promise';
 
 /** Windows 的“文档”目录（可能被重定向到 E 盘） */
 function resolveDocumentsDir(): string {
@@ -41,202 +38,267 @@ function resolveDocumentsDir(): string {
   return join(homedir(), 'Documents');
 }
 
-const DOCUMENTS_DIR = resolveDocumentsDir();
-const LEGACY_DB_PATH = join(homedir(), '.lol-mate-stats', 'cache.db');
-const EXPLICIT_DB_PATH = process.env.LOL_MATE_DB?.trim() || process.env.LOL_MATE_CACHE?.trim();
+/** 本地数据目录：装备图标、导入用的旧 SQLite 等仍然放在本机 */
+export const DATA_DIR =
+  process.env.LOL_MATE_DATA_DIR?.trim() || join(resolveDocumentsDir(), 'lol-mate-stats');
 
-/** 数据库默认放在“文档/lol-mate-stats/cache.db”，可用环境变量覆盖 */
-export const DB_PATH = EXPLICIT_DB_PATH || join(DOCUMENTS_DIR, 'lol-mate-stats', 'cache.db');
+const HOST = process.env.LOL_MATE_MYSQL_HOST?.trim();
+const PORT = Number(process.env.LOL_MATE_MYSQL_PORT ?? 3306) || 3306;
+const USER = process.env.LOL_MATE_MYSQL_USER?.trim();
+const PASSWORD = process.env.LOL_MATE_MYSQL_PASSWORD ?? '';
+const DATABASE = process.env.LOL_MATE_MYSQL_DATABASE?.trim() || 'lol_mate_stats';
+const CONNECT_TIMEOUT = Number(process.env.LOL_MATE_MYSQL_CONNECT_TIMEOUT ?? 8000) || 8000;
+const USE_SSL = /^(1|true|yes|on)$/i.test(process.env.LOL_MATE_MYSQL_SSL ?? '');
 
-let db: DatabaseSync | undefined;
-let failed = false;
+/** 是否配置了远程 MySQL；没配置时所有数据库功能自动降级为不可用 */
+export const DB_CONFIGURED = Boolean(HOST && USER);
+/** 写进日志的连接描述（不含密码） */
+export const DB_DESCRIPTION = DB_CONFIGURED
+  ? `${USER}@${HOST}:${PORT}/${DATABASE}`
+  : '未配置远程 MySQL';
 
-/** 首次升级时把 C 盘旧缓存迁移到文档目录，成功后清理旧文件 */
-function migrateLegacyDatabase(): void {
-  if (EXPLICIT_DB_PATH || DB_PATH === LEGACY_DB_PATH) return;
-  if (existsSync(DB_PATH) || !existsSync(LEGACY_DB_PATH)) return;
+/** 数据库暂时不可用时，隔多久再重试，避免每个请求都卡在连接超时上 */
+const RETRY_AFTER_MS = 30_000;
 
-  let migrated = false;
+let pool: Pool | undefined;
+let connecting: Promise<Pool | undefined> | undefined;
+let retryAt = 0;
+
+/**
+ * 打开（或复用）远程 MySQL 连接池。
+ * 连接失败时返回 undefined，调用方按“无数据库”降级处理。
+ */
+export async function getDb(): Promise<Pool | undefined> {
+  if (pool) return pool;
+  if (!DB_CONFIGURED) return undefined;
+  if (connecting) return connecting;
+  if (Date.now() < retryAt) return undefined;
+
+  connecting = connect().finally(() => {
+    connecting = undefined;
+  });
+  return connecting;
+}
+
+async function connect(): Promise<Pool | undefined> {
+  let created: Pool | undefined;
   try {
-    mkdirSync(dirname(DB_PATH), { recursive: true });
-    const legacy = new DatabaseSync(LEGACY_DB_PATH, { readOnly: true });
+    created = mysql.createPool({
+      host: HOST,
+      port: PORT,
+      user: USER,
+      password: PASSWORD,
+      database: DATABASE,
+      charset: 'utf8mb4',
+      timezone: 'Z',
+      waitForConnections: true,
+      connectionLimit: Number(process.env.LOL_MATE_MYSQL_POOL ?? 8) || 8,
+      queueLimit: 20,
+      connectTimeout: CONNECT_TIMEOUT,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10_000,
+      supportBigNumbers: true,
+      bigNumberStrings: false,
+      ...(USE_SSL ? { ssl: { rejectUnauthorized: false } } : {}),
+    });
+    const connection = await created.getConnection();
     try {
-      legacy.exec(`VACUUM INTO '${DB_PATH.replace(/'/g, "''")}'`);
+      await connection.query('SELECT 1');
     } finally {
-      legacy.close();
+      connection.release();
     }
-    migrated = existsSync(DB_PATH) && statSync(DB_PATH).size > 0;
+    await ensureSchema(created);
+    pool = created;
+    retryAt = 0;
+    return pool;
   } catch {
-    try {
-      mkdirSync(dirname(DB_PATH), { recursive: true });
-      copyFileSync(LEGACY_DB_PATH, DB_PATH);
-      migrated = existsSync(DB_PATH) && statSync(DB_PATH).size > 0;
-    } catch {
-      /* 迁移失败时使用空库 */
-    }
-  }
-
-  if (!migrated) return;
-  for (const suffix of ['', '-wal', '-shm']) {
-    try {
-      unlinkSync(`${LEGACY_DB_PATH}${suffix}`);
-    } catch {
-      /* 旧文件可能不存在或占用中 */
-    }
-  }
-  try {
-    unlinkSync(join(homedir(), '.lol-mate-stats', 'cache.json'));
-  } catch {
-    /* 旧的 JSON 缓存可能不存在 */
-  }
-  try {
-    rmdirSync(dirname(LEGACY_DB_PATH));
-  } catch {
-    /* 目录非空时保留 */
-  }
-}
-
-/** 打开（或复用）本地 SQLite；失败后本次进程不再重试 */
-export function getDb(): DatabaseSync | undefined {
-  if (db) return db;
-  if (failed) return undefined;
-  migrateLegacyDatabase();
-  try {
-    mkdirSync(dirname(DB_PATH), { recursive: true });
-    const connection = new DatabaseSync(DB_PATH);
-    connection.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = NORMAL;
-
-      CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
-
-      CREATE TABLE IF NOT EXISTS reports (
-        cache_key TEXT PRIMARY KEY,
-        at INTEGER NOT NULL,
-        payload TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_reports_at ON reports(at);
-
-      CREATE TABLE IF NOT EXISTS summoners (
-        summoner_id INTEGER PRIMARY KEY,
-        at INTEGER NOT NULL,
-        payload TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_summoners_at ON summoners(at);
-
-      CREATE TABLE IF NOT EXISTS summoners_by_name (
-        name TEXT PRIMARY KEY,
-        at INTEGER NOT NULL,
-        payload TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_summoners_by_name_at ON summoners_by_name(at);
-
-      CREATE TABLE IF NOT EXISTS ranks (
-        puuid TEXT PRIMARY KEY,
-        at INTEGER NOT NULL,
-        payload TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_ranks_at ON ranks(at);
-
-      CREATE TABLE IF NOT EXISTS champion_map (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        at INTEGER NOT NULL,
-        payload TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS matches (
-        game_id INTEGER PRIMARY KEY,
-        queue_id INTEGER NOT NULL,
-        game_mode TEXT,
-        game_creation INTEGER NOT NULL,
-        duration_seconds INTEGER NOT NULL,
-        archived_at INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_matches_creation ON matches(game_creation);
-
-      CREATE TABLE IF NOT EXISTS match_participants (
-        game_id INTEGER NOT NULL,
-        participant_id INTEGER NOT NULL,
-        puuid TEXT,
-        summoner_id INTEGER,
-        display_name TEXT,
-        team_id INTEGER NOT NULL,
-        champion_id INTEGER NOT NULL,
-        champion_name TEXT,
-        position TEXT,
-        win INTEGER NOT NULL,
-        kills INTEGER NOT NULL,
-        deaths INTEGER NOT NULL,
-        assists INTEGER NOT NULL,
-        cs INTEGER NOT NULL,
-        gold INTEGER NOT NULL,
-        damage INTEGER NOT NULL,
-        damage_taken INTEGER NOT NULL,
-        heal INTEGER NOT NULL DEFAULT 0,
-        vision INTEGER NOT NULL,
-        is_bot INTEGER NOT NULL DEFAULT 0,
-        score INTEGER,
-        tags TEXT,
-        PRIMARY KEY (game_id, participant_id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_mp_puuid ON match_participants(puuid);
-      CREATE INDEX IF NOT EXISTS idx_mp_game ON match_participants(game_id);
-
-      CREATE TABLE IF NOT EXISTS ai_analyses (
-        game_id INTEGER PRIMARY KEY,
-        model TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_ai_analyses_created ON ai_analyses(created_at);
-
-      CREATE TABLE IF NOT EXISTS ai_live_analyses (
-        session_key TEXT PRIMARY KEY,
-        model TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_ai_live_analyses_created ON ai_live_analyses(created_at);
-    `);
-    // 旧版本数据库没有 heal 列，启动时补上
-    try {
-      const columns = connection
-        .prepare('PRAGMA table_info(match_participants)')
-        .all() as unknown as Array<{ name: string }>;
-      if (!columns.some((column) => column.name === 'heal')) {
-        connection.exec('ALTER TABLE match_participants ADD COLUMN heal INTEGER NOT NULL DEFAULT 0');
-      }
-    } catch {
-      /* 补列失败时按 0 处理 */
-    }
-    db = connection;
-    return db;
-  } catch {
-    failed = true;
+    retryAt = Date.now() + RETRY_AFTER_MS;
+    if (created) await created.end().catch(() => undefined);
     return undefined;
   }
 }
 
-export function readMeta(key: string): string | undefined {
-  const connection = getDb();
-  if (!connection) return undefined;
+/** 首次启动时建表；已有表不会被修改 */
+async function ensureSchema(db: Pool): Promise<void> {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS meta (
+       k VARCHAR(191) NOT NULL,
+       v LONGTEXT NOT NULL,
+       PRIMARY KEY (k)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS reports (
+       cache_key VARCHAR(191) NOT NULL,
+       at BIGINT NOT NULL,
+       payload LONGTEXT NOT NULL,
+       PRIMARY KEY (cache_key),
+       KEY idx_reports_at (at)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS summoners (
+       summoner_id BIGINT NOT NULL,
+       at BIGINT NOT NULL,
+       payload LONGTEXT NOT NULL,
+       PRIMARY KEY (summoner_id),
+       KEY idx_summoners_at (at)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS summoners_by_name (
+       name VARCHAR(191) NOT NULL,
+       at BIGINT NOT NULL,
+       payload LONGTEXT NOT NULL,
+       PRIMARY KEY (name),
+       KEY idx_summoners_by_name_at (at)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ranks (
+       puuid VARCHAR(100) NOT NULL,
+       at BIGINT NOT NULL,
+       payload LONGTEXT NOT NULL,
+       PRIMARY KEY (puuid),
+       KEY idx_ranks_at (at)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS champion_map (
+       id INT NOT NULL,
+       at BIGINT NOT NULL,
+       payload LONGTEXT NOT NULL,
+       PRIMARY KEY (id)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS matches (
+       game_id BIGINT UNSIGNED NOT NULL,
+       queue_id INT NOT NULL,
+       game_mode VARCHAR(64) NULL,
+       game_creation BIGINT NOT NULL,
+       duration_seconds INT NOT NULL,
+       archived_at BIGINT NOT NULL,
+       PRIMARY KEY (game_id),
+       KEY idx_matches_creation (game_creation)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS match_participants (
+       game_id BIGINT UNSIGNED NOT NULL,
+       participant_id INT NOT NULL,
+       puuid VARCHAR(100) NULL,
+       summoner_id BIGINT NULL,
+       display_name VARCHAR(191) NULL,
+       team_id INT NOT NULL,
+       champion_id INT NOT NULL,
+       champion_name VARCHAR(191) NULL,
+       \`position\` VARCHAR(32) NULL,
+       win TINYINT NOT NULL,
+       kills INT NOT NULL,
+       deaths INT NOT NULL,
+       assists INT NOT NULL,
+       cs INT NOT NULL,
+       gold INT NOT NULL,
+       damage INT NOT NULL,
+       damage_taken INT NOT NULL,
+       heal INT NOT NULL DEFAULT 0,
+       vision INT NOT NULL,
+       is_bot TINYINT NOT NULL DEFAULT 0,
+       score DOUBLE NULL,
+       tags VARCHAR(255) NULL,
+       PRIMARY KEY (game_id, participant_id),
+       KEY idx_mp_puuid (puuid)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ai_analyses (
+       game_id BIGINT UNSIGNED NOT NULL,
+       model VARCHAR(191) NOT NULL,
+       content LONGTEXT NOT NULL,
+       created_at BIGINT NOT NULL,
+       PRIMARY KEY (game_id),
+       KEY idx_ai_analyses_created (created_at)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS ai_live_analyses (
+       session_key VARCHAR(191) NOT NULL,
+       model VARCHAR(191) NOT NULL,
+       content LONGTEXT NOT NULL,
+       created_at BIGINT NOT NULL,
+       PRIMARY KEY (session_key),
+       KEY idx_ai_live_analyses_created (created_at)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  ];
+
+  for (const statement of statements) await db.query(statement);
+
+  // 旧版本数据库没有 heal 列，启动时补上
   try {
-    const row = connection
-      .prepare('SELECT v FROM meta WHERE k = ?')
-      .get(key) as unknown as { v?: string } | undefined;
-    return row?.v;
+    const [columns] = await db.query<RowDataPacket[]>(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'match_participants'
+          AND COLUMN_NAME = 'heal'`,
+    );
+    if (!columns.length) {
+      await db.query(
+        'ALTER TABLE match_participants ADD COLUMN heal INT NOT NULL DEFAULT 0',
+      );
+    }
+  } catch {
+    /* 补列失败时按 0 处理 */
+  }
+}
+
+/** 启动时显式初始化数据库；返回是否可用 */
+export async function initDb(): Promise<boolean> {
+  return Boolean(await getDb());
+}
+
+/** 在同一个连接上执行事务；数据库不可用时返回 undefined */
+export async function withTransaction<T>(
+  fn: (connection: PoolConnection) => Promise<T>,
+): Promise<T | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await fn(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    try {
+      await connection.rollback();
+    } catch {
+      /* 回滚失败时忽略 */
+    }
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+/** 关闭连接池（退出前调用） */
+export async function closeDb(): Promise<void> {
+  const current = pool;
+  pool = undefined;
+  if (current) await current.end().catch(() => undefined);
+}
+
+export async function readMeta(key: string): Promise<string | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  try {
+    const [rows] = await db.query<RowDataPacket[]>('SELECT v FROM meta WHERE k = ?', [key]);
+    return (rows[0]?.v as string | undefined) ?? undefined;
   } catch {
     return undefined;
   }
 }
 
-export function writeMeta(key: string, value: string): void {
-  const connection = getDb();
-  if (!connection) return;
+export async function writeMeta(key: string, value: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
   try {
-    connection
-      .prepare('INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v')
-      .run(key, value);
+    await db.query(
+      `INSERT INTO meta (k, v) VALUES (?, ?) AS new
+       ON DUPLICATE KEY UPDATE v = new.v`,
+      [key, value],
+    );
   } catch {
     /* meta 写入失败不影响主流程 */
   }
@@ -250,17 +312,15 @@ export interface SavedAiAnalysis {
 }
 
 /** 读取某场对局已保存的 AI 分析 */
-export function getAiAnalysis(gameId: number): SavedAiAnalysis | undefined {
-  const connection = getDb();
-  if (!connection) return undefined;
+export async function getAiAnalysis(gameId: number): Promise<SavedAiAnalysis | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
   try {
-    const row = connection
-      .prepare(
-        'SELECT game_id, model, content, created_at FROM ai_analyses WHERE game_id = ?',
-      )
-      .get(gameId) as
-      | { game_id?: number; model?: string; content?: string; created_at?: number }
-      | undefined;
+    const [rows] = await db.query<RowDataPacket[]>(
+      'SELECT game_id, model, content, created_at FROM ai_analyses WHERE game_id = ?',
+      [gameId],
+    );
+    const row = rows[0];
     if (!row?.content) return undefined;
     return {
       gameId: Number(row.game_id ?? gameId),
@@ -274,24 +334,23 @@ export function getAiAnalysis(gameId: number): SavedAiAnalysis | undefined {
 }
 
 /** 保存（或覆盖）某场对局的 AI 分析 */
-export function saveAiAnalysis(
+export async function saveAiAnalysis(
   gameId: number,
   model: string,
   content: string,
-): boolean {
-  const connection = getDb();
-  if (!connection) return false;
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
   try {
-    connection
-      .prepare(
-        `INSERT INTO ai_analyses (game_id, model, content, created_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(game_id) DO UPDATE SET
-           model = excluded.model,
-           content = excluded.content,
-           created_at = excluded.created_at`,
-      )
-      .run(gameId, model, content, Date.now());
+    await db.query<ResultSetHeader>(
+      `INSERT INTO ai_analyses (game_id, model, content, created_at)
+       VALUES (?, ?, ?, ?) AS new
+       ON DUPLICATE KEY UPDATE
+         model = new.model,
+         content = new.content,
+         created_at = new.created_at`,
+      [gameId, model, content, Date.now()],
+    );
     return true;
   } catch {
     return false;
@@ -299,11 +358,11 @@ export function saveAiAnalysis(
 }
 
 /** 删除某场对局的 AI 分析（重新生成时可选用） */
-export function deleteAiAnalysis(gameId: number): void {
-  const connection = getDb();
-  if (!connection) return;
+export async function deleteAiAnalysis(gameId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
   try {
-    connection.prepare('DELETE FROM ai_analyses WHERE game_id = ?').run(gameId);
+    await db.query('DELETE FROM ai_analyses WHERE game_id = ?', [gameId]);
   } catch {
     /* 删除失败不影响主流程 */
   }
@@ -317,17 +376,17 @@ export interface SavedLiveAiAnalysis {
 }
 
 /** 读取当前对局实时 AI 分析 */
-export function getLiveAiAnalysis(sessionKey: string): SavedLiveAiAnalysis | undefined {
-  const connection = getDb();
-  if (!connection || !sessionKey) return undefined;
+export async function getLiveAiAnalysis(
+  sessionKey: string,
+): Promise<SavedLiveAiAnalysis | undefined> {
+  const db = await getDb();
+  if (!db || !sessionKey) return undefined;
   try {
-    const row = connection
-      .prepare(
-        'SELECT session_key, model, content, created_at FROM ai_live_analyses WHERE session_key = ?',
-      )
-      .get(sessionKey) as
-      | { session_key?: string; model?: string; content?: string; created_at?: number }
-      | undefined;
+    const [rows] = await db.query<RowDataPacket[]>(
+      'SELECT session_key, model, content, created_at FROM ai_live_analyses WHERE session_key = ?',
+      [sessionKey],
+    );
+    const row = rows[0];
     if (!row?.content) return undefined;
     return {
       sessionKey: String(row.session_key ?? sessionKey),
@@ -341,24 +400,23 @@ export function getLiveAiAnalysis(sessionKey: string): SavedLiveAiAnalysis | und
 }
 
 /** 保存（或覆盖）当前对局实时 AI 分析 */
-export function saveLiveAiAnalysis(
+export async function saveLiveAiAnalysis(
   sessionKey: string,
   model: string,
   content: string,
-): boolean {
-  const connection = getDb();
-  if (!connection || !sessionKey) return false;
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db || !sessionKey) return false;
   try {
-    connection
-      .prepare(
-        `INSERT INTO ai_live_analyses (session_key, model, content, created_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(session_key) DO UPDATE SET
-           model = excluded.model,
-           content = excluded.content,
-           created_at = excluded.created_at`,
-      )
-      .run(sessionKey, model, content, Date.now());
+    await db.query<ResultSetHeader>(
+      `INSERT INTO ai_live_analyses (session_key, model, content, created_at)
+       VALUES (?, ?, ?, ?) AS new
+       ON DUPLICATE KEY UPDATE
+         model = new.model,
+         content = new.content,
+         created_at = new.created_at`,
+      [sessionKey, model, content, Date.now()],
+    );
     return true;
   } catch {
     return false;
