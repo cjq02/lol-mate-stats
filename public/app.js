@@ -183,6 +183,7 @@ const state = {
   latestLoading: false,
   aiStatus: null,
   aiLoading: false,
+  aiTimer: null,
   /** 当前对局 AI 分析：{ gameId, controller, text, status, error, model, running, done } */
   ai: null,
 };
@@ -1042,6 +1043,7 @@ function hideAiView() {
 
 function resetAiView() {
   state.ai?.controller?.abort();
+  stopAiTimer();
   state.ai = null;
   els.aiBody.replaceChildren();
   els.aiMeta.textContent = '';
@@ -1053,6 +1055,37 @@ function resetAiView() {
 
 function showAiView() {
   els.aiModal.classList.remove('hidden');
+}
+
+function stopAiTimer() {
+  if (state.aiTimer) {
+    clearInterval(state.aiTimer);
+    state.aiTimer = null;
+  }
+}
+
+function renderAiMeta(ai) {
+  const elapsed = ai.started
+    ? Math.max(0, Math.floor((Date.now() - ai.started) / 1000))
+    : 0;
+  els.aiMeta.textContent = ai.running
+    ? `分析中… ${elapsed}s`
+    : ai.error
+      ? '失败'
+      : ai.cached
+        ? `${ai.model ?? 'AI'} · 已保存 ${formatGameTime(ai.savedAt)}`
+        : `${ai.model ?? 'AI'} · 用时 ${elapsed}s${ai.saved ? ' · 已保存' : ''}`;
+}
+
+function startAiTimer(ai) {
+  stopAiTimer();
+  state.aiTimer = setInterval(() => {
+    if (state.ai !== ai || !ai.running) {
+      stopAiTimer();
+      return;
+    }
+    renderAiMeta(ai);
+  }, 1000);
 }
 
 function aiMarkdown(text) {
@@ -1089,22 +1122,13 @@ function aiMarkdown(text) {
 function renderAiView() {
   const ai = state.ai;
   if (!ai) return;
-  const meta = els.aiMeta;
   const body = els.aiBody;
-  if (!meta || !body) return;
+  if (!body) return;
 
   els.aiModalTitle.textContent = ai.title ? `✨ AI 复盘 · ${ai.title}` : '✨ AI 复盘';
   els.aiRerun.classList.toggle('hidden', ai.running);
   els.aiRerun.disabled = ai.running;
-
-  const elapsed = ai.started ? Math.max(0, Math.round((Date.now() - ai.started) / 1000)) : 0;
-  meta.textContent = ai.running
-    ? `分析中… ${elapsed}s`
-    : ai.error
-      ? '失败'
-      : ai.cached
-        ? `${ai.model ?? 'AI'} · 已保存 ${formatGameTime(ai.savedAt)}`
-        : `${ai.model ?? 'AI'} · 用时 ${elapsed}s${ai.saved ? ' · 已保存' : ''}`;
+  renderAiMeta(ai);
 
   const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
   if (ai.error) {
@@ -1160,6 +1184,7 @@ async function streamAiAnalysis(url, meta) {
   showAiView();
   setAiButton(true);
   renderAiView();
+  startAiTimer(ai);
 
   try {
     const response = await fetch(url, {
@@ -1216,7 +1241,10 @@ async function streamAiAnalysis(url, meta) {
   } finally {
     ai.running = false;
     ai.controller = null;
-    if (state.ai === ai) setAiButton(false);
+    if (state.ai === ai) {
+      stopAiTimer();
+      setAiButton(false);
+    }
   }
 }
 

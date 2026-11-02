@@ -331,7 +331,7 @@ body::before {
 }
 
 .ai-modal-card {
-  width: min(960px, 95vw);
+  width: min(1200px, 96vw);
   height: min(1000px, 92vh);
   max-height: 92vh;
 }
@@ -352,7 +352,7 @@ body::before {
 .ai-body {
   flex: 1 1 auto;
   width: 100%;
-  max-width: 860px;
+  max-width: 1080px;
   min-height: 0;
   margin: 0 auto;
   overflow: auto;
