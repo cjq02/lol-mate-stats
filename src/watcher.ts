@@ -34,7 +34,13 @@ import {
   type ArchivedMatch,
 } from './stats/archive.js';
 import { modeFromQueue, queueName } from './stats/constants.js';
-import { afkParticipantIds, BAD_GAME_SCORE, gameFlagTags, gameFlags } from './stats/flags.js';
+import {
+  afkParticipantIds,
+  BAD_GAME_SCORE,
+  gameFlagTags,
+  gameFlags,
+  isRemakeGame,
+} from './stats/flags.js';
 import { gradeOf } from './stats/rating.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
@@ -378,6 +384,7 @@ export class LiveSource implements DataSource {
       ? toNumber(selfParticipant.participantId)
       : undefined;
     const afkIds = afkParticipantIds(game, championMap);
+    const remake = isRemakeGame(game);
 
     const scoreboard = (game.participants ?? [])
       .map((participant) => {
@@ -415,7 +422,16 @@ export class LiveSource implements DataSource {
           durationMin > 0 ? Math.round(value / durationMin) : 0;
         const participantId = toNumber(participant.participantId);
         const afk = participantId !== selfParticipantId && afkIds.has(participantId);
-        const tags = afk ? ['逃跑', ...(analyzed?.tags ?? [])] : analyzed?.tags;
+        const bad =
+          !afk &&
+          !remake &&
+          participantId !== selfParticipantId &&
+          (analyzed?.score ?? 100) < BAD_GAME_SCORE;
+        const tags = afk
+          ? ['逃跑', ...(analyzed?.tags ?? [])]
+          : bad
+            ? ['坑', ...(analyzed?.tags ?? [])]
+            : analyzed?.tags;
 
         return {
           puuid: typeof player?.puuid === 'string' ? player.puuid : undefined,
@@ -465,6 +481,17 @@ export class LiveSource implements DataSource {
 
     const afkPlayers = scoreboard
       .filter((player) => player.tags?.includes('逃跑'))
+      .map((player) => ({
+        puuid: player.puuid,
+        name: player.name,
+        championId: player.championId,
+        championName: player.championName,
+        teamId: player.teamId,
+        isEnemy: player.isEnemy,
+        position: player.position,
+      }));
+    const badPlayers = scoreboard
+      .filter((player) => player.tags?.includes('坑'))
       .map((player) => ({
         puuid: player.puuid,
         name: player.name,
@@ -526,6 +553,7 @@ export class LiveSource implements DataSource {
         scoreboard,
         tags: [...gameFlagTags(flags), ...extraTags],
         afkPlayers,
+        badPlayers,
       };
     } catch (error) {
       logTag(

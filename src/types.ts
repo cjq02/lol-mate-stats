@@ -351,6 +351,8 @@ export interface MatchDetail {
   tags?: string[];
   /** 被推断为逃跑/挂机的具体玩家 */
   afkPlayers?: MatchAfkPlayer[];
+  /** 本局表现明显偏差的具体玩家 */
+  badPlayers?: MatchAfkPlayer[];
 }
 
 export interface LiveGameData {

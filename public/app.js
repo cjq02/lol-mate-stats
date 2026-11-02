@@ -1451,6 +1451,27 @@ function renderMatchFlags(detail) {
   } else if (tags.includes('对手逃跑')) {
     parts.push('<span class="match-flag enemy-afk">对手逃跑</span>');
   }
+  const bad = detail.badPlayers ?? [];
+  const badAllies = bad.filter((player) => !player.isEnemy);
+  const badEnemies = bad.filter((player) => player.isEnemy);
+  if (badAllies.length) {
+    parts.push(
+      `<span class="match-flag teammate-bad">队友坑：${badAllies
+        .map((player) => escapeHtml(afkPlayerLabel(player)))
+        .join('、')}</span>`,
+    );
+  } else if (tags.includes('队友坑')) {
+    parts.push('<span class="match-flag teammate-bad">队友坑</span>');
+  }
+  if (badEnemies.length) {
+    parts.push(
+      `<span class="match-flag enemy-bad">敌方坑：${badEnemies
+        .map((player) => escapeHtml(afkPlayerLabel(player)))
+        .join('、')}</span>`,
+    );
+  } else if (tags.includes('敌方坑')) {
+    parts.push('<span class="match-flag enemy-bad">敌方坑</span>');
+  }
   els.matchFlags.innerHTML = parts.join('');
   els.matchFlags.classList.toggle('hidden', parts.length === 0);
 }
