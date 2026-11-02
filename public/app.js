@@ -181,6 +181,7 @@ const state = {
   matchesRefreshing: false,
   latestLoading: false,
   aiStatus: null,
+  aiLoading: false,
   /** 当前对局 AI 分析：{ gameId, controller, text, status, error, model, running, done } */
   ai: null,
 };
@@ -1087,7 +1088,9 @@ function renderAiView() {
     ? `分析中… ${elapsed}s`
     : ai.error
       ? '失败'
-      : `${ai.model ?? 'AI'} · 用时 ${elapsed}s`;
+      : ai.cached
+        ? `${ai.model ?? 'AI'} · 已保存 ${formatGameTime(ai.savedAt)}`
+        : `${ai.model ?? 'AI'} · 用时 ${elapsed}s${ai.saved ? ' · 已保存' : ''}`;
 
   const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
   if (ai.error) {
@@ -1108,6 +1111,21 @@ function renderAiView() {
   if (nearBottom) body.scrollTop = body.scrollHeight;
 }
 
+async function loadSavedAiAnalysis(gameId) {
+  try {
+    const response = await fetch(`/api/match/${gameId}/ai`, { cache: 'no-store' });
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => ({}));
+    const analysis = payload?.analysis;
+    if (!analysis || typeof analysis.content !== 'string' || !analysis.content.trim()) {
+      return null;
+    }
+    return analysis;
+  } catch {
+    return null;
+  }
+}
+
 async function runAiAnalysis(options = {}) {
   const detail = state.matchDetail;
   if (!detail) return;
@@ -1121,6 +1139,37 @@ async function runAiAnalysis(options = {}) {
     renderAiView();
     return;
   }
+  if (state.aiLoading) return;
+
+  if (!options.force) {
+    state.aiLoading = true;
+    try {
+      const saved = await loadSavedAiAnalysis(gameId);
+      if (state.matchDetail?.gameId !== gameId) return;
+      if (saved) {
+        state.ai = {
+          gameId,
+          title: detail.queueName ?? '对局',
+          controller: null,
+          text: saved.content,
+          status: '',
+          error: '',
+          model: saved.model || state.aiStatus?.model,
+          running: false,
+          done: true,
+          cached: true,
+          savedAt: saved.createdAt,
+          started: 0,
+        };
+        showAiView();
+        renderAiView();
+        return;
+      }
+    } finally {
+      state.aiLoading = false;
+    }
+  }
+
   if (existing?.controller) existing.controller.abort();
 
   const controller = new AbortController();
@@ -1168,6 +1217,8 @@ async function runAiAnalysis(options = {}) {
         finished = true;
         ai.running = false;
         ai.done = true;
+        ai.saved = Boolean(event.saved);
+        ai.savedAt = Date.now();
         ai.model = event.model ?? ai.model;
         renderAiView();
       } else if (event.type === 'error') {

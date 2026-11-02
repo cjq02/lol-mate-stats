@@ -15,7 +15,7 @@ import { promisify } from 'node:util';
 import type { DataSource } from './source.js';
 import type { GameContext, GameModeKey } from './types.js';
 import { buildAnalysisMessages, getAiConfig, streamChatCompletion } from './ai.js';
-import { DB_PATH } from './stats/store.js';
+import { DB_PATH, getAiAnalysis, saveAiAnalysis } from './stats/store.js';
 import { logTag, mapLimit } from './util.js';
 
 const execFileAsync = promisify(execFile);
@@ -398,6 +398,11 @@ async function handleRequest(
   }
 
   const matchAiRoute = /^\/api\/match\/(\d+)\/ai$/.exec(url.pathname);
+  if (method === 'GET' && matchAiRoute) {
+    const gameId = Number(matchAiRoute[1]);
+    sendJson(res, 200, { ok: true, analysis: getAiAnalysis(gameId) ?? null });
+    return;
+  }
   if (method === 'POST' && matchAiRoute) {
     if (!source.getMatchDetail) {
       sendJson(res, 501, { ok: false, error: '当前模式不支持 AI 分析' });
@@ -451,17 +456,27 @@ async function handleRequest(
       const messages = buildAnalysisMessages(detail, itemName);
 
       sendEvent({ type: 'status', text: '正在生成复盘分析…' });
+      let content = '';
       await streamChatCompletion(
         config,
         messages,
-        (text) => sendEvent({ type: 'delta', text }),
+        (text) => {
+          content += text;
+          sendEvent({ type: 'delta', text });
+        },
         abort.signal,
         `lol-mate-match-${gameId}`,
       );
-      sendEvent({ type: 'done', model: config.model });
+      const saved =
+        !abort.signal.aborted && content.trim()
+          ? saveAiAnalysis(gameId, config.model, content.trim())
+          : false;
+      sendEvent({ type: 'done', model: config.model, saved });
       logTag(
         'ai',
-        `对局 ${gameId} 分析完成，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
+        `对局 ${gameId} 分析完成，用时 ${((Date.now() - started) / 1000).toFixed(1)}s${
+          saved ? '，已保存到数据库' : ''
+        }`,
       );
     } catch (error) {
       if (!abort.signal.aborted) {

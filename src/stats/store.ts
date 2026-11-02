@@ -181,6 +181,14 @@ export function getDb(): DatabaseSync | undefined {
       );
       CREATE INDEX IF NOT EXISTS idx_mp_puuid ON match_participants(puuid);
       CREATE INDEX IF NOT EXISTS idx_mp_game ON match_participants(game_id);
+
+      CREATE TABLE IF NOT EXISTS ai_analyses (
+        game_id INTEGER PRIMARY KEY,
+        model TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_analyses_created ON ai_analyses(created_at);
     `);
     // 旧版本数据库没有 heal 列，启动时补上
     try {
@@ -223,5 +231,72 @@ export function writeMeta(key: string, value: string): void {
       .run(key, value);
   } catch {
     /* meta 写入失败不影响主流程 */
+  }
+}
+
+export interface SavedAiAnalysis {
+  gameId: number;
+  model: string;
+  content: string;
+  createdAt: number;
+}
+
+/** 读取某场对局已保存的 AI 分析 */
+export function getAiAnalysis(gameId: number): SavedAiAnalysis | undefined {
+  const connection = getDb();
+  if (!connection) return undefined;
+  try {
+    const row = connection
+      .prepare(
+        'SELECT game_id, model, content, created_at FROM ai_analyses WHERE game_id = ?',
+      )
+      .get(gameId) as
+      | { game_id?: number; model?: string; content?: string; created_at?: number }
+      | undefined;
+    if (!row?.content) return undefined;
+    return {
+      gameId: Number(row.game_id ?? gameId),
+      model: String(row.model ?? ''),
+      content: String(row.content),
+      createdAt: Number(row.created_at ?? 0),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** 保存（或覆盖）某场对局的 AI 分析 */
+export function saveAiAnalysis(
+  gameId: number,
+  model: string,
+  content: string,
+): boolean {
+  const connection = getDb();
+  if (!connection) return false;
+  try {
+    connection
+      .prepare(
+        `INSERT INTO ai_analyses (game_id, model, content, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(game_id) DO UPDATE SET
+           model = excluded.model,
+           content = excluded.content,
+           created_at = excluded.created_at`,
+      )
+      .run(gameId, model, content, Date.now());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 删除某场对局的 AI 分析（重新生成时可选用） */
+export function deleteAiAnalysis(gameId: number): void {
+  const connection = getDb();
+  if (!connection) return;
+  try {
+    connection.prepare('DELETE FROM ai_analyses WHERE game_id = ?').run(gameId);
+  } catch {
+    /* 删除失败不影响主流程 */
   }
 }
