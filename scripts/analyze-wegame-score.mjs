@@ -1,23 +1,35 @@
 /**
  * WeGame 大乱斗单局评分分析（只做拟合，不是官方公式）
  *
- * 数据来自两张战局详情截图：胜方 5 人、败方 5 人。
+ * 数据来自四张战局详情截图（两局，每局 10 人）。
  * 运行：node scripts/analyze-wegame-score.mjs
  */
 
 const MATCHES = [
-  // 胜方（84 杀）
-  { name: '吾乃青帝#46599', win: 1, k: 6, d: 11, a: 60, dmg: 0.05, taken: 0.24, heal: 0.76, teamKills: 84, score: 13.1 },
-  { name: '邪之圣君#76461', win: 1, k: 35, d: 16, a: 25, dmg: 0.29, taken: 0.19, heal: 0.06, teamKills: 84, score: 14.5 },
-  { name: '骑猪看妹子超神#20545', win: 1, k: 8, d: 14, a: 41, dmg: 0.14, taken: 0.19, heal: 0.01, teamKills: 84, score: 7.0 },
-  { name: '舒芙蕾看着很好吃#44428', win: 1, k: 18, d: 13, a: 32, dmg: 0.25, taken: 0.22, heal: 0.16, teamKills: 84, score: 14.2 },
-  { name: '左手往昔你用#50091', win: 1, k: 17, d: 10, a: 48, dmg: 0.27, taken: 0.16, heal: 0.01, teamKills: 84, score: 14.8 },
-  // 败方（64 杀）
-  { name: '情伤难自愈#31107', win: 0, k: 15, d: 22, a: 27, dmg: 0.29, taken: 0.23, heal: 0.04, teamKills: 64, score: 12.4 },
-  { name: '黑夜之晁#45570', win: 0, k: 8, d: 19, a: 27, dmg: 0.12, taken: 0.17, heal: 0.28, teamKills: 64, score: 4.0 },
-  { name: 'so龙yi#69709', win: 0, k: 8, d: 13, a: 18, dmg: 0.17, taken: 0.31, heal: 0.40, teamKills: 64, score: 8.6 },
-  { name: 'RAJ、枷新#68121', win: 0, k: 20, d: 17, a: 16, dmg: 0.21, taken: 0.17, heal: 0.18, teamKills: 64, score: 7.4 },
-  { name: '她和影流都是劫#54285', win: 0, k: 13, d: 13, a: 22, dmg: 0.21, taken: 0.12, heal: 0.10, teamKills: 64, score: 10.5 },
+  // 11/03 00:12，胜方（84 杀）
+  { match: '11/03 00:12', name: '吾乃青帝#46599', win: 1, k: 6, d: 11, a: 60, dmg: 0.05, taken: 0.24, heal: 0.76, teamKills: 84, score: 13.1 },
+  { match: '11/03 00:12', name: '邪之圣君#76461', win: 1, k: 35, d: 16, a: 25, dmg: 0.29, taken: 0.19, heal: 0.06, teamKills: 84, score: 14.5 },
+  { match: '11/03 00:12', name: '骑猪看妹子超神#20545', win: 1, k: 8, d: 14, a: 41, dmg: 0.14, taken: 0.19, heal: 0.01, teamKills: 84, score: 7.0 },
+  { match: '11/03 00:12', name: '舒芙蕾看着很好吃#44428', win: 1, k: 18, d: 13, a: 32, dmg: 0.25, taken: 0.22, heal: 0.16, teamKills: 84, score: 14.2 },
+  { match: '11/03 00:12', name: '左手往昔你用#50091', win: 1, k: 17, d: 10, a: 48, dmg: 0.27, taken: 0.16, heal: 0.01, teamKills: 84, score: 14.8 },
+  // 11/03 00:12，败方（64 杀）
+  { match: '11/03 00:12', name: '情伤难自愈#31107', win: 0, k: 15, d: 22, a: 27, dmg: 0.29, taken: 0.23, heal: 0.04, teamKills: 64, score: 12.4 },
+  { match: '11/03 00:12', name: '黑夜之晁#45570', win: 0, k: 8, d: 19, a: 27, dmg: 0.12, taken: 0.17, heal: 0.28, teamKills: 64, score: 4.0 },
+  { match: '11/03 00:12', name: 'so龙yi#69709', win: 0, k: 8, d: 13, a: 18, dmg: 0.17, taken: 0.31, heal: 0.40, teamKills: 64, score: 8.6 },
+  { match: '11/03 00:12', name: 'RAJ、枷新#68121', win: 0, k: 20, d: 17, a: 16, dmg: 0.21, taken: 0.17, heal: 0.18, teamKills: 64, score: 7.4 },
+  { match: '11/03 00:12', name: '她和影流都是劫#54285', win: 0, k: 13, d: 13, a: 22, dmg: 0.21, taken: 0.12, heal: 0.10, teamKills: 64, score: 10.5 },
+  // 11/02 23:21，胜方（59 杀）
+  { match: '11/02 23:21', name: '吾乃青帝#46599', win: 1, k: 22, d: 12, a: 27, dmg: 0.32, taken: 0.28, heal: 0.62, teamKills: 59, score: 16.6 },
+  { match: '11/02 23:21', name: 'RAJ、枷新#68121', win: 1, k: 11, d: 14, a: 27, dmg: 0.18, taken: 0.16, heal: 0.05, teamKills: 59, score: 8.3 },
+  { match: '11/02 23:21', name: '奔放的小牛妈妈#71805', win: 1, k: 11, d: 18, a: 17, dmg: 0.15, taken: 0.18, heal: 0.02, teamKills: 59, score: 3.4 },
+  { match: '11/02 23:21', name: '陈府大样#68804', win: 1, k: 9, d: 4, a: 43, dmg: 0.22, taken: 0.07, heal: 0.07, teamKills: 59, score: 15.1 },
+  { match: '11/02 23:21', name: '云淡风轻好#10505', win: 1, k: 6, d: 13, a: 34, dmg: 0.13, taken: 0.31, heal: 0.25, teamKills: 59, score: 8.8 },
+  // 11/02 23:21，败方（61 杀）
+  { match: '11/02 23:21', name: 'AccustomedA#38567', win: 0, k: 19, d: 20, a: 16, dmg: 0.20, taken: 0.19, heal: 0.07, teamKills: 61, score: 7.8 },
+  { match: '11/02 23:21', name: '寡妇你惹不起#67993', win: 0, k: 5, d: 13, a: 36, dmg: 0.18, taken: 0.22, heal: 0.35, teamKills: 61, score: 9.5 },
+  { match: '11/02 23:21', name: '小小小小郡主#45293', win: 0, k: 15, d: 7, a: 33, dmg: 0.23, taken: 0.14, heal: 0.20, teamKills: 61, score: 15.8 },
+  { match: '11/02 23:21', name: '哀啊啊#32774', win: 0, k: 15, d: 12, a: 29, dmg: 0.22, taken: 0.32, heal: 0.23, teamKills: 61, score: 14.8 },
+  { match: '11/02 23:21', name: '紫衿箫#69039', win: 0, k: 7, d: 7, a: 34, dmg: 0.17, taken: 0.13, heal: 0.14, teamKills: 61, score: 9.8 },
 ];
 
 const rows = MATCHES.map((m) => ({
@@ -123,7 +135,7 @@ console.log('='.repeat(88));
 console.log('WeGame 大乱斗单局评分：10 人样本分析');
 console.log('='.repeat(88));
 console.log(`评分均值 ${scoreMean.toFixed(2)}，标准差 ${scoreStd.toFixed(2)}，范围 ${Math.min(...labels)}–${Math.max(...labels)}`);
-console.log(`胜方均值 ${mean(rows.slice(0, 5).map((r) => r.score)).toFixed(2)}，败方均值 ${mean(rows.slice(5).map((r) => r.score)).toFixed(2)}`);
+console.log(`胜方均值 ${mean(rows.filter((r) => r.win === 1).map((r) => r.score)).toFixed(2)}，败方均值 ${mean(rows.filter((r) => r.win === 0).map((r) => r.score)).toFixed(2)}`);
 
 console.log('\n特征表：');
 console.log('玩家'.padEnd(22), 'KDA'.padStart(5), '参团'.padStart(6), '输出'.padStart(6), '承伤'.padStart(6), '治疗'.padStart(6), '评分'.padStart(6));
@@ -156,7 +168,9 @@ const candidates = [
   ['kda', 'dmg'],
   ['kda', 'dmg', 'heal'],
   ['kda', 'kp', 'dmg', 'heal'],
+  ['kda', 'kp', 'dmg', 'taken', 'heal'],
   ['kda', 'kp', 'dmg', 'heal', 'win'],
+  ['kda', 'kp', 'dmg', 'taken', 'heal', 'win'],
   ['kdaCap6', 'kp', 'dmg', 'heal', 'win'],
   ['kda', 'kp', 'dmg', 'heal', 'deathsPer10', 'win'],
   ['k', 'd', 'a', 'dmg', 'heal', 'win'],
@@ -204,21 +218,27 @@ function percentile(values, value) {
 }
 
 const percentileKeys = ['kda', 'kp', 'dmg', 'taken', 'heal'];
-const percentileRows = rows.map((r) => ({
-  ...r,
-  ...Object.fromEntries(
-    percentileKeys.map((key) => [key, percentile(rows.map((item) => item[key]), r[key])]),
-  ),
-}));
+const percentileRows = rows.map((r) => {
+  const sameMatch = rows.filter((item) => item.match === r.match);
+  return {
+    ...r,
+    ...Object.fromEntries(
+      percentileKeys.map((key) => [
+        key,
+        percentile(sameMatch.map((item) => item[key]), r[key]),
+      ]),
+    ),
+  };
+});
 const percentileModel = evaluate(percentileKeys, percentileRows);
 if (percentileModel) printModel(percentileModel, '模型：KDA / 参团 / 输出 / 承伤 / 治疗 的局内百分位');
 
 /* ------------------------------ 残差 ------------------------------ */
 
 console.log('\n' + '='.repeat(88));
-console.log('推荐近似模型的逐人残差');
+console.log('绝对特征模型（KDA / 参团 / 输出 / 承伤 / 治疗）的逐人残差');
 console.log('='.repeat(88));
-const recommended = evaluate(['kda', 'kp', 'dmg', 'heal', 'win']);
+const recommended = evaluate(['kda', 'kp', 'dmg', 'taken', 'heal']);
 if (recommended) {
   console.log('玩家'.padEnd(22), '实际'.padStart(6), '预测'.padStart(6), '误差'.padStart(7));
   rows.forEach((r, i) => {
@@ -234,6 +254,28 @@ if (recommended) {
     if (index === 0) return value.toFixed(4);
     const sign = value >= 0 ? ' + ' : ' - ';
     return `${sign}${Math.abs(value).toFixed(4)}×${recommended.keys[index - 1]}`;
+  });
+  console.log(`\n近似式：score = ${terms.join('')}`);
+}
+
+console.log('\n' + '='.repeat(88));
+console.log('局内百分位模型（拟合更好，可能更接近 WeGame 的思路）');
+console.log('='.repeat(88));
+if (percentileModel) {
+  console.log('玩家'.padEnd(22), '实际'.padStart(6), '预测'.padStart(6), '误差'.padStart(7));
+  rows.forEach((r, i) => {
+    const pred = percentileModel.preds[i];
+    console.log(
+      r.name.padEnd(22),
+      r.score.toFixed(1).padStart(6),
+      pred.toFixed(2).padStart(6),
+      (pred - r.score).toFixed(2).padStart(7),
+    );
+  });
+  const terms = percentileModel.coef.map((value, index) => {
+    if (index === 0) return value.toFixed(4);
+    const sign = value >= 0 ? ' + ' : ' - ';
+    return `${sign}${Math.abs(value).toFixed(4)}×${percentileModel.keys[index - 1]}Percentile`;
   });
   console.log(`\n近似式：score = ${terms.join('')}`);
 }
