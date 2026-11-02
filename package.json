@@ -20,6 +20,7 @@
     "demo": "tsx --disable-warning=ExperimentalWarning src/index.ts demo",
     "doctor": "tsx --disable-warning=ExperimentalWarning src/index.ts doctor",
     "db:migrate": "tsx --disable-warning=ExperimentalWarning src/tools/migrate-sqlite-to-mysql.ts",
+    "analyze:wegame": "node scripts/analyze-wegame-score.mjs",
     "test": "tsx --disable-warning=ExperimentalWarning src/stats/rating.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
