@@ -4,7 +4,7 @@ import { toNumber } from '../util.js';
 import { analyzeParticipant, detectLane } from './analyze.js';
 import { gameFlagTags, gameFlags, isRemakeMeta } from './flags.js';
 import { queueName } from './constants.js';
-import { isAfkLikeStats } from './rating.js';
+import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 import { getDb, readMeta, writeMeta } from './store.js';
 
 /** 长期保存的单场战绩（按玩家维度查询） */
@@ -383,23 +383,32 @@ export function getPlayerMatches(
       }
       let teammateAfk = false;
       let opponentAfk = false;
-      for (const participant of participantsByGame.get(gameId) ?? []) {
-        if (!participant.puuid || participant.puuid === puuid) continue;
-        if (
-          !isAfkLikeStats({
-            durationMin,
-            gold: Number(participant.gold),
-            damage: Number(participant.damage),
-            cs: Number(participant.cs),
-            kills: Number(participant.kills),
-            deaths: Number(participant.deaths),
-            assists: Number(participant.assists),
-            visionScore: Number(participant.vision),
-            position: (participant.position as Lane | null) ?? undefined,
-          })
-        ) {
-          continue;
-        }
+      const gameParticipants = participantsByGame.get(gameId) ?? [];
+      const relativeStats: AfkRelativeStats[] = gameParticipants.map((participant) => ({
+        durationMin,
+        gold: Number(participant.gold),
+        damage: Number(participant.damage),
+        cs: Number(participant.cs),
+        kills: Number(participant.kills),
+        deaths: Number(participant.deaths),
+        assists: Number(participant.assists),
+        visionScore: Number(participant.vision),
+        position: (participant.position as Lane | null) ?? undefined,
+      }));
+      const statsByTeam = new Map<number, AfkRelativeStats[]>();
+      gameParticipants.forEach((participant, index) => {
+        const stats = relativeStats[index];
+        if (!stats) return;
+        const list = statsByTeam.get(participant.team_id) ?? [];
+        list.push(stats);
+        statsByTeam.set(participant.team_id, list);
+      });
+      for (let index = 0; index < gameParticipants.length; index += 1) {
+        const participant = gameParticipants[index];
+        const stats = relativeStats[index];
+        if (!participant?.puuid || participant.puuid === puuid || !stats) continue;
+        const peers = statsByTeam.get(participant.team_id) ?? [];
+        if (!isAfkLikeRelative(stats, peers)) continue;
         if (participant.team_id === Number(row.team_id)) teammateAfk = true;
         else opponentAfk = true;
       }

@@ -2,7 +2,7 @@ import type { RawGame } from '../types.js';
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
 import { analyzeParticipant } from './analyze.js';
-import { isAfkLike } from './rating.js';
+import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 
 export interface GameFlags {
   /** 对局是否在 5 分钟内重开 */
@@ -32,9 +32,56 @@ export function isRemakeGame(game: RawGame): boolean {
 }
 
 /**
+ * 找出本局被推断为挂机/逃跑的参与者 ID（包含队友和对手）。
+ */
+export function afkParticipantIds(
+  game: RawGame,
+  championMap: Map<number, ChampionSummary>,
+): Set<number> {
+  const participants = game.participants ?? [];
+  const afkStatsByIndex: Array<AfkRelativeStats | undefined> = participants.map(
+    (participant) => {
+      const analyzed = analyzeParticipant(game, participant, championMap);
+      if (!analyzed) return undefined;
+      return {
+        durationMin: analyzed.durationMin,
+        gold: analyzed.gold,
+        damage: analyzed.damage,
+        cs: analyzed.cs,
+        kills: analyzed.kills,
+        deaths: analyzed.deaths,
+        assists: analyzed.assists,
+        visionScore: analyzed.visionScore,
+        position: analyzed.position,
+        killParticipation: analyzed.killParticipation,
+      };
+    },
+  );
+  const statsByTeam = new Map<number, AfkRelativeStats[]>();
+  afkStatsByIndex.forEach((stats, index) => {
+    if (!stats) return;
+    const teamId = toNumber(participants[index]?.teamId);
+    const list = statsByTeam.get(teamId) ?? [];
+    list.push(stats);
+    statsByTeam.set(teamId, list);
+  });
+
+  const ids = new Set<number>();
+  for (let index = 0; index < participants.length; index += 1) {
+    const participant = participants[index];
+    const stats = afkStatsByIndex[index];
+    if (!participant || !stats) continue;
+    const peers = statsByTeam.get(toNumber(participant.teamId)) ?? [];
+    if (isAfkLikeRelative(stats, peers)) {
+      ids.add(toNumber(participant.participantId));
+    }
+  }
+  return ids;
+}
+
+/**
  * 计算某名参与者视角下的对局标记。
- * 队友逃跑没有官方字段，沿用最近战绩里的保守推断：
- * 时长 ≥ 8 分钟，且伤害/经济/补刀/参团/视野同时明显异常。
+ * 队友/对手逃跑没有官方字段，用绝对阈值 + 队内相对表现做保守推断。
  */
 export function gameFlags(
   game: RawGame,
@@ -52,10 +99,10 @@ export function gameFlags(
   const teamId = toNumber(self.teamId);
   let teammateAfk = false;
   let opponentAfk = false;
-  for (const other of participants) {
-    if (toNumber(other.participantId) === participantId) continue;
-    const analyzed = analyzeParticipant(game, other, championMap);
-    if (!analyzed || !isAfkLike(analyzed)) continue;
+  for (const id of afkParticipantIds(game, championMap)) {
+    if (id === participantId) continue;
+    const other = participants.find((item) => toNumber(item.participantId) === id);
+    if (!other) continue;
     if (toNumber(other.teamId) === teamId) teammateAfk = true;
     else opponentAfk = true;
   }

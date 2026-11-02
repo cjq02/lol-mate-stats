@@ -204,6 +204,40 @@ export function isAfkLike(game: AnalyzedGame): boolean {
   });
 }
 
+export interface AfkRelativeStats extends AfkLikeStats {
+  /** 参团率 0-1，能拿到时优先使用 */
+  killParticipation?: number;
+}
+
+/**
+ * 更宽松的“长时间挂机/逃跑”推断：
+ * 除了绝对阈值，还对比同队其他人的伤害/经济和参团率。
+ * 适用于队友或对手已经拿到少量击杀/助攻、但长时间缺席的情况。
+ */
+export function isAfkLikeRelative(
+  player: AfkRelativeStats,
+  team: AfkRelativeStats[],
+): boolean {
+  if (isAfkLikeStats(player)) return true;
+  if (player.durationMin < 8) return false;
+  const others = team.filter((item) => item !== player);
+  if (!others.length) return false;
+
+  const avgDamage = others.reduce((sum, item) => sum + item.damage, 0) / others.length;
+  const avgGold = others.reduce((sum, item) => sum + item.gold, 0) / others.length;
+  const totalKA = team.reduce((sum, item) => sum + item.kills + item.assists, 0);
+  const participation =
+    player.killParticipation ??
+    (totalKA > 0 ? (player.kills + player.assists) / totalKA : 0);
+
+  const lowDamage = avgDamage > 0 && player.damage < avgDamage * 0.35;
+  const lowGold = avgGold > 0 && player.gold < avgGold * 0.55;
+  return (
+    (lowDamage && participation < 0.3) ||
+    (lowGold && lowDamage && participation < 0.45)
+  );
+}
+
 export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): RecentSummary {
   const sorted = [...games].sort((a, b) => b.gameCreation - a.gameCreation);
   const wins = sorted.filter((game) => game.win).length;

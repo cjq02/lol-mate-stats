@@ -34,8 +34,8 @@ import {
   type ArchivedMatch,
 } from './stats/archive.js';
 import { modeFromQueue, queueName } from './stats/constants.js';
-import { gameFlagTags, gameFlags } from './stats/flags.js';
-import { gradeOf, isAfkLike } from './stats/rating.js';
+import { afkParticipantIds, gameFlagTags, gameFlags } from './stats/flags.js';
+import { gradeOf } from './stats/rating.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
 export interface LiveSourceOptions {
@@ -374,6 +374,10 @@ export class LiveSource implements DataSource {
     );
     const allyTeam =
       toNumber(selfParticipant?.teamId) || toNumber((game.participants ?? [])[0]?.teamId);
+    const selfParticipantId = selfParticipant
+      ? toNumber(selfParticipant.participantId)
+      : undefined;
+    const afkIds = afkParticipantIds(game, championMap);
 
     const scoreboard = (game.participants ?? [])
       .map((participant) => {
@@ -409,9 +413,8 @@ export class LiveSource implements DataSource {
           analyzed?.durationMin || (durationSeconds > 0 ? Math.round(durationSeconds / 60) : 0);
         const perMin = (value: number): number =>
           durationMin > 0 ? Math.round(value / durationMin) : 0;
-        const afk = Boolean(
-          analyzed && isAfkLike(analyzed) && player?.puuid !== summoner.puuid,
-        );
+        const participantId = toNumber(participant.participantId);
+        const afk = participantId !== selfParticipantId && afkIds.has(participantId);
         const tags = afk ? ['逃跑', ...(analyzed?.tags ?? [])] : analyzed?.tags;
 
         return {
