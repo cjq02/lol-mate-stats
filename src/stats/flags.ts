@@ -1,10 +1,42 @@
-import type { RawGame } from '../types.js';
+import type { BadLevel, RawGame } from '../types.js';
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
 import { analyzeParticipant } from './analyze.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 
+/** 低于此分数算“坑” */
 export const BAD_GAME_SCORE = 40;
+/** 略低于正常水平，算“小坑” */
+export const MILD_BAD_GAME_SCORE = 48;
+/** 多项数据严重不达标，算“巨坑” */
+export const SEVERE_BAD_GAME_SCORE = 25;
+
+const BAD_LEVEL_RANK: Record<BadLevel, number> = { mild: 1, bad: 2, severe: 3 };
+
+/** 把单场表现分换算成“坑”的程度；undefined 表示不算坑 */
+export function badLevelOfScore(score: number | undefined): BadLevel | undefined {
+  if (score === undefined || !Number.isFinite(score)) return undefined;
+  if (score < SEVERE_BAD_GAME_SCORE) return 'severe';
+  if (score < BAD_GAME_SCORE) return 'bad';
+  if (score < MILD_BAD_GAME_SCORE) return 'mild';
+  return undefined;
+}
+
+/** 两个程度取更严重的那个 */
+export function worseBadLevel(
+  a: BadLevel | undefined,
+  b: BadLevel | undefined,
+): BadLevel | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return BAD_LEVEL_RANK[a] >= BAD_LEVEL_RANK[b] ? a : b;
+}
+
+export function badLevelLabel(level: BadLevel): string {
+  if (level === 'severe') return '巨坑';
+  if (level === 'mild') return '小坑';
+  return '坑';
+}
 
 export interface GameFlags {
   /** 对局是否在 5 分钟内重开 */
@@ -13,6 +45,10 @@ export interface GameFlags {
   teammateAfk: boolean;
   /** 是否有对手表现出明显的挂机/逃跑特征（数据推断） */
   opponentAfk: boolean;
+  /** 队友里最严重的“坑”程度 */
+  teammateBad?: BadLevel;
+  /** 对手里最严重的“坑”程度 */
+  opponentBad?: BadLevel;
 }
 
 function durationSeconds(game: RawGame): number {
@@ -83,7 +119,8 @@ export function afkParticipantIds(
 
 /**
  * 计算某名参与者视角下的对局标记。
- * 队友/对手逃跑没有官方字段，用绝对阈值 + 队内相对表现做保守推断。
+ * 队友/对手逃跑没有官方字段，用绝对阈值 + 队内相对表现做保守推断；
+ * “坑”按单场表现分分成小坑 / 坑 / 巨坑三档。
  */
 export function gameFlags(
   game: RawGame,
@@ -99,17 +136,34 @@ export function gameFlags(
   if (!self) return { remake, teammateAfk: false, opponentAfk: false };
 
   const teamId = toNumber(self.teamId);
+  const afkIds = afkParticipantIds(game, championMap);
   let teammateAfk = false;
   let opponentAfk = false;
-  for (const id of afkParticipantIds(game, championMap)) {
-    if (id === participantId) continue;
-    const other = participants.find((item) => toNumber(item.participantId) === id);
-    if (!other) continue;
-    if (toNumber(other.teamId) === teamId) teammateAfk = true;
-    else opponentAfk = true;
+  let teammateBad: BadLevel | undefined;
+  let opponentBad: BadLevel | undefined;
+
+  for (const other of participants) {
+    const otherId = toNumber(other.participantId);
+    if (otherId === participantId) continue;
+    const isTeammate = toNumber(other.teamId) === teamId;
+    if (afkIds.has(otherId)) {
+      if (isTeammate) teammateAfk = true;
+      else opponentAfk = true;
+      continue;
+    }
+    if (remake) continue;
+    const analyzed = analyzeParticipant(game, other, championMap);
+    const level = badLevelOfScore(analyzed?.score);
+    if (!level) continue;
+    if (isTeammate) teammateBad = worseBadLevel(teammateBad, level);
+    else opponentBad = worseBadLevel(opponentBad, level);
   }
 
-  return { remake, teammateAfk, opponentAfk };
+  // 有队友/对手逃跑时不再叠加“坑”标签，避免同一局出现两种强判断
+  if (teammateAfk) teammateBad = undefined;
+  if (opponentAfk) opponentBad = undefined;
+
+  return { remake, teammateAfk, opponentAfk, teammateBad, opponentBad };
 }
 
 export function gameFlagTags(flags: GameFlags): string[] {
@@ -117,5 +171,7 @@ export function gameFlagTags(flags: GameFlags): string[] {
   if (flags.remake) tags.push('重开');
   if (flags.teammateAfk) tags.push('队友逃跑');
   if (flags.opponentAfk) tags.push('对手逃跑');
+  if (flags.teammateBad) tags.push(`队友${badLevelLabel(flags.teammateBad)}`);
+  if (flags.opponentBad) tags.push(`敌方${badLevelLabel(flags.opponentBad)}`);
   return tags;
 }

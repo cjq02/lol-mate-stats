@@ -36,7 +36,8 @@ import {
 import { modeFromQueue, queueName } from './stats/constants.js';
 import {
   afkParticipantIds,
-  BAD_GAME_SCORE,
+  badLevelLabel,
+  badLevelOfScore,
   gameFlagTags,
   gameFlags,
   isRemakeGame,
@@ -422,15 +423,14 @@ export class LiveSource implements DataSource {
           durationMin > 0 ? Math.round(value / durationMin) : 0;
         const participantId = toNumber(participant.participantId);
         const afk = participantId !== selfParticipantId && afkIds.has(participantId);
-        const bad =
-          !afk &&
-          !remake &&
-          participantId !== selfParticipantId &&
-          (analyzed?.score ?? 100) < BAD_GAME_SCORE;
+        const badLevel =
+          !afk && !remake && participantId !== selfParticipantId
+            ? badLevelOfScore(analyzed?.score)
+            : undefined;
         const tags = afk
           ? ['逃跑', ...(analyzed?.tags ?? [])]
-          : bad
-            ? ['坑', ...(analyzed?.tags ?? [])]
+          : badLevel
+            ? [badLevelLabel(badLevel), ...(analyzed?.tags ?? [])]
             : analyzed?.tags;
 
         return {
@@ -473,6 +473,7 @@ export class LiveSource implements DataSource {
           damagePerMin: analyzed?.damagePerMin,
           damageTakenPerMin: perMin(toNumber(stats.totalDamageTaken)),
           visionPerMin: analyzed?.visionPerMin,
+          badLevel,
           tags,
         };
       })
@@ -491,7 +492,7 @@ export class LiveSource implements DataSource {
         position: player.position,
       }));
     const badPlayers = scoreboard
-      .filter((player) => player.tags?.includes('坑'))
+      .filter((player) => player.badLevel)
       .map((player) => ({
         puuid: player.puuid,
         name: player.name,
@@ -500,6 +501,8 @@ export class LiveSource implements DataSource {
         teamId: player.teamId,
         isEnemy: player.isEnemy,
         position: player.position,
+        badLevel: player.badLevel,
+        score: player.score,
       }));
 
     const collector = this.ensureCollector(api, recent);
@@ -522,20 +525,6 @@ export class LiveSource implements DataSource {
         selfParticipant ? toNumber(selfParticipant.participantId) : undefined,
         championMap,
       );
-      const extraTags: string[] = [];
-      if (!flags.remake) {
-        const teammateBad = scoreboard.some(
-          (player) =>
-            !player.isEnemy &&
-            player.puuid !== summoner.puuid &&
-            (player.score ?? 100) < BAD_GAME_SCORE,
-        );
-        const enemyBad = scoreboard.some(
-          (player) => player.isEnemy && (player.score ?? 100) < BAD_GAME_SCORE,
-        );
-        if (teammateBad && !flags.teammateAfk) extraTags.push('队友坑');
-        if (enemyBad && !flags.opponentAfk) extraTags.push('敌方坑');
-      }
       logTag(
         'match',
         `[${gameId}] 全部完成：${players.length} 人，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
@@ -551,7 +540,7 @@ export class LiveSource implements DataSource {
         selfPuuid: summoner.puuid,
         players,
         scoreboard,
-        tags: [...gameFlagTags(flags), ...extraTags],
+        tags: gameFlagTags(flags),
         afkPlayers,
         badPlayers,
       };

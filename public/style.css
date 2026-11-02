@@ -658,6 +658,32 @@ body::before {
   background: rgba(255, 143, 160, 0.12);
 }
 
+/* 坑的程度：小坑 / 坑 / 巨坑 */
+.match-flag.mild {
+  font-weight: 600;
+  opacity: 0.86;
+}
+
+.match-flag.bad {
+  font-weight: 700;
+}
+
+.match-flag.severe {
+  font-weight: 800;
+}
+
+.match-flags .match-flag.mild {
+  background: rgba(245, 199, 106, 0.06);
+}
+
+.match-flags .match-flag.bad {
+  background: rgba(245, 199, 106, 0.15);
+}
+
+.match-flags .match-flag.severe {
+  background: rgba(255, 92, 122, 0.2);
+}
+
 .modal-card.wide {
   width: min(1520px, 96vw);
 }

@@ -1,9 +1,23 @@
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import type { ChampionSummary } from '../lcu/api.js';
-import type { Lane, RawGame, RawIdentityPlayer, RawParticipant, RawStats } from '../types.js';
+import type {
+  BadLevel,
+  Lane,
+  RawGame,
+  RawIdentityPlayer,
+  RawParticipant,
+  RawStats,
+} from '../types.js';
 import { toNumber } from '../util.js';
 import { analyzeParticipant, detectLane } from './analyze.js';
-import { BAD_GAME_SCORE, gameFlagTags, gameFlags, isRemakeMeta } from './flags.js';
+import {
+  badLevelLabel,
+  badLevelOfScore,
+  gameFlagTags,
+  gameFlags,
+  isRemakeMeta,
+  worseBadLevel,
+} from './flags.js';
 import { queueName } from './constants.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 import { getDb, readMeta, withTransaction, writeMeta } from './store.js';
@@ -73,12 +87,130 @@ function parseTagList(raw: string | null): string[] {
 /** 逃跑/坑标签每次读取时重新推断，避免旧数据里的误判一直保留 */
 function stripComputedTags(tags: string[]): string[] {
   return tags.filter(
-    (tag) =>
-      tag !== '队友逃跑' &&
-      tag !== '对手逃跑' &&
-      tag !== '队友坑' &&
-      tag !== '敌方坑',
+    (tag) => !/^(?:队友|对手|敌方)(?:小坑|坑|巨坑|逃跑)$/.test(tag),
   );
+}
+
+interface ArchivedParticipant {
+  puuid: string | null;
+  team_id: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  gold: number;
+  damage: number;
+  vision: number;
+  position: string | null;
+  score: number | null;
+}
+
+/** 从存档数据重新推断一场对局的坑/逃跑标签（以 puuid 的视角） */
+function archivedGameTags(
+  puuid: string,
+  teamId: number,
+  durationSeconds: number,
+  storedTags: string | null,
+  gameParticipants: ArchivedParticipant[],
+): string[] {
+  const tags = stripComputedTags(parseTagList(storedTags));
+  const remake = isRemakeMeta(durationSeconds);
+  if (remake && !tags.includes('重开')) tags.unshift('重开');
+
+  const durationMin = durationSeconds / 60;
+  const relativeStats: AfkRelativeStats[] = gameParticipants.map((participant) => ({
+    durationMin,
+    gold: participant.gold,
+    damage: participant.damage,
+    cs: participant.cs,
+    kills: participant.kills,
+    deaths: participant.deaths,
+    assists: participant.assists,
+    visionScore: participant.vision,
+    position: (participant.position as Lane | null) ?? undefined,
+  }));
+  const statsByTeam = new Map<number, AfkRelativeStats[]>();
+  gameParticipants.forEach((participant, index) => {
+    const stats = relativeStats[index];
+    if (!stats) return;
+    const list = statsByTeam.get(participant.team_id) ?? [];
+    list.push(stats);
+    statsByTeam.set(participant.team_id, list);
+  });
+
+  let teammateAfk = false;
+  let opponentAfk = false;
+  for (let index = 0; index < gameParticipants.length; index += 1) {
+    const participant = gameParticipants[index];
+    const stats = relativeStats[index];
+    if (!participant?.puuid || participant.puuid === puuid || !stats) continue;
+    const peers = statsByTeam.get(participant.team_id) ?? [];
+    if (!isAfkLikeRelative(stats, peers)) continue;
+    if (participant.team_id === teamId) teammateAfk = true;
+    else opponentAfk = true;
+  }
+  if (teammateAfk && !tags.includes('队友逃跑')) tags.push('队友逃跑');
+  if (opponentAfk && !tags.includes('对手逃跑')) tags.push('对手逃跑');
+
+  const worstLevel = (side: 'teammate' | 'opponent'): BadLevel | undefined => {
+    let level: BadLevel | undefined;
+    for (const participant of gameParticipants) {
+      if (!participant.puuid || participant.puuid === puuid) continue;
+      const isTeammate = participant.team_id === teamId;
+      if (side === 'teammate' ? !isTeammate : isTeammate) continue;
+      level = worseBadLevel(
+        level,
+        badLevelOfScore(
+          participant.score === null ? undefined : Number(participant.score),
+        ),
+      );
+    }
+    return level;
+  };
+
+  if (!remake && !teammateAfk) {
+    const level = worstLevel('teammate');
+    if (level) tags.push(`队友${badLevelLabel(level)}`);
+  }
+  if (!remake && !opponentAfk) {
+    const level = worstLevel('opponent');
+    if (level) tags.push(`敌方${badLevelLabel(level)}`);
+  }
+  return tags;
+}
+
+async function loadParticipantsByGame(
+  db: Pool,
+  gameIds: number[],
+): Promise<Map<number, ArchivedParticipant[]>> {
+  const result = new Map<number, ArchivedParticipant[]>();
+  if (!gameIds.length) return result;
+  const placeholders = gameIds.map(() => '?').join(',');
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT game_id, puuid, team_id, kills, deaths, assists, cs, gold, damage, vision, position, score
+     FROM match_participants
+     WHERE game_id IN (${placeholders})`,
+    gameIds,
+  );
+  for (const row of rows) {
+    const gameId = Number(row.game_id);
+    const list = result.get(gameId) ?? [];
+    list.push({
+      puuid: (row.puuid as string | null) ?? null,
+      team_id: Number(row.team_id),
+      kills: Number(row.kills),
+      deaths: Number(row.deaths),
+      assists: Number(row.assists),
+      cs: Number(row.cs),
+      gold: Number(row.gold),
+      damage: Number(row.damage),
+      vision: Number(row.vision),
+      position: (row.position as string | null) ?? null,
+      score: row.score === null ? null : Number(row.score),
+    });
+    result.set(gameId, list);
+  }
+  return result;
 }
 
 /**
@@ -157,23 +289,9 @@ export async function archiveGames(
           const championId = toNumber(participant.championId);
           const teamId = toNumber(participant.teamId);
           const flags = gameFlags(game, participantId, championMap);
-          let teammateBad = false;
-          let enemyBad = false;
-          if (!flags.remake) {
-            for (const other of participants) {
-              if (other === participant) continue;
-              const otherAnalyzed = analyzeParticipant(game, other, championMap);
-              if (!otherAnalyzed || otherAnalyzed.score >= BAD_GAME_SCORE) continue;
-              if (toNumber(other.teamId) === teamId) teammateBad = true;
-              else enemyBad = true;
-            }
-          }
-          const computedTags = gameFlagTags(flags);
-          if (teammateBad && !flags.teammateAfk) computedTags.push('队友坑');
-          if (enemyBad && !flags.opponentAfk) computedTags.push('敌方坑');
           const tags = [
             ...new Set([
-              ...computedTags,
+              ...gameFlagTags(flags),
               ...(analyzed?.tags ?? (bot ? ['人机'] : [])),
             ]),
           ].slice(0, 6);
@@ -256,7 +374,7 @@ export async function getPlayerScores(
   return scores;
 }
 
-/** 批量读取某个玩家这些对局里已保存的标签（含重开/队友逃跑） */
+/** 批量读取某个玩家这些对局里的标签（重新推断坑/逃跑程度） */
 export async function getPlayerMatchTags(
   puuid: string,
   gameIds: number[],
@@ -269,21 +387,25 @@ export async function getPlayerMatchTags(
   try {
     const placeholders = ids.map(() => '?').join(',');
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT p.game_id, p.tags, m.queue_id, m.duration_seconds
+      `SELECT p.game_id, p.team_id, p.tags, m.duration_seconds
        FROM match_participants p
        JOIN matches m ON m.game_id = p.game_id
        WHERE p.puuid = ? AND p.game_id IN (${placeholders})`,
       [puuid, ...ids],
     );
+    const participantsByGame = await loadParticipantsByGame(db, ids);
     for (const row of rows) {
-      const tags = stripComputedTags(parseTagList(row.tags as string | null));
-      if (
-        isRemakeMeta(Number(row.duration_seconds)) &&
-        !tags.includes('重开')
-      ) {
-        tags.unshift('重开');
-      }
-      result.set(Number(row.game_id), tags);
+      const gameId = Number(row.game_id);
+      result.set(
+        gameId,
+        archivedGameTags(
+          puuid,
+          Number(row.team_id),
+          Number(row.duration_seconds),
+          row.tags as string | null,
+          participantsByGame.get(gameId) ?? [],
+        ),
+      );
     }
   } catch {
     /* 查询失败时按无标签处理 */
@@ -327,112 +449,17 @@ export async function getPlayerMatches(
     );
 
     const gameIds = [...new Set(rows.map((row) => Number(row.game_id)))];
-    const participantsByGame = new Map<
-      number,
-      Array<{
-        puuid: string | null;
-        team_id: number;
-        kills: number;
-        deaths: number;
-        assists: number;
-        cs: number;
-        gold: number;
-        damage: number;
-        vision: number;
-        position: string | null;
-        score: number | null;
-      }>
-    >();
-    if (gameIds.length) {
-      const placeholders = gameIds.map(() => '?').join(',');
-      const [participants] = await db.query<RowDataPacket[]>(
-        `SELECT game_id, puuid, team_id, kills, deaths, assists, cs, gold, damage, vision, position, score
-         FROM match_participants
-         WHERE game_id IN (${placeholders})`,
-        gameIds,
-      );
-      for (const participant of participants) {
-        const gameId = Number(participant.game_id);
-        const list = participantsByGame.get(gameId) ?? [];
-        list.push({
-          puuid: (participant.puuid as string | null) ?? null,
-          team_id: Number(participant.team_id),
-          kills: Number(participant.kills),
-          deaths: Number(participant.deaths),
-          assists: Number(participant.assists),
-          cs: Number(participant.cs),
-          gold: Number(participant.gold),
-          damage: Number(participant.damage),
-          vision: Number(participant.vision),
-          position: (participant.position as string | null) ?? null,
-          score: participant.score === null ? null : Number(participant.score),
-        });
-        participantsByGame.set(gameId, list);
-      }
-    }
+    const participantsByGame = await loadParticipantsByGame(db, gameIds);
 
     return rows.map((row) => {
       const gameId = Number(row.game_id);
-      const durationMin = Number(row.duration_seconds) / 60;
-      const tags = stripComputedTags(parseTagList(row.tags));
-      const remake = isRemakeMeta(Number(row.duration_seconds));
-      if (remake && !tags.includes('重开')) {
-        tags.unshift('重开');
-      }
-      let teammateAfk = false;
-      let opponentAfk = false;
-      const gameParticipants = participantsByGame.get(gameId) ?? [];
-      const relativeStats: AfkRelativeStats[] = gameParticipants.map((participant) => ({
-        durationMin,
-        gold: Number(participant.gold),
-        damage: Number(participant.damage),
-        cs: Number(participant.cs),
-        kills: Number(participant.kills),
-        deaths: Number(participant.deaths),
-        assists: Number(participant.assists),
-        visionScore: Number(participant.vision),
-        position: (participant.position as Lane | null) ?? undefined,
-      }));
-      const statsByTeam = new Map<number, AfkRelativeStats[]>();
-      gameParticipants.forEach((participant, index) => {
-        const stats = relativeStats[index];
-        if (!stats) return;
-        const list = statsByTeam.get(participant.team_id) ?? [];
-        list.push(stats);
-        statsByTeam.set(participant.team_id, list);
-      });
-      for (let index = 0; index < gameParticipants.length; index += 1) {
-        const participant = gameParticipants[index];
-        const stats = relativeStats[index];
-        if (!participant?.puuid || participant.puuid === puuid || !stats) continue;
-        const peers = statsByTeam.get(participant.team_id) ?? [];
-        if (!isAfkLikeRelative(stats, peers)) continue;
-        if (participant.team_id === Number(row.team_id)) teammateAfk = true;
-        else opponentAfk = true;
-      }
-      if (teammateAfk && !tags.includes('队友逃跑')) tags.push('队友逃跑');
-      if (opponentAfk && !tags.includes('对手逃跑')) tags.push('对手逃跑');
-      if (!remake && !teammateAfk) {
-        const teammateBad = gameParticipants.some(
-          (participant) =>
-            Boolean(participant.puuid) &&
-            participant.puuid !== puuid &&
-            participant.team_id === Number(row.team_id) &&
-            participant.score !== null &&
-            Number(participant.score) < BAD_GAME_SCORE,
-        );
-        if (teammateBad && !tags.includes('队友坑')) tags.push('队友坑');
-      }
-      if (!remake && !opponentAfk) {
-        const enemyBad = gameParticipants.some(
-          (participant) =>
-            Boolean(participant.puuid) &&
-            participant.team_id !== Number(row.team_id) &&
-            participant.score !== null &&
-            Number(participant.score) < BAD_GAME_SCORE,
-        );
-        if (enemyBad && !tags.includes('敌方坑')) tags.push('敌方坑');
-      }
+      const tags = archivedGameTags(
+        puuid,
+        Number(row.team_id),
+        Number(row.duration_seconds),
+        row.tags as string | null,
+        participantsByGame.get(gameId) ?? [],
+      );
       return {
         gameId,
         queueId: Number(row.queue_id),

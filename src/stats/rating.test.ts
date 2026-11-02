@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { AnalyzedGame, Lane, RawGame } from '../types.js';
 import { analyzeGame, detectLane } from './analyze.js';
+import { badLevelLabel, badLevelOfScore, worseBadLevel } from './flags.js';
 import { PROFILES, gameTags, isAfkLike, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 
@@ -461,6 +462,22 @@ test('队列/模式分组', () => {
   assert.equal(currentQueueGroup(450, 'ARAM'), 'aram');
   assert.equal(gameQueueGroup(450, 'ARAM'), 'aram');
   assert.equal(gameQueueGroup(420, 'MID'), 'solo');
+});
+
+test('单场坑的程度分档', () => {
+  assert.equal(badLevelOfScore(60), undefined);
+  assert.equal(badLevelOfScore(47), 'mild');
+  assert.equal(badLevelOfScore(48), undefined);
+  assert.equal(badLevelOfScore(40), 'mild');
+  assert.equal(badLevelOfScore(39), 'bad');
+  assert.equal(badLevelOfScore(25), 'bad');
+  assert.equal(badLevelOfScore(24), 'severe');
+  assert.equal(badLevelLabel('mild'), '小坑');
+  assert.equal(badLevelLabel('bad'), '坑');
+  assert.equal(badLevelLabel('severe'), '巨坑');
+  assert.equal(worseBadLevel('mild', 'severe'), 'severe');
+  assert.equal(worseBadLevel(undefined, 'bad'), 'bad');
+  assert.equal(worseBadLevel('bad', 'mild'), 'bad');
 });
 
 console.log(`\n${passed} 项测试全部通过`);

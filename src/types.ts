@@ -198,6 +198,9 @@ export interface RecentSummary {
 
 export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
 
+/** 单场“坑”的程度：小坑 / 坑 / 巨坑 */
+export type BadLevel = 'mild' | 'bad' | 'severe';
+
 /** 统计用的模式分组：召唤师峡谷 / 极地大乱斗 / 竞技场 */
 export type GameModeKey = 'SR' | 'ARAM' | 'ARENA';
 
@@ -324,6 +327,8 @@ export interface MatchScoreboardPlayer {
   damagePerMin?: number;
   damageTakenPerMin?: number;
   visionPerMin?: number;
+  /** 本局“坑”的程度 */
+  badLevel?: BadLevel;
   tags?: string[];
 }
 
@@ -335,6 +340,10 @@ export interface MatchAfkPlayer {
   teamId: number;
   isEnemy: boolean;
   position?: string;
+  /** 本局“坑”的程度，仅 badPlayers 使用 */
+  badLevel?: BadLevel;
+  /** 本局表现分 */
+  score?: number;
 }
 
 export interface MatchDetail {

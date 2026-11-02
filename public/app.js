@@ -473,6 +473,8 @@ function buildCard(player, isLocal, options = {}) {
         .map((label) => {
           const danger = [
             '坑',
+            '小坑',
+            '巨坑',
             '偏坑',
             '有点坑',
             '疑似新手',
@@ -1409,14 +1411,34 @@ function matchFlagsHtml(tags) {
           tag,
         )}</b>`;
       }
-      if (tag === '队友坑' || tag === '敌方坑') {
-        return `<b class="match-flag ${tag === '队友坑' ? 'teammate-bad' : 'enemy-bad'}">${escapeHtml(
+      const badMatch = /^(队友|敌方)(小坑|坑|巨坑)$/.exec(tag);
+      if (badMatch) {
+        const enemy = badMatch[1] === '敌方';
+        const level = badMatch[2] === '巨坑' ? 'severe' : badMatch[2] === '小坑' ? 'mild' : 'bad';
+        return `<b class="match-flag ${enemy ? 'enemy-bad' : 'teammate-bad'} ${level}">${escapeHtml(
           tag,
         )}</b>`;
       }
       return escapeHtml(tag);
     })
     .join(' / ');
+}
+
+const BAD_LEVEL_LABEL = { mild: '小坑', bad: '坑', severe: '巨坑' };
+const BAD_LEVEL_RANK = { mild: 1, bad: 2, severe: 3 };
+const BAD_LEVEL_CLASS = { mild: 'mild', bad: 'bad', severe: 'severe' };
+
+function worstBadLevel(players) {
+  return players.reduce((worst, player) => {
+    const level = BAD_LEVEL_CLASS[player.badLevel] ? player.badLevel : 'bad';
+    return !worst || BAD_LEVEL_RANK[level] > BAD_LEVEL_RANK[worst] ? level : worst;
+  }, null);
+}
+
+function badLevelFromTag(tag) {
+  if (/巨坑$/.test(tag)) return 'severe';
+  if (/小坑$/.test(tag)) return 'mild';
+  return 'bad';
 }
 
 function afkPlayerLabel(player) {
@@ -1454,23 +1476,41 @@ function renderMatchFlags(detail) {
   const bad = detail.badPlayers ?? [];
   const badAllies = bad.filter((player) => !player.isEnemy);
   const badEnemies = bad.filter((player) => player.isEnemy);
+  const teammateBadLevel = badAllies.length ? worstBadLevel(badAllies) : null;
+  const enemyBadLevel = badEnemies.length ? worstBadLevel(badEnemies) : null;
   if (badAllies.length) {
     parts.push(
-      `<span class="match-flag teammate-bad">队友坑：${badAllies
+      `<span class="match-flag teammate-bad ${BAD_LEVEL_CLASS[teammateBadLevel]}">队友${
+        BAD_LEVEL_LABEL[teammateBadLevel]
+      }：${badAllies
         .map((player) => escapeHtml(afkPlayerLabel(player)))
         .join('、')}</span>`,
     );
-  } else if (tags.includes('队友坑')) {
-    parts.push('<span class="match-flag teammate-bad">队友坑</span>');
+  } else {
+    const tag = tags.find((item) => /^队友(小坑|坑|巨坑)$/.test(item));
+    if (tag) {
+      const level = badLevelFromTag(tag);
+      parts.push(
+        `<span class="match-flag teammate-bad ${BAD_LEVEL_CLASS[level]}">${escapeHtml(tag)}</span>`,
+      );
+    }
   }
   if (badEnemies.length) {
     parts.push(
-      `<span class="match-flag enemy-bad">敌方坑：${badEnemies
+      `<span class="match-flag enemy-bad ${BAD_LEVEL_CLASS[enemyBadLevel]}">敌方${
+        BAD_LEVEL_LABEL[enemyBadLevel]
+      }：${badEnemies
         .map((player) => escapeHtml(afkPlayerLabel(player)))
         .join('、')}</span>`,
     );
-  } else if (tags.includes('敌方坑')) {
-    parts.push('<span class="match-flag enemy-bad">敌方坑</span>');
+  } else {
+    const tag = tags.find((item) => /^敌方(小坑|坑|巨坑)$/.test(item));
+    if (tag) {
+      const level = badLevelFromTag(tag);
+      parts.push(
+        `<span class="match-flag enemy-bad ${BAD_LEVEL_CLASS[level]}">${escapeHtml(tag)}</span>`,
+      );
+    }
   }
   els.matchFlags.innerHTML = parts.join('');
   els.matchFlags.classList.toggle('hidden', parts.length === 0);

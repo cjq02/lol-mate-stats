@@ -18,6 +18,7 @@ import { LcuError } from '../lcu/http.js';
 import { analyzeGame } from './analyze.js';
 import { archiveGames } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
+import { gameFlagTags, gameFlags } from './flags.js';
 import { summarize } from './rating.js';
 import { getDb, withTransaction } from './store.js';
 
@@ -682,13 +683,16 @@ export class ReportCollector {
       ]);
 
       const analyzed = games
-        .map((game) =>
-          analyzeGame(
+        .map((game) => {
+          const result = analyzeGame(
             game,
             { puuid: summoner.puuid, summonerId: summoner.summonerId, accountId: summoner.accountId },
             championMap,
-          ),
-        )
+          );
+          return result
+            ? withMatchFlags(game, result, championMap, summoner.puuid ?? '')
+            : null;
+        })
         .filter((game): game is NonNullable<typeof game> => game !== null)
         .sort((a, b) => b.gameCreation - a.gameCreation);
       const filtered = filterByContext(analyzed, context);
@@ -842,8 +846,8 @@ export class ReportCollector {
       ]);
 
       const analyzed = games
-        .map((game) =>
-          analyzeGame(
+        .map((game) => {
+          const result = analyzeGame(
             game,
             {
               puuid: summoner.puuid,
@@ -851,8 +855,11 @@ export class ReportCollector {
               accountId: summoner.accountId,
             },
             championMap,
-          ),
-        )
+          );
+          return result
+            ? withMatchFlags(game, result, championMap, summoner.puuid ?? '')
+            : null;
+        })
         .filter((game): game is NonNullable<typeof game> => game !== null)
         .sort((a, b) => b.gameCreation - a.gameCreation);
       const filtered = filterByContext(analyzed, context);
@@ -1198,6 +1205,26 @@ function historyErrorMessage(error: unknown): string {
   if (error instanceof HistoryUnavailableError) return error.message;
   const status = (error as LcuError).status;
   return `战绩服务暂时不可用（HTTP ${status}，腾讯侧超时），稍后自动重试`;
+}
+
+/** 给单个玩家的近期对局补上“坑 / 逃跑”标签（从该玩家视角） */
+function withMatchFlags(
+  rawGame: RawGame,
+  analyzed: AnalyzedGame,
+  championMap: Map<number, ChampionSummary>,
+  puuid: string,
+): AnalyzedGame {
+  const identity = (rawGame.participantIdentities ?? []).find(
+    (item) => item.player?.puuid === puuid,
+  );
+  const rawId = identity?.participantId;
+  const participantId = rawId === undefined ? undefined : toNumber(rawId);
+  const flagTags = gameFlagTags(gameFlags(rawGame, participantId, championMap));
+  if (!flagTags.length) return analyzed;
+  return {
+    ...analyzed,
+    tags: [...new Set([...(analyzed.tags ?? []), ...flagTags])],
+  };
 }
 
 /** 只保留当前队列/模式的历史对局 */
