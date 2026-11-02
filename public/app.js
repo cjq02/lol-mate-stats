@@ -38,6 +38,7 @@ const els = {
   aiRerun: document.getElementById('ai-rerun'),
   myMatches: document.getElementById('my-matches'),
   latestMatch: document.getElementById('latest-match'),
+  liveAi: document.getElementById('live-ai'),
   clearCache: document.getElementById('clear-cache'),
 };
 
@@ -353,6 +354,8 @@ function render() {
   const players = snapshot?.players ?? [];
   const collecting = Boolean(snapshot?.collecting);
   const showSkeleton = !players.length && collecting;
+
+  if (!snapshot?.inGame && state.ai?.kind === 'live') resetAiView();
 
   document.title = players.length ? `(${players.length}) 队友战绩 · LoL` : '队友战绩 · LoL';
 
@@ -743,6 +746,10 @@ function renderHeader(snapshot, players, collecting) {
   );
 
   els.mode.classList.toggle('hidden', snapshot?.mode !== 'demo');
+  els.liveAi.classList.toggle(
+    'hidden',
+    !(snapshot?.inGame && players.length > 0 && snapshot.localPlayer),
+  );
   if (snapshot?.region) {
     els.region.textContent = String(snapshot.region).toUpperCase();
     els.region.classList.remove('hidden');
@@ -1010,16 +1017,23 @@ const AI_CONFIG_HINT =
   '在项目根目录的 .env 中设置 LOL_MATE_AI_API_KEY=你的 OpenCode Go API Key，然后重启面板。默认使用 deepseek-v4.1-flash。';
 
 function setAiButton(running) {
-  els.matchesAi.disabled = Boolean(running);
-  els.matchesAi.classList.toggle('loading', Boolean(running));
-  els.matchesAi.innerHTML = running
-    ? '<span class="spinner"></span>分析中…'
-    : '✨ AI 分析';
+  for (const button of [els.matchesAi, els.liveAi]) {
+    button.disabled = Boolean(running);
+    button.classList.toggle('loading', Boolean(running));
+    button.innerHTML = running
+      ? '<span class="spinner"></span>分析中…'
+      : '✨ AI 分析';
+  }
   els.matchesAi.title = running
     ? '正在生成 AI 复盘分析…'
     : state.aiStatus?.enabled === false
       ? 'AI 分析未配置：在 .env 设置 LOL_MATE_AI_API_KEY 后重启面板'
       : `用 AI 复盘本局（${state.aiStatus?.model ?? 'DeepSeek V4.1 Flash'}）`;
+  els.liveAi.title = running
+    ? '正在生成出装和打法建议…'
+    : state.aiStatus?.enabled === false
+      ? 'AI 分析未配置：在 .env 设置 LOL_MATE_AI_API_KEY 后重启面板'
+      : `AI 出装、技能与打法建议（${state.aiStatus?.model ?? 'DeepSeek V4.1 Flash'}）`;
 }
 
 function hideAiView() {
@@ -1128,56 +1142,11 @@ async function loadSavedAiAnalysis(gameId) {
   }
 }
 
-async function runAiAnalysis(options = {}) {
-  const detail = state.matchDetail;
-  if (!detail) return;
-  const gameId = Number(detail.gameId);
-  if (!Number.isFinite(gameId) || gameId <= 0) return;
-
-  const existing = state.ai;
-  if (!options.force && existing && existing.gameId === gameId && !existing.error) {
-    // 已经分析过（或正在分析）这场，直接打开弹窗，避免重复请求
-    showAiView();
-    renderAiView();
-    return;
-  }
-  if (state.aiLoading) return;
-
-  if (!options.force) {
-    state.aiLoading = true;
-    try {
-      const saved = await loadSavedAiAnalysis(gameId);
-      if (state.matchDetail?.gameId !== gameId) return;
-      if (saved) {
-        state.ai = {
-          gameId,
-          title: detail.queueName ?? '对局',
-          controller: null,
-          text: saved.content,
-          status: '',
-          error: '',
-          model: saved.model || state.aiStatus?.model,
-          running: false,
-          done: true,
-          cached: true,
-          savedAt: saved.createdAt,
-          started: 0,
-        };
-        showAiView();
-        renderAiView();
-        return;
-      }
-    } finally {
-      state.aiLoading = false;
-    }
-  }
-
-  if (existing?.controller) existing.controller.abort();
-
+async function streamAiAnalysis(url, meta) {
+  state.ai?.controller?.abort();
   const controller = new AbortController();
   const ai = {
-    gameId,
-    title: detail.queueName ?? '对局',
+    ...meta,
     controller,
     text: '',
     status: '正在连接 AI 服务…',
@@ -1193,7 +1162,7 @@ async function runAiAnalysis(options = {}) {
   renderAiView();
 
   try {
-    const response = await fetch(`/api/match/${gameId}/ai`, {
+    const response = await fetch(url, {
       method: 'POST',
       signal: controller.signal,
       cache: 'no-store',
@@ -1249,6 +1218,141 @@ async function runAiAnalysis(options = {}) {
     ai.controller = null;
     if (state.ai === ai) setAiButton(false);
   }
+}
+
+async function runAiAnalysis(options = {}) {
+  const detail = state.matchDetail;
+  if (!detail) return;
+  const gameId = Number(detail.gameId);
+  if (!Number.isFinite(gameId) || gameId <= 0) return;
+
+  const existing = state.ai;
+  if (
+    !options.force &&
+    existing &&
+    existing.kind === 'match' &&
+    existing.gameId === gameId &&
+    !existing.error
+  ) {
+    // 已经分析过（或正在分析）这场，直接打开弹窗，避免重复请求
+    showAiView();
+    renderAiView();
+    return;
+  }
+  if (state.aiLoading) return;
+
+  const title = detail.queueName ?? '对局';
+  if (!options.force) {
+    state.aiLoading = true;
+    try {
+      const saved = await loadSavedAiAnalysis(gameId);
+      if (state.matchDetail?.gameId !== gameId) return;
+      if (saved) {
+        state.ai = {
+          kind: 'match',
+          gameId,
+          title,
+          controller: null,
+          text: saved.content,
+          status: '',
+          error: '',
+          model: saved.model || state.aiStatus?.model,
+          running: false,
+          done: true,
+          cached: true,
+          savedAt: saved.createdAt,
+          started: 0,
+        };
+        showAiView();
+        renderAiView();
+        return;
+      }
+    } finally {
+      state.aiLoading = false;
+    }
+  }
+
+  await streamAiAnalysis(`/api/match/${gameId}/ai`, { kind: 'match', gameId, title });
+}
+
+async function loadSavedLiveAiAnalysis() {
+  try {
+    const response = await fetch('/api/live/ai', { cache: 'no-store' });
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => ({}));
+    const analysis = payload?.analysis;
+    if (!analysis || typeof analysis.content !== 'string' || !analysis.content.trim()) {
+      return null;
+    }
+    return analysis;
+  } catch {
+    return null;
+  }
+}
+
+function liveAiTitle(snapshot) {
+  const players = snapshot.players ?? [];
+  const local = snapshot.localPlayer;
+  const self =
+    (local?.summonerId
+      ? players.find((player) => player.summonerId === local.summonerId)
+      : undefined) ?? players.find((player) => !player.isEnemy);
+  const champion = self?.championName ?? local?.championName ?? '本局';
+  return `${champion} · 本局出装与打法`;
+}
+
+async function runLiveAiAnalysis(options = {}) {
+  const snapshot = state.snapshot;
+  if (
+    !snapshot?.inGame ||
+    !snapshot.players?.length ||
+    !snapshot.liveSessionId ||
+    !snapshot.localPlayer
+  ) {
+    return;
+  }
+  const sessionKey = snapshot.liveSessionId;
+  const title = liveAiTitle(snapshot);
+
+  const existing = state.ai;
+  if (!options.force && existing && existing.kind === 'live' && !existing.error) {
+    showAiView();
+    renderAiView();
+    return;
+  }
+  if (state.aiLoading) return;
+
+  if (!options.force) {
+    state.aiLoading = true;
+    try {
+      const saved = await loadSavedLiveAiAnalysis();
+      if (state.snapshot?.liveSessionId !== sessionKey) return;
+      if (saved) {
+        state.ai = {
+          kind: 'live',
+          sessionKey,
+          title,
+          controller: null,
+          text: saved.content,
+          status: '',
+          error: '',
+          model: saved.model || state.aiStatus?.model,
+          running: false,
+          done: true,
+          cached: true,
+          savedAt: saved.createdAt,
+          started: 0,
+        };
+        showAiView();
+        renderAiView();
+        return;
+      }
+    } finally {
+      state.aiLoading = false;
+    }
+  }
+
+  await streamAiAnalysis('/api/live/ai', { kind: 'live', sessionKey, title });
 }
 
 async function loadAiStatus() {
@@ -2039,8 +2143,12 @@ els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
 els.matchesClose.addEventListener('click', closeMatches);
 els.matchesAi.addEventListener('click', () => void runAiAnalysis());
+els.liveAi.addEventListener('click', () => void runLiveAiAnalysis());
 els.aiClose.addEventListener('click', hideAiView);
-els.aiRerun.addEventListener('click', () => void runAiAnalysis({ force: true }));
+els.aiRerun.addEventListener('click', () => {
+  if (state.ai?.kind === 'live') void runLiveAiAnalysis({ force: true });
+  else void runAiAnalysis({ force: true });
+});
 els.aiModal.addEventListener('click', (event) => {
   if (event.target === els.aiModal) hideAiView();
 });

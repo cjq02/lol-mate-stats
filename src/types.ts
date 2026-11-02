@@ -402,6 +402,8 @@ export interface Snapshot {
   gameTime?: number;
   /** 当前模式分组 */
   gameMode?: GameModeKey;
+  /** 当前这局游戏的临时会话 ID（用于保存实时 AI 分析） */
+  liveSessionId?: string;
   localPlayer?: {
     summonerId: number;
     displayName: string;

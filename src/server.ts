@@ -14,8 +14,14 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DataSource } from './source.js';
 import type { GameContext, GameModeKey } from './types.js';
-import { buildAnalysisMessages, getAiConfig, streamChatCompletion } from './ai.js';
-import { DB_PATH, getAiAnalysis, saveAiAnalysis } from './stats/store.js';
+import { buildAnalysisMessages, buildLiveAnalysisMessages, getAiConfig, streamChatCompletion } from './ai.js';
+import {
+  DB_PATH,
+  getAiAnalysis,
+  getLiveAiAnalysis,
+  saveAiAnalysis,
+  saveLiveAiAnalysis,
+} from './stats/store.js';
 import { logTag, mapLimit } from './util.js';
 
 const execFileAsync = promisify(execFile);
@@ -147,6 +153,104 @@ async function handleRequest(
         ? undefined
         : '在项目根目录的 .env 中设置 LOL_MATE_AI_API_KEY=你的 OpenCode Go API Key，然后重启面板。',
     });
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/live/ai') {
+    const snapshot = source.getSnapshot();
+    const sessionKey = snapshot.inGame ? snapshot.liveSessionId : undefined;
+    sendJson(res, 200, {
+      ok: true,
+      analysis: sessionKey ? getLiveAiAnalysis(sessionKey) ?? null : null,
+    });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/live/ai') {
+    const config = getAiConfig();
+    if (!config.enabled) {
+      sendJson(res, 400, {
+        ok: false,
+        code: 'ai-not-configured',
+        error:
+          'AI 分析未启用：请在项目根目录的 .env 里设置 LOL_MATE_AI_API_KEY=你的 OpenCode Go API Key，然后重启面板。',
+      });
+      return;
+    }
+    const snapshot = source.getSnapshot();
+    if (
+      !snapshot.inGame ||
+      !snapshot.players?.length ||
+      !snapshot.liveSessionId ||
+      !snapshot.localPlayer
+    ) {
+      sendJson(res, 400, {
+        ok: false,
+        error: '本局数据还没准备好，请稍后再试。',
+      });
+      return;
+    }
+
+    const sessionKey = snapshot.liveSessionId;
+    const started = Date.now();
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.on('error', () => undefined);
+    res.flushHeaders?.();
+
+    const abort = new AbortController();
+    res.on('close', () => {
+      if (!res.writableEnded) abort.abort(new Error('客户端已断开'));
+    });
+    const sendEvent = (payload: unknown): void => {
+      if (abort.signal.aborted || res.writableEnded) return;
+      res.write(`${JSON.stringify(payload)}\n`);
+    };
+
+    logTag('ai', `开始分析进行中的对局（${config.model}）…`);
+    try {
+      sendEvent({ type: 'status', text: '正在整理本局阵容和实时数据…' });
+      const items = await loadItemTable(source).catch(() => null);
+      const itemName = (id: number): string => items?.[String(id)]?.name ?? '';
+      const messages = buildLiveAnalysisMessages(snapshot, itemName);
+
+      sendEvent({ type: 'status', text: '正在生成出装和打法建议…' });
+      let content = '';
+      await streamChatCompletion(
+        config,
+        messages,
+        (text) => {
+          content += text;
+          sendEvent({ type: 'delta', text });
+        },
+        abort.signal,
+        `lol-mate-live-${sessionKey}`,
+      );
+      if (!content.trim()) {
+        throw new Error('AI 没有返回内容，请点「重新分析」再试一次。');
+      }
+      const saved =
+        !abort.signal.aborted &&
+        saveLiveAiAnalysis(sessionKey, config.model, content.trim());
+      sendEvent({ type: 'done', model: config.model, saved });
+      logTag(
+        'ai',
+        `进行中对局分析完成，用时 ${((Date.now() - started) / 1000).toFixed(1)}s${
+          saved ? '，已保存到数据库' : ''
+        }`,
+      );
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        const message = error instanceof Error ? error.message : String(error);
+        sendEvent({ type: 'error', error: message });
+        logTag('ai', `进行中对局分析失败：${message}`);
+      }
+    }
+    if (!res.writableEnded) res.end();
     return;
   }
 

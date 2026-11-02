@@ -189,6 +189,14 @@ export function getDb(): DatabaseSync | undefined {
         created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_ai_analyses_created ON ai_analyses(created_at);
+
+      CREATE TABLE IF NOT EXISTS ai_live_analyses (
+        session_key TEXT PRIMARY KEY,
+        model TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_live_analyses_created ON ai_live_analyses(created_at);
     `);
     // 旧版本数据库没有 heal 列，启动时补上
     try {
@@ -298,5 +306,61 @@ export function deleteAiAnalysis(gameId: number): void {
     connection.prepare('DELETE FROM ai_analyses WHERE game_id = ?').run(gameId);
   } catch {
     /* 删除失败不影响主流程 */
+  }
+}
+
+export interface SavedLiveAiAnalysis {
+  sessionKey: string;
+  model: string;
+  content: string;
+  createdAt: number;
+}
+
+/** 读取当前对局实时 AI 分析 */
+export function getLiveAiAnalysis(sessionKey: string): SavedLiveAiAnalysis | undefined {
+  const connection = getDb();
+  if (!connection || !sessionKey) return undefined;
+  try {
+    const row = connection
+      .prepare(
+        'SELECT session_key, model, content, created_at FROM ai_live_analyses WHERE session_key = ?',
+      )
+      .get(sessionKey) as
+      | { session_key?: string; model?: string; content?: string; created_at?: number }
+      | undefined;
+    if (!row?.content) return undefined;
+    return {
+      sessionKey: String(row.session_key ?? sessionKey),
+      model: String(row.model ?? ''),
+      content: String(row.content),
+      createdAt: Number(row.created_at ?? 0),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** 保存（或覆盖）当前对局实时 AI 分析 */
+export function saveLiveAiAnalysis(
+  sessionKey: string,
+  model: string,
+  content: string,
+): boolean {
+  const connection = getDb();
+  if (!connection || !sessionKey) return false;
+  try {
+    connection
+      .prepare(
+        `INSERT INTO ai_live_analyses (session_key, model, content, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(session_key) DO UPDATE SET
+           model = excluded.model,
+           content = excluded.content,
+           created_at = excluded.created_at`,
+      )
+      .run(sessionKey, model, content, Date.now());
+    return true;
+  } catch {
+    return false;
   }
 }

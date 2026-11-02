@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   ChampSelectMember,
   ChampSelectSession,
@@ -641,6 +642,7 @@ export class LiveSource implements DataSource {
         queueId: undefined,
         gameMode: undefined,
         gameTime: undefined,
+        liveSessionId: undefined,
         error: undefined,
       },
       false,
@@ -671,6 +673,7 @@ export class LiveSource implements DataSource {
    */
   private async collectInGame(api: LcuApi): Promise<void> {
     if (this.busy) return;
+    const liveSessionId = this.snapshot.liveSessionId ?? randomUUID();
 
     const game = await fetchLiveGame();
     if (!game) {
@@ -679,6 +682,7 @@ export class LiveSource implements DataSource {
         phase: 'InProgress',
         inChampSelect: false,
         inGame: true,
+        liveSessionId,
         collecting: false,
         message: '游戏进行中，等待对局数据…',
         error: undefined,
@@ -697,6 +701,7 @@ export class LiveSource implements DataSource {
         phase: 'InProgress',
         inChampSelect: false,
         inGame: true,
+        liveSessionId,
         collecting: false,
         message: '游戏进行中，等待对局数据…',
       });
@@ -717,6 +722,7 @@ export class LiveSource implements DataSource {
       phase: 'InProgress',
       inChampSelect: false,
       inGame: true,
+      liveSessionId,
       queueId,
       gameMode,
       gameTime,

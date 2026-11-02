@@ -1,4 +1,5 @@
-import type { MatchDetail, MatchScoreboardPlayer, PlayerReport } from './types.js';
+import type { MatchDetail, MatchScoreboardPlayer, PlayerReport, Snapshot } from './types.js';
+import { queueName } from './stats/constants.js';
 
 export interface AiConfig {
   enabled: boolean;
@@ -122,6 +123,104 @@ function recentText(report?: PlayerReport): string {
   ];
   if (recent.labels?.length) lines.push(`近期标签：${recent.labels.join('、')}`);
   return `【我的近期】${lines.join('\n')}`;
+}
+
+function liveText(row: PlayerReport, itemName: (id: number) => string): string {
+  const live = row.live;
+  if (!live) return '暂无实时数据';
+  const parts = [
+    `KDA ${fix(live.kills)}/${fix(live.deaths)}/${fix(live.assists)}`,
+    `补刀 ${fix(live.cs)}`,
+    `等级 ${fix(live.championLevel ?? 0)}`,
+  ];
+  if (live.gold !== undefined) parts.push(`装备价值 ${fix(live.gold)}`);
+  if (live.killParticipation !== undefined) parts.push(`参团 ${pct(live.killParticipation)}`);
+  if (live.wardScore !== undefined) parts.push(`视野 ${fix(live.wardScore)}`);
+  if (live.items?.length) {
+    parts.push(
+      `装备 ${live.items.map((id) => itemName(Number(id)) || `#${id}`).join('、')}`,
+    );
+  }
+  return parts.join('，');
+}
+
+function rankText(report: PlayerReport | undefined): string {
+  const rank = report?.rank;
+  if (!rank) return '';
+  const division = rank.division ? ` ${rank.division}` : '';
+  return `；段位 ${rank.tier}${division} ${fix(rank.leaguePoints)}LP`;
+}
+
+/** 把进行中的对局压缩成实时出装/打法建议的提示词 */
+export function buildLiveAnalysisMessages(
+  snapshot: Snapshot,
+  itemName: (id: number) => string = () => '',
+): ChatMessage[] {
+  const players = snapshot.players ?? [];
+  const local = snapshot.localPlayer;
+  const self =
+    (local?.summonerId
+      ? players.find((player) => player.summonerId === local.summonerId)
+      : undefined) ?? players.find((player) => !player.isEnemy);
+  const allies = players.filter((player) => !player.isEnemy);
+  const enemies = players.filter((player) => player.isEnemy);
+  const gameMinutes = Math.max(
+    0,
+    Number(snapshot.gameTime ?? 0) / 60 || self?.live?.gameMinutes || 0,
+  );
+  const champion = self?.championName ?? local?.championName ?? '未知英雄';
+  const position = lane(self?.position);
+  const selfLine = self ? liveText(self, itemName) : '未找到本人实时数据';
+
+  const teamText = (rows: PlayerReport[], mine: boolean): string => {
+    let mateIndex = 0;
+    let enemyIndex = 0;
+    return rows
+      .map((row) => {
+        const isSelf = row === self;
+        const label = isSelf ? '我' : mine ? `队友${++mateIndex}` : `敌方${++enemyIndex}`;
+        const rating =
+          typeof row.rating === 'number' ? `；近期评分 ${fix(row.rating)}` : '';
+        const tags = row.labels?.length ? `；标签 ${row.labels.join('、')}` : '';
+        return `- ${label}（${row.championName ?? '未知英雄'} / ${lane(
+          row.position,
+        )}）：${liveText(row, itemName)}${rating}${tags}${rankText(row)}`;
+      })
+      .join('\n');
+  };
+
+  const user = [
+    `【对局】模式：${queueName(snapshot.queueId)}${
+      snapshot.gameMode ? `（${snapshot.gameMode}）` : ''
+    }；已进行 ${fix(gameMinutes, 1)} 分钟；我方 ${allies.length} 人 / 敌方 ${enemies.length} 人`,
+    `【我的英雄】${champion} / ${position}；${selfLine}`,
+    recentText(self),
+    '【我方】',
+    teamText(allies, true),
+    '【敌方】',
+    teamText(enemies, false),
+    '【请分析】重点围绕我的英雄给出装、技能加点和打法建议；当前装备与推荐不一致时，说明下一步如何调整。',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const system = [
+    '你是一名严谨、务实的英雄联盟实时对局教练，擅长根据双方阵容、当前装备和战况给出可执行的出装、技能加点和打法建议。',
+    '只根据我提供的本局数据与英雄知识分析，不要编造未提供的敌方装备、符文、召唤师技能或具体战斗过程。',
+    '大乱斗/竞技场模式不要用补刀、视野、分带等召唤师峡谷标准苛责；数据不足时直接说明。',
+    '输出中文，简洁分点，必须引用具体英雄和数字。固定输出 5 个部分：',
+    '1. 局势判断（一句话，说明当前优劣势及主要原因）',
+    '2. 我的出装建议（核心装、鞋子、针对敌方关键英雄的防御/功能装，说明替换顺序）',
+    '3. 技能加点与连招（主加/副加、关键连招、对线或团战使用时机）',
+    '4. 打法建议（对线/刷野/团战站位，如何配合我方关键英雄，如何规避敌方关键威胁）',
+    '5. 接下来 3 条可执行动作（带目标：推线/拿龙/抱团/回家出装等）',
+    '不要输出与数据无关的套话，总字数控制在 800 字以内。',
+  ].join('\n');
+
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ];
 }
 
 /** 把一局详情压缩成适合模型阅读的中文摘要（不含召唤师名字） */
