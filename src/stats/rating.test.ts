@@ -515,7 +515,7 @@ test('局内百分位评分：强于队友的玩家分更高', () => {
   assert.ok(scores.every((score) => score >= 0 && score <= 100));
   assert.ok(scores[9]! > scores[0]!, `scores=${scores.join(',')}`);
   const avg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-  assert.ok(avg > 45 && avg < 65, `avg=${avg}`);
+  assert.ok(avg > 60 && avg < 75, `avg=${avg}`);
 });
 
 console.log(`\n${passed} 项测试全部通过`);
