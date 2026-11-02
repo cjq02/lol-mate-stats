@@ -331,8 +331,8 @@ body::before {
 }
 
 .ai-modal-card {
-  width: min(1280px, 97vw);
-  height: min(860px, 92vh);
+  width: min(960px, 95vw);
+  height: min(1000px, 92vh);
   max-height: 92vh;
 }
 
@@ -351,12 +351,21 @@ body::before {
 
 .ai-body {
   flex: 1 1 auto;
+  width: 100%;
+  max-width: 860px;
   min-height: 0;
+  margin: 0 auto;
   overflow: auto;
   padding: 18px 26px 26px;
   font-size: 14px;
   line-height: 1.75;
   color: #d7e2f6;
+}
+
+.ai-content {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ai-status {
