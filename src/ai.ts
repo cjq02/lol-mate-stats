@@ -348,17 +348,23 @@ export async function streamChatCompletion(
     if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
     if (config.opencode && sessionId) headers['x-opencode-session'] = sessionId;
 
+    const body: Record<string, unknown> = {
+      model: config.model,
+      messages,
+      stream: true,
+      temperature: 0.4,
+      max_tokens: 6000,
+    };
+    // DeepSeek 推理模式会先输出大量 reasoning_content，容易超时或把正文截断；
+    // 复盘/出装建议不需要长链推理，直接关闭 thinking 更快更稳定。
+    if (config.opencode && /deepseek/i.test(config.model)) {
+      body.thinking = { type: 'disabled' };
+    }
+
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        stream: true,
-        temperature: 0.4,
-        // DeepSeek V4.1 Flash 会先输出 reasoning_content，预算太小会导致正式回答为空
-        max_tokens: 16000,
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
     if (!response.ok) {
