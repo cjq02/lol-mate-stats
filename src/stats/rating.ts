@@ -131,8 +131,8 @@ function percentileRank(values: number[], value: number): number {
 
 /**
  * 单场评分：按本局所有参与者的 KDA / 参团 / 输出 / 承伤 / 治疗百分位加权。
- * 权重来自 40 个掌盟评分样本的拟合结果，直接缩放到 0–100（掌盟 0–20 分 × 5）。
- * 不再额外放大；平均分约 47，和掌盟的分数段对齐。
+ * 权重来自 40 个掌盟评分样本的拟合结果，先得到绝对分（掌盟 0–20 × 5），
+ * 再用 0.7 次幂做单调校准：低分往上托、高分往 100 拉，但不会把 10 分直接变成 25 分。
  */
 export function percentileScores(inputs: MatchPercentileInput[]): number[] {
   if (!inputs.length) return [];
@@ -155,7 +155,9 @@ export function percentileScores(inputs: MatchPercentileInput[]): number[] {
       6.7913 * (damage[index] ?? 0.5) +
       3.2165 * (taken[index] ?? 0.5) +
       0.0214 * (heal[index] ?? 0.5);
-    return round(clamp(score20 * 5, 0, 100), 1);
+    const absolute = clamp(score20 * 5, 0, 100);
+    const curved = 100 * (absolute / 100) ** 0.7;
+    return round(clamp(curved, 0, 100), 1);
   });
 }
 
