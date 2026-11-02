@@ -471,6 +471,9 @@ async function handleRequest(
         !abort.signal.aborted && content.trim()
           ? saveAiAnalysis(gameId, config.model, content.trim())
           : false;
+      if (!content.trim()) {
+        throw new Error('AI 没有返回内容，请点「重新分析」再试一次。');
+      }
       sendEvent({ type: 'done', model: config.model, saved });
       logTag(
         'ai',

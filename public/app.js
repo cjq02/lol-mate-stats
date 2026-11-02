@@ -1097,9 +1097,11 @@ function renderAiView() {
     const hint = state.aiStatus?.enabled === false ? `<p class="ai-hint">${escapeHtml(AI_CONFIG_HINT)}</p>` : '';
     body.innerHTML = `<div class="ai-error">${escapeHtml(ai.error)}</div>${hint}`;
   } else if (!ai.text) {
-    body.innerHTML = `<div class="ai-status"><span class="spinner"></span><span>${escapeHtml(
-      ai.status ?? '正在分析…',
-    )}</span></div>`;
+    body.innerHTML = ai.running
+      ? `<div class="ai-status"><span class="spinner"></span><span>${escapeHtml(
+          ai.status ?? '正在分析…',
+        )}</span></div>`
+      : '<div class="ai-error">AI 没有返回内容，请点「重新分析」再试一次。</div>';
   } else {
     const cursor = ai.running ? '<span class="ai-cursor"></span>' : '';
     const foot =
@@ -1217,9 +1219,13 @@ async function runAiAnalysis(options = {}) {
         finished = true;
         ai.running = false;
         ai.done = true;
+        ai.status = '';
         ai.saved = Boolean(event.saved);
         ai.savedAt = Date.now();
         ai.model = event.model ?? ai.model;
+        if (!ai.text.trim()) {
+          ai.error = 'AI 没有返回内容，请点「重新分析」再试一次。';
+        }
         renderAiView();
       } else if (event.type === 'error') {
         throw new Error(event.error ?? 'AI 分析失败');
@@ -1229,6 +1235,7 @@ async function runAiAnalysis(options = {}) {
       if (!ai.text) throw new Error('AI 没有返回内容');
       ai.running = false;
       ai.done = true;
+      ai.status = '';
       renderAiView();
     }
   } catch (error) {

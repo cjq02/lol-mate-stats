@@ -253,7 +253,7 @@ export async function streamChatCompletion(
         messages,
         stream: true,
         temperature: 0.4,
-        max_tokens: 1500,
+        max_tokens: 3000,
       }),
       signal: controller.signal,
     });
