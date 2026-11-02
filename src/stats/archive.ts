@@ -1,4 +1,4 @@
-﻿import type { ChampionSummary } from '../lcu/api.js';
+import type { ChampionSummary } from '../lcu/api.js';
 import type { Lane, RawGame, RawIdentityPlayer, RawParticipant, RawStats } from '../types.js';
 import { toNumber } from '../util.js';
 import { analyzeParticipant, detectLane } from './analyze.js';
@@ -7,7 +7,7 @@ import { queueName } from './constants.js';
 import { isAfkLikeStats } from './rating.js';
 import { getDb, readMeta, writeMeta } from './store.js';
 
-/** 闀挎湡淇濆瓨鐨勫崟鍦烘垬缁╋紙鎸夌帺瀹剁淮搴︽煡璇級 */
+/** 长期保存的单场战绩（按玩家维度查询） */
 export interface ArchivedMatch {
   gameId: number;
   queueId: number;
@@ -66,13 +66,15 @@ function parseTagList(raw: string | null): string[] {
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) return parsed.filter((tag) => typeof tag === 'string');
   } catch {
-    /* 蹇界暐鎹熷潖鐨?tags */
+    /* 忽略损坏的 tags */
   }
   return [];
 }
 
 /**
- * 鎶婂畬鏁村灞€鍐欏叆 SQLite銆傞噸澶嶅灞€浼氳鐩栧弬涓庤€呮暟鎹紝涓嶄細浜х敓閲嶅琛屻€? * 鍙繚瀛樼粨鏋勫寲瀛楁锛屼笉淇濆瓨鍘熷 LCU JSON锛岄伩鍏嶆暟鎹簱鑶ㄨ儉銆? */
+ * 把完整对局写入 SQLite。重复对局会覆盖参与者数据，不会产生重复行。
+ * 只保存结构化字段，不保存原始 LCU JSON，避免数据库膨胀。
+ */
 export function archiveGames(games: RawGame[], championMap: Map<number, ChampionSummary>): void {
   if (!games.length) return;
   const db = getDb();
@@ -147,7 +149,7 @@ export function archiveGames(games: RawGame[], championMap: Map<number, Champion
         const tags = [
           ...new Set([
             ...gameFlagTags(flags),
-            ...(analyzed?.tags ?? (bot ? ['浜烘満'] : [])),
+            ...(analyzed?.tags ?? (bot ? ['人机'] : [])),
           ]),
         ].slice(0, 6);
 
@@ -186,7 +188,7 @@ export function archiveGames(games: RawGame[], championMap: Map<number, Champion
     try {
       db.exec('ROLLBACK');
     } catch {
-      /* 鍥炴粴澶辫触鏃跺拷鐣?*/
+      /* 回滚失败时忽略 */
     }
   }
 }
@@ -197,7 +199,7 @@ export function isGameArchived(gameId: number): boolean {
   return loadArchivedIds(db).has(gameId);
 }
 
-/** 鎵归噺璇诲彇鏌愪釜鐜╁鍦ㄨ繖浜涘灞€閲岀殑璇勫垎 */
+/** 批量读取某个玩家在这些对局里的评分 */
 export function getPlayerScores(puuid: string, gameIds: number[]): Map<number, number> {
   const scores = new Map<number, number>();
   const ids = [...new Set(gameIds.filter((id) => id > 0))];
@@ -214,12 +216,12 @@ export function getPlayerScores(puuid: string, gameIds: number[]): Map<number, n
       .all(puuid, ...ids) as unknown as Array<{ game_id: number; score: number }>;
     for (const row of rows) scores.set(Number(row.game_id), Number(row.score));
   } catch {
-    /* 鏌ヨ澶辫触鏃舵寜鏃犺瘎鍒嗗鐞?*/
+    /* 查询失败时按无评分处理 */
   }
   return scores;
 }
 
-/** 鎵归噺璇诲彇鏌愪釜鐜╁杩欎簺瀵瑰眬閲屽凡淇濆瓨鐨勬爣绛撅紙鍚噸寮€/闃熷弸閫冭窇锛?*/
+/** 批量读取某个玩家这些对局里已保存的标签（含重开/队友逃跑） */
 export function getPlayerMatchTags(
   puuid: string,
   gameIds: number[],
@@ -251,19 +253,19 @@ export function getPlayerMatchTags(
           const parsed = JSON.parse(row.tags) as unknown;
           if (Array.isArray(parsed)) tags = parsed.filter((tag) => typeof tag === 'string');
         } catch {
-          /* 蹇界暐鎹熷潖鐨?tags */
+          /* 忽略损坏的 tags */
         }
       }
       if (
         isRemakeMeta(Number(row.duration_seconds)) &&
-        !tags.includes('閲嶅紑')
+        !tags.includes('重开')
       ) {
-        tags.unshift('閲嶅紑');
+        tags.unshift('重开');
       }
       result.set(Number(row.game_id), tags);
     }
   } catch {
-    /* 鏌ヨ澶辫触鏃舵寜鏃犳爣绛惧鐞?*/
+    /* 查询失败时按无标签处理 */
   }
   return result;
 }
@@ -375,9 +377,9 @@ export function getPlayerMatches(
       const tags = parseTagList(row.tags);
       if (
         isRemakeMeta(Number(row.duration_seconds)) &&
-        !tags.includes('閲嶅紑')
+        !tags.includes('重开')
       ) {
-        tags.unshift('閲嶅紑');
+        tags.unshift('重开');
       }
       const teammateAfk = (participantsByGame.get(gameId) ?? []).some(
         (participant) =>
@@ -396,7 +398,7 @@ export function getPlayerMatches(
             position: (participant.position as Lane | null) ?? undefined,
           }),
       );
-      if (teammateAfk && !tags.includes('闃熷弸閫冭窇')) tags.push('闃熷弸閫冭窇');
+      if (teammateAfk && !tags.includes('队友逃跑')) tags.push('队友逃跑');
       return {
         gameId,
         queueId: Number(row.queue_id),
