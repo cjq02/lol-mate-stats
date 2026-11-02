@@ -5,14 +5,17 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DataSource } from './source.js';
 import type { GameContext, GameModeKey } from './types.js';
-import { logTag } from './util.js';
+import { DB_PATH } from './stats/store.js';
+import { logTag, mapLimit } from './util.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -39,6 +42,10 @@ const CONTENT_TYPES: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
   '.ico': 'image/x-icon',
 };
 
@@ -46,9 +53,14 @@ const STATIC_FILES = new Set(['/', '/index.html', '/app.js', '/style.css']);
 const fileCache = new Map<string, { body: Buffer; type: string }>();
 const assetCache = new Map<string, { at: number; result: { body: Buffer; contentType: string } }>();
 const ASSET_TTL = 60 * 60_000;
-let itemsCache:
-  | { at: number; items: Record<string, { icon: string; name: string; price: number }> }
-  | undefined;
+/** 装备图标等静态资源落盘，客户端关闭后也能显示 */
+const ASSET_DIR = join(dirname(DB_PATH), 'assets');
+const ITEMS_ASSET_PATH = '/lol-game-data/assets/v1/items.json';
+const ITEMS_DISK_PATH = join(ASSET_DIR, 'items.json');
+const ITEMS_PREFETCH_MARKER = join(ASSET_DIR, 'items-prefetch.json');
+type ItemTable = Record<string, { icon: string; name: string; price: number }>;
+let itemsCache: { at: number; items: ItemTable } | undefined;
+let itemPrefetch: Promise<void> | undefined;
 const ASSET_CACHE_LIMIT = 300;
 
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
@@ -371,38 +383,12 @@ async function handleRequest(
   }
 
   if (method === 'GET' && url.pathname === '/api/items') {
-    const now = Date.now();
-    if (!itemsCache || now - itemsCache.at > ASSET_TTL) {
-      const asset = await source.getAsset('/lol-game-data/assets/v1/items.json');
-      if (!asset) {
-        sendJson(res, 404, { ok: false, error: '无法读取装备数据' });
-        return;
-      }
-      try {
-        const list = JSON.parse(asset.body.toString('utf8')) as Array<{
-          id?: number;
-          name?: string;
-          iconPath?: string;
-          price?: number;
-          priceTotal?: number;
-        }>;
-        const items: Record<string, { icon: string; name: string; price: number }> = {};
-        for (const item of list) {
-          if (typeof item?.id === 'number' && item.iconPath) {
-            items[String(item.id)] = {
-              icon: item.iconPath,
-              name: item.name ?? '',
-              price: Number(item.priceTotal ?? item.price ?? 0) || 0,
-            };
-          }
-        }
-        itemsCache = { at: now, items };
-      } catch {
-        sendJson(res, 500, { ok: false, error: '装备数据解析失败' });
-        return;
-      }
+    const items = await loadItemTable(source);
+    if (!items) {
+      sendJson(res, 404, { ok: false, error: '无法读取装备数据' });
+      return;
     }
-    sendJson(res, 200, { ok: true, items: itemsCache.items });
+    sendJson(res, 200, { ok: true, items });
     return;
   }
 
@@ -417,7 +403,14 @@ async function handleRequest(
       sendAsset(res, cached.result);
       return;
     }
-    const result = await source.getAsset(path);
+
+    // 客户端可用时以客户端为准；读不到时用磁盘缓存（离线/重启后也能用）
+    let result = await source.getAsset(path);
+    if (result) {
+      void writeAssetToDisk(path, result.body);
+    } else {
+      result = await readAssetFromDisk(path);
+    }
     if (!result) {
       res.writeHead(404, { 'Cache-Control': 'no-store' }).end();
       return;
@@ -462,6 +455,147 @@ function sendAsset(res: ServerResponse, asset: { body: Buffer; contentType: stri
     'Cache-Control': 'public, max-age=86400',
   });
   res.end(asset.body);
+}
+
+/* ----------------------------- 装备/资源落盘 ----------------------------- */
+
+function contentTypeForAsset(assetPath: string): string {
+  return CONTENT_TYPES[extname(assetPath).toLowerCase()] ?? 'image/png';
+}
+
+/** 资源路径 -> 以 SHA1 命名的磁盘文件，避免路径里的斜杠和中文 */
+function assetDiskPath(assetPath: string): string {
+  const hash = createHash('sha1').update(assetPath).digest('hex');
+  return join(ASSET_DIR, `${hash}${extname(assetPath) || '.bin'}`);
+}
+
+async function readAssetFromDisk(
+  assetPath: string,
+): Promise<{ body: Buffer; contentType: string } | null> {
+  try {
+    const body = await readFile(assetDiskPath(assetPath));
+    return { body, contentType: contentTypeForAsset(assetPath) };
+  } catch {
+    return null;
+  }
+}
+
+async function writeAssetToDisk(assetPath: string, body: Buffer): Promise<void> {
+  try {
+    await mkdir(ASSET_DIR, { recursive: true });
+    await writeFile(assetDiskPath(assetPath), body);
+  } catch {
+    /* 磁盘不可写时只保留内存缓存 */
+  }
+}
+
+function parseItemTable(body: Buffer): ItemTable {
+  const list = JSON.parse(body.toString('utf8')) as Array<{
+    id?: number;
+    name?: string;
+    iconPath?: string;
+    price?: number;
+    priceTotal?: number;
+  }>;
+  const items: ItemTable = {};
+  for (const item of list) {
+    if (typeof item?.id === 'number' && item.iconPath) {
+      items[String(item.id)] = {
+        icon: item.iconPath,
+        name: item.name ?? '',
+        price: Number(item.priceTotal ?? item.price ?? 0) || 0,
+      };
+    }
+  }
+  return items;
+}
+
+async function persistItems(body: Buffer): Promise<void> {
+  try {
+    await mkdir(ASSET_DIR, { recursive: true });
+    await writeFile(ITEMS_DISK_PATH, body);
+  } catch {
+    /* 忽略磁盘写入失败 */
+  }
+}
+
+/** 优先读客户端 items.json；读不到时用上次落盘的副本 */
+async function loadItemTable(source: DataSource): Promise<ItemTable | null> {
+  const now = Date.now();
+  if (itemsCache && now - itemsCache.at < ASSET_TTL) return itemsCache.items;
+
+  const asset = await source.getAsset(ITEMS_ASSET_PATH).catch(() => null);
+  if (asset) {
+    try {
+      const items = parseItemTable(asset.body);
+      if (Object.keys(items).length) {
+        itemsCache = { at: now, items };
+        void persistItems(asset.body);
+        setTimeout(() => void prefetchItemIcons(source, items), 5_000).unref?.();
+        return items;
+      }
+    } catch {
+      /* 解析失败时尝试磁盘副本 */
+    }
+  }
+
+  try {
+    const items = parseItemTable(await readFile(ITEMS_DISK_PATH));
+    if (Object.keys(items).length) {
+      // 磁盘数据先顶着用，1 分钟后再试一次客户端
+      itemsCache = { at: now - ASSET_TTL + 60_000, items };
+      setTimeout(() => void prefetchItemIcons(source, items), 5_000).unref?.();
+      return items;
+    }
+  } catch {
+    /* 没有磁盘副本 */
+  }
+  return null;
+}
+
+/** 后台把所有装备图标预存到磁盘，之后即使客户端没开也能显示 */
+async function prefetchItemIcons(source: DataSource, items: ItemTable): Promise<void> {
+  if (itemPrefetch) return itemPrefetch;
+  itemPrefetch = (async () => {
+    const paths = [...new Set(Object.values(items).map((item) => item.icon).filter(Boolean))];
+    if (!paths.length) return;
+    paths.sort();
+    const fingerprint = createHash('sha1').update(paths.join('\n')).digest('hex');
+
+    try {
+      const marker = JSON.parse(await readFile(ITEMS_PREFETCH_MARKER, 'utf8')) as {
+        fingerprint?: string;
+      };
+      if (marker.fingerprint === fingerprint) return;
+    } catch {
+      /* 还没有预缓存记录 */
+    }
+
+    let saved = 0;
+    await mapLimit(paths, 3, async (assetPath) => {
+      if (existsSync(assetDiskPath(assetPath))) {
+        saved += 1;
+        return;
+      }
+      const asset = await source.getAsset(assetPath).catch(() => null);
+      if (!asset) return;
+      await writeAssetToDisk(assetPath, asset.body);
+      saved += 1;
+    });
+
+    if (saved === paths.length) {
+      try {
+        await mkdir(ASSET_DIR, { recursive: true });
+        await writeFile(ITEMS_PREFETCH_MARKER, JSON.stringify({ fingerprint, at: Date.now() }));
+        logTag('asset', `装备图标已预缓存（${paths.length} 个）`);
+      } catch {
+        /* 忽略磁盘写入失败 */
+      }
+    }
+  })().finally(() => {
+    itemPrefetch = undefined;
+  });
+  return itemPrefetch;
 }
 
 async function serveStatic(pathname: string, res: ServerResponse): Promise<void> {

@@ -280,30 +280,48 @@ function iconHtml(assetPath, label, size, title) {
 }
 
 let itemIconsRequest = null;
+let itemIconsRetryAt = 0;
 function loadItemIcons() {
-  if (state.itemIcons) return Promise.resolve(state.itemIcons);
-  if (!itemIconsRequest) {
-    itemIconsRequest = fetch('/api/items', { cache: 'no-store' })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((payload) => {
-        state.itemIcons =
-          payload?.items && typeof payload.items === 'object' ? payload.items : {};
-        // 装备数据晚到时，如果正在看本局详情/对局中，重新渲染一次把图标补上
-        if (state.matchDetail && state.matchTab === 'scoreboard') {
-          renderScoreboard(state.matchDetail);
-        }
-        if (state.snapshot?.inGame && state.snapshot.players?.length) {
-          cardCache.clear();
-          render();
-        }
-        return state.itemIcons;
-      })
-      .catch(() => {
-        state.itemIcons = {};
-        return state.itemIcons;
-      });
+  // 已加载过且确实有数据就直接复用
+  if (state.itemIcons && Object.keys(state.itemIcons).length) {
+    return Promise.resolve(state.itemIcons);
   }
+  if (itemIconsRequest) return itemIconsRequest;
+  if (Date.now() < itemIconsRetryAt) return Promise.resolve(state.itemIcons ?? {});
+
+  itemIconsRequest = fetch('/api/items', { cache: 'no-store' })
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      const items =
+        payload?.items && typeof payload.items === 'object' ? payload.items : {};
+      if (!Object.keys(items).length) throw new Error('装备数据为空');
+      state.itemIcons = items;
+      itemIconsRetryAt = 0;
+      refreshItemViews();
+      return items;
+    })
+    .catch(() => {
+      // 客户端可能还没连上，过几秒再重试，而不是永久显示数字
+      itemIconsRetryAt = Date.now() + 5_000;
+      return state.itemIcons ?? {};
+    })
+    .finally(() => {
+      itemIconsRequest = null;
+    });
   return itemIconsRequest;
+}
+
+function refreshItemViews() {
+  if (state.matchDetail && state.matchTab === 'scoreboard') {
+    renderScoreboard(state.matchDetail);
+  }
+  if (state.snapshot?.inGame && state.snapshot.players?.length) {
+    cardCache.clear();
+    render();
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -589,6 +607,10 @@ function buildCard(player, isLocal, options = {}) {
     : options.liveView
       ? live?.items
       : undefined;
+  // 装备数据可能比页面晚到（客户端刚启动），看到装备格时再补拉一次
+  if (itemIds?.length && !(state.itemIcons && Object.keys(state.itemIcons).length)) {
+    void loadItemIcons();
+  }
   const itemRow =
     itemIds?.length
       ? `<div class="items">${itemIds
@@ -1112,6 +1134,12 @@ function renderScoreboard(detail) {
     els.matchesList.className = 'match-list';
     els.matchesList.innerHTML = '<div class="search-status">没有该局数据</div>';
     return;
+  }
+  if (
+    !(state.itemIcons && Object.keys(state.itemIcons).length) &&
+    scoreboard.some((row) => Array.isArray(row.items) && row.items.length)
+  ) {
+    void loadItemIcons();
   }
 
   const byPuuid = new Map(players.filter((player) => player.puuid).map((p) => [p.puuid, p]));
