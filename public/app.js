@@ -29,8 +29,13 @@ const els = {
   matchesBack: document.getElementById('matches-back'),
   matchesRefresh: document.getElementById('matches-refresh'),
   matchesAi: document.getElementById('matches-ai'),
-  matchAi: document.getElementById('match-ai'),
   matchTabs: document.getElementById('match-tabs'),
+  aiModal: document.getElementById('ai-modal'),
+  aiModalTitle: document.getElementById('ai-modal-title'),
+  aiMeta: document.getElementById('ai-meta'),
+  aiBody: document.getElementById('ai-body'),
+  aiClose: document.getElementById('ai-close'),
+  aiRerun: document.getElementById('ai-rerun'),
   myMatches: document.getElementById('my-matches'),
   latestMatch: document.getElementById('latest-match'),
   clearCache: document.getElementById('clear-cache'),
@@ -162,7 +167,7 @@ const state = {
   loadingTimer: null,
   loadingProgress: null,
   matchDetail: null,
-  matchTab: 'recent',
+  matchTab: 'scoreboard',
   myGames: [],
   myLcuOffset: 0,
   lcuExhausted: false,
@@ -1016,24 +1021,23 @@ function setAiButton(running) {
       : `用 AI 复盘本局（${state.aiStatus?.model ?? 'DeepSeek V4.1 Flash'}）`;
 }
 
+function hideAiView() {
+  els.aiModal.classList.add('hidden');
+}
+
 function resetAiView() {
   state.ai?.controller?.abort();
   state.ai = null;
-  els.matchAi.classList.add('hidden');
-  els.matchAi.replaceChildren();
+  els.aiBody.replaceChildren();
+  els.aiMeta.textContent = '';
+  els.aiModalTitle.textContent = '✨ AI 复盘';
+  els.aiRerun.classList.add('hidden');
+  hideAiView();
   setAiButton(false);
 }
 
-function initAiView() {
-  els.matchAi.innerHTML = `<div class="ai-head">
-    <span class="ai-title">✨ AI 复盘</span>
-    <span class="ai-right">
-      <span class="ai-meta"></span>
-      <button class="ai-close" type="button">收起</button>
-    </span>
-  </div>
-  <div class="ai-body"></div>`;
-  els.matchAi.classList.remove('hidden');
+function showAiView() {
+  els.aiModal.classList.remove('hidden');
 }
 
 function aiMarkdown(text) {
@@ -1070,9 +1074,13 @@ function aiMarkdown(text) {
 function renderAiView() {
   const ai = state.ai;
   if (!ai) return;
-  const meta = els.matchAi.querySelector('.ai-meta');
-  const body = els.matchAi.querySelector('.ai-body');
+  const meta = els.aiMeta;
+  const body = els.aiBody;
   if (!meta || !body) return;
+
+  els.aiModalTitle.textContent = ai.title ? `✨ AI 复盘 · ${ai.title}` : '✨ AI 复盘';
+  els.aiRerun.classList.toggle('hidden', ai.running);
+  els.aiRerun.disabled = ai.running;
 
   const elapsed = ai.started ? Math.max(0, Math.round((Date.now() - ai.started) / 1000)) : 0;
   meta.textContent = ai.running
@@ -1100,15 +1108,25 @@ function renderAiView() {
   if (nearBottom) body.scrollTop = body.scrollHeight;
 }
 
-async function runAiAnalysis() {
+async function runAiAnalysis(options = {}) {
   const detail = state.matchDetail;
-  if (!detail || state.ai?.running) return;
+  if (!detail) return;
   const gameId = Number(detail.gameId);
   if (!Number.isFinite(gameId) || gameId <= 0) return;
+
+  const existing = state.ai;
+  if (!options.force && existing && existing.gameId === gameId && !existing.error) {
+    // 已经分析过（或正在分析）这场，直接打开弹窗，避免重复请求
+    showAiView();
+    renderAiView();
+    return;
+  }
+  if (existing?.controller) existing.controller.abort();
 
   const controller = new AbortController();
   const ai = {
     gameId,
+    title: detail.queueName ?? '对局',
     controller,
     text: '',
     status: '正在连接 AI 服务…',
@@ -1119,7 +1137,7 @@ async function runAiAnalysis() {
     started: Date.now(),
   };
   state.ai = ai;
-  initAiView();
+  showAiView();
   setAiButton(true);
   renderAiView();
 
@@ -1403,7 +1421,7 @@ function updateMatchesBackButton() {
 function renderMatchesView(games, title, showScore) {
   stopLoadingTimer();
   state.matchDetail = null;
-  state.matchTab = 'recent';
+  state.matchTab = 'scoreboard';
   resetAiView();
   els.matchesAi.classList.add('hidden');
   els.matchesModal.classList.remove('hidden');
@@ -1673,7 +1691,7 @@ async function openMyMatches() {
   state.archiveOffset = 0;
   state.archiveLoaded = 0;
   state.archiveTotal = 0;
-  state.matchTab = 'recent';
+  state.matchTab = 'scoreboard';
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   els.matchesBack.classList.add('hidden');
@@ -1794,7 +1812,7 @@ async function openLatestMatch() {
   }
 }
 
-function renderMatchDetailView(detail, tab = 'recent') {
+function renderMatchDetailView(detail, tab = 'scoreboard') {
   stopLoadingTimer();
   state.matchDetail = detail;
   state.matchTab = tab;
@@ -1859,7 +1877,7 @@ async function openMatchDetail(gameId, options = {}) {
     }
 
     if (token !== state.matchRequestToken) return;
-    renderMatchDetailView(detail, options.tab ?? 'recent');
+    renderMatchDetailView(detail, options.tab ?? 'scoreboard');
   } catch (error) {
     if (token !== state.matchRequestToken) return;
     stopLoadingTimer();
@@ -1963,9 +1981,10 @@ els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
 els.matchesClose.addEventListener('click', closeMatches);
 els.matchesAi.addEventListener('click', () => void runAiAnalysis());
-els.matchAi.addEventListener('click', (event) => {
-  if (!event.target.closest('.ai-close')) return;
-  resetAiView();
+els.aiClose.addEventListener('click', hideAiView);
+els.aiRerun.addEventListener('click', () => void runAiAnalysis({ force: true }));
+els.aiModal.addEventListener('click', (event) => {
+  if (event.target === els.aiModal) hideAiView();
 });
 els.matchesRefresh.addEventListener('click', () => void refreshMatchesView());
 els.matchesBack.addEventListener('click', () => {
@@ -1999,6 +2018,10 @@ els.matchTabs.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !els.aiModal.classList.contains('hidden')) {
+    hideAiView();
+    return;
+  }
   if (event.key === 'Escape' && !els.searchPanel.classList.contains('hidden')) {
     closeSearch();
     return;

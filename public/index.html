@@ -87,11 +87,30 @@
             </div>
           </div>
           <div id="match-tabs" class="match-tabs hidden">
-            <button class="tab active" data-match-tab="recent" type="button">近期战绩</button>
-            <button class="tab" data-match-tab="scoreboard" type="button">本局详情</button>
+            <button class="tab active" data-match-tab="scoreboard" type="button">本局详情</button>
+            <button class="tab" data-match-tab="recent" type="button">近期战绩</button>
           </div>
-          <div id="match-ai" class="match-ai hidden" aria-live="polite"></div>
           <div id="matches-list" class="match-list"></div>
+        </div>
+      </div>
+
+      <div
+        id="ai-modal"
+        class="modal ai-modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-modal-title"
+      >
+        <div class="modal-card ai-modal-card">
+          <div class="modal-head">
+            <h2 id="ai-modal-title">✨ AI 复盘</h2>
+            <div class="modal-actions">
+              <span id="ai-meta" class="ai-meta"></span>
+              <button id="ai-rerun" class="btn hidden" type="button">重新分析</button>
+              <button id="ai-close" class="btn" type="button">关闭</button>
+            </div>
+          </div>
+          <div id="ai-body" class="ai-body" aria-live="polite"></div>
         </div>
       </div>
 
