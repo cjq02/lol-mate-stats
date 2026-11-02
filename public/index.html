@@ -73,6 +73,14 @@
           <div class="modal-head">
             <h2 id="matches-title">近期战绩</h2>
             <div class="modal-actions">
+              <button
+                id="matches-ai"
+                class="btn ai-btn hidden"
+                type="button"
+                title="用 AI 复盘本局"
+              >
+                ✨ AI 分析
+              </button>
               <button id="matches-refresh" class="btn hidden" type="button" title="重新拉取当前战绩">更新</button>
               <button id="matches-back" class="btn hidden" type="button">返回</button>
               <button id="matches-close" class="btn" type="button">关闭</button>
@@ -82,6 +90,7 @@
             <button class="tab active" data-match-tab="recent" type="button">近期战绩</button>
             <button class="tab" data-match-tab="scoreboard" type="button">本局详情</button>
           </div>
+          <div id="match-ai" class="match-ai hidden" aria-live="polite"></div>
           <div id="matches-list" class="match-list"></div>
         </div>
       </div>

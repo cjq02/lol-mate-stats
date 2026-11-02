@@ -65,7 +65,22 @@ LOL_MATE_DB=E:\lol-mate-stats\cache.db
 # 可选
 PORT=51730
 RECENT_GAMES=10
+
+# AI 分析（本局详情里的「AI 分析」按钮）
+# 在 https://opencode.ai/console 创建 OpenCode Go API Key 后粘贴
+LOL_MATE_AI_API_KEY=你的_API_Key
 ```
+
+AI 分析默认使用 OpenCode Go 的 `deepseek-v4.1-flash`，也可以覆盖：
+
+```dotenv
+LOL_MATE_AI_BASE_URL=https://opencode.ai/inference/go/openai/v1
+LOL_MATE_AI_MODEL=deepseek-v4.1-flash
+# 临时关掉 AI 按钮的请求能力
+LOL_MATE_AI_DISABLED=1
+```
+
+也兼容 `OPENCODE_GO_API_KEY` / `OPENCODE_API_KEY` 作为 Key 的别名。配置后重启面板，打开任意一场对局的「本局详情」，点右上角的「✨ AI 分析」即可流式生成复盘。
 
 也兼容 `LOL_MATE_CACHE`（旧名字）、`LCU_PORT`、`LCU_PASSWORD`、`LOL_LOCKFILE`、`LOL_INSTALL_DIR`。
 
@@ -231,6 +246,8 @@ Node 服务 (127.0.0.1)
 | GET | `/api/archive/matches?limit=100&offset=0` | 本地历史存档，可用 `puuid` 指定玩家 |
 | GET | `/api/match/:gameId` | 某场对局双方 10 人的近期战绩（加 `refresh=1` 强制更新） |
 | GET | `/api/match/:gameId/stream` | 同上，NDJSON 流式返回进度和结果 |
+| POST | `/api/match/:gameId/ai` | 对某场对局做 AI 复盘，NDJSON 流式返回（需配置 `LOL_MATE_AI_API_KEY`） |
+| GET | `/api/ai/status` | AI 是否已配置、当前模型 |
 | POST | `/api/cache/clear` | 手动清空 24 小时缓存（保留历史对局） |
 | GET | `/api/asset?path=...` | 代理客户端图片资源 |
 | GET | `/api/health` | 健康检查 |
@@ -242,6 +259,7 @@ src/
 ├── index.ts              CLI 入口 / start / once / scan / demo / doctor
 ├── server.ts             本地 HTTP + SSE + 静态页 + 图片代理
 ├── watcher.ts            客户端发现、选人阶段监听、快照推送
+├── ai.ts                 本局 AI 复盘（OpenCode Go / OpenAI 兼容流式接口）
 ├── demo.ts               模拟数据源
 ├── report.ts             终端表格/详情输出
 ├── types.ts              类型定义
