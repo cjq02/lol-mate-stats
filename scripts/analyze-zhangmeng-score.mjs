@@ -1,8 +1,8 @@
 /**
- * WeGame 大乱斗单局评分分析（只做拟合，不是官方公式）
+ * 掌上英雄联盟（掌盟）大乱斗单局评分分析（只做拟合，不是官方公式）
  *
  * 数据来自四张战局详情截图（两局，每局 10 人）。
- * 运行：node scripts/analyze-wegame-score.mjs
+ * 运行：node scripts/analyze-zhangmeng-score.mjs
  */
 
 const MATCHES = [
@@ -132,7 +132,7 @@ function correlation(xs, ys) {
 }
 
 console.log('='.repeat(88));
-console.log('WeGame 大乱斗单局评分：10 人样本分析');
+console.log('掌上英雄联盟（掌盟）大乱斗单局评分：20 人样本分析');
 console.log('='.repeat(88));
 console.log(`评分均值 ${scoreMean.toFixed(2)}，标准差 ${scoreStd.toFixed(2)}，范围 ${Math.min(...labels)}–${Math.max(...labels)}`);
 console.log(`胜方均值 ${mean(rows.filter((r) => r.win === 1).map((r) => r.score)).toFixed(2)}，败方均值 ${mean(rows.filter((r) => r.win === 0).map((r) => r.score)).toFixed(2)}`);
@@ -259,7 +259,7 @@ if (recommended) {
 }
 
 console.log('\n' + '='.repeat(88));
-console.log('局内百分位模型（拟合更好，可能更接近 WeGame 的思路）');
+console.log('局内百分位模型（拟合更好，可能更接近掌盟的思路）');
 console.log('='.repeat(88));
 if (percentileModel) {
   console.log('玩家'.padEnd(22), '实际'.padStart(6), '预测'.padStart(6), '误差'.padStart(7));
@@ -280,4 +280,4 @@ if (percentileModel) {
   console.log(`\n近似式：score = ${terms.join('')}`);
 }
 
-console.log('\n注意：这是拟合，不是 WeGame 官方公式；10 个样本不足以唯一确定权重，更没有金币、推塔、控制时长和英雄基准系数。');
+console.log('\n注意：这是拟合，不是掌盟官方公式；20 个样本不足以唯一确定权重，更没有金币、推塔、控制时长和英雄基准系数。');

@@ -20,7 +20,7 @@ import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { fetchEdgeMatchHistory, findEdgeUrl } from './lcu/edge.js';
 import { openEventStream } from './lcu/events.js';
 import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
-import { analyzeParticipant } from './stats/analyze.js';
+import { analyzeParticipant, computeMatchScores } from './stats/analyze.js';
 import { ReportCollector } from './stats/collector.js';
 import { analyzeGame } from './stats/analyze.js';
 import {
@@ -384,7 +384,8 @@ export class LiveSource implements DataSource {
     const selfParticipantId = selfParticipant
       ? toNumber(selfParticipant.participantId)
       : undefined;
-    const afkIds = afkParticipantIds(game, championMap);
+    const scoreMap = computeMatchScores(game, championMap);
+    const afkIds = afkParticipantIds(game, championMap, scoreMap);
     const remake = isRemakeGame(game);
 
     const scoreboard = (game.participants ?? [])
@@ -414,7 +415,7 @@ export class LiveSource implements DataSource {
         const name = player?.gameName
           ? `${player.gameName}${player.tagLine ? `#${player.tagLine}` : ''}`
           : String(player?.summonerName ?? `玩家 ${participant.participantId}`);
-        const analyzed = analyzeParticipant(game, participant, championMap);
+        const analyzed = analyzeParticipant(game, participant, championMap, scoreMap);
         const rawDuration = toNumber(game.gameDuration);
         const durationSeconds = rawDuration > 100_000 ? rawDuration / 1000 : rawDuration;
         const durationMin =
@@ -524,6 +525,7 @@ export class LiveSource implements DataSource {
         game,
         selfParticipant ? toNumber(selfParticipant.participantId) : undefined,
         championMap,
+        scoreMap,
       );
       logTag(
         'match',

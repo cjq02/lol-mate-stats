@@ -15,7 +15,7 @@ import type {
 import { mapLimit, round, toNumber, truncate } from '../util.js';
 import type { ChampionSummary, LcuApi } from '../lcu/api.js';
 import { LcuError } from '../lcu/http.js';
-import { analyzeGame } from './analyze.js';
+import { analyzeGame, computeMatchScores } from './analyze.js';
 import { archiveGames } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
 import { gameFlagTags, gameFlags } from './flags.js';
@@ -684,13 +684,15 @@ export class ReportCollector {
 
       const analyzed = games
         .map((game) => {
+          const scoreMap = computeMatchScores(game, championMap);
           const result = analyzeGame(
             game,
             { puuid: summoner.puuid, summonerId: summoner.summonerId, accountId: summoner.accountId },
             championMap,
+            scoreMap,
           );
           return result
-            ? withMatchFlags(game, result, championMap, summoner.puuid ?? '')
+            ? withMatchFlags(game, result, championMap, summoner.puuid ?? '', scoreMap)
             : null;
         })
         .filter((game): game is NonNullable<typeof game> => game !== null)
@@ -847,6 +849,7 @@ export class ReportCollector {
 
       const analyzed = games
         .map((game) => {
+          const scoreMap = computeMatchScores(game, championMap);
           const result = analyzeGame(
             game,
             {
@@ -855,9 +858,10 @@ export class ReportCollector {
               accountId: summoner.accountId,
             },
             championMap,
+            scoreMap,
           );
           return result
-            ? withMatchFlags(game, result, championMap, summoner.puuid ?? '')
+            ? withMatchFlags(game, result, championMap, summoner.puuid ?? '', scoreMap)
             : null;
         })
         .filter((game): game is NonNullable<typeof game> => game !== null)
@@ -1213,13 +1217,16 @@ function withMatchFlags(
   analyzed: AnalyzedGame,
   championMap: Map<number, ChampionSummary>,
   puuid: string,
+  scores?: Map<number, number>,
 ): AnalyzedGame {
   const identity = (rawGame.participantIdentities ?? []).find(
     (item) => item.player?.puuid === puuid,
   );
   const rawId = identity?.participantId;
   const participantId = rawId === undefined ? undefined : toNumber(rawId);
-  const flagTags = gameFlagTags(gameFlags(rawGame, participantId, championMap));
+  const flagTags = gameFlagTags(
+    gameFlags(rawGame, participantId, championMap, scores),
+  );
   if (!flagTags.length) return analyzed;
   return {
     ...analyzed,

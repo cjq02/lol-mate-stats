@@ -1,7 +1,7 @@
 import type { BadLevel, RawGame } from '../types.js';
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
-import { analyzeParticipant } from './analyze.js';
+import { analyzeParticipant, computeMatchScores } from './analyze.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 
 /** 低于此分数算“坑” */
@@ -79,11 +79,12 @@ export function isRemakeGame(game: RawGame): boolean {
 export function afkParticipantIds(
   game: RawGame,
   championMap: Map<number, ChampionSummary>,
+  scores?: Map<number, number>,
 ): Set<number> {
   const participants = game.participants ?? [];
   const afkStatsByIndex: Array<AfkRelativeStats | undefined> = participants.map(
     (participant) => {
-      const analyzed = analyzeParticipant(game, participant, championMap);
+      const analyzed = analyzeParticipant(game, participant, championMap, scores);
       if (!analyzed) return undefined;
       return {
         durationMin: analyzed.durationMin,
@@ -130,9 +131,11 @@ export function gameFlags(
   game: RawGame,
   participantId: number | undefined,
   championMap: Map<number, ChampionSummary>,
+  scores?: Map<number, number>,
 ): GameFlags {
   const remake = isRemakeGame(game);
   const participants = game.participants ?? [];
+  const scoreMap = scores ?? computeMatchScores(game, championMap);
   const self =
     participantId === undefined
       ? undefined
@@ -142,11 +145,11 @@ export function gameFlags(
   }
 
   const teamId = toNumber(self.teamId);
-  const afkIds = afkParticipantIds(game, championMap);
+  const afkIds = afkParticipantIds(game, championMap, scoreMap);
   const selfAfk = afkIds.has(toNumber(self.participantId));
   const selfBad =
     !remake && !selfAfk
-      ? badLevelOfScore(analyzeParticipant(game, self, championMap)?.score)
+      ? badLevelOfScore(analyzeParticipant(game, self, championMap, scoreMap)?.score)
       : undefined;
   let teammateAfk = false;
   let opponentAfk = false;
@@ -163,7 +166,7 @@ export function gameFlags(
       continue;
     }
     if (remake) continue;
-    const analyzed = analyzeParticipant(game, other, championMap);
+    const analyzed = analyzeParticipant(game, other, championMap, scoreMap);
     const level = badLevelOfScore(analyzed?.score);
     if (!level) continue;
     if (isTeammate) teammateBad = worseBadLevel(teammateBad, level);

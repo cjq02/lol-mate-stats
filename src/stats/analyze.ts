@@ -8,7 +8,7 @@ import type {
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
 import { queueName } from './constants.js';
-import { gameTags, performanceScore } from './rating.js';
+import { gameTags, percentileScores } from './rating.js';
 
 export interface IdentityKey {
   puuid?: string;
@@ -105,22 +105,49 @@ function statNumber(stats: RawStats, ...keys: string[]): number {
   return 0;
 }
 
-export function analyzeGame(
-  game: RawGame,
-  identityKey: IdentityKey,
-  championMap: Map<number, ChampionSummary>,
-): AnalyzedGame | null {
-  const participant = findParticipant(game, identityKey);
-  if (!participant) return null;
-  return analyzeParticipant(game, participant, championMap);
+interface BaseAnalysis {
+  participantId: number;
+  gameId: number;
+  queueId: number;
+  queueName: string;
+  gameCreation: number;
+  durationMin: number;
+  championId: number;
+  championName: string;
+  win: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  kdaRaw: number;
+  kda: number;
+  cs: number;
+  csPerMin: number;
+  gold: number;
+  damage: number;
+  heal: number;
+  damageShareRaw: number;
+  damageShare: number;
+  damagePerMin: number;
+  tankShareRaw: number;
+  tankShare: number;
+  killParticipationRaw: number;
+  killParticipation: number;
+  healShareRaw: number;
+  visionScore: number;
+  visionPerMin: number;
+  position: Lane;
+  largestKillingSpree: number;
+  pentaKills: number;
+  quadraKills: number;
+  turretKills: number;
+  firstBloodKill: boolean;
 }
 
-/** 已知参与者时直接计算单场数据（对局详情记分板复用） */
-export function analyzeParticipant(
+function analyzeBase(
   game: RawGame,
   participant: RawParticipant,
   championMap: Map<number, ChampionSummary>,
-): AnalyzedGame | null {
+): BaseAnalysis | null {
   const stats = participant.stats ?? {};
   const participants = game.participants ?? [];
   const teamId = toNumber(participant.teamId);
@@ -153,6 +180,10 @@ export function analyzeParticipant(
     (sum, item) => sum + statNumber(item.stats ?? {}, 'totalDamageTaken'),
     0,
   );
+  const teamHeal = team.reduce(
+    (sum, item) => sum + statNumber(item.stats ?? {}, 'totalHeal'),
+    0,
+  );
 
   // 只有自己的“概况”数据算不出伤害占比/参团，直接丢弃，避免评分虚高
   if (team.length < 2) return null;
@@ -165,6 +196,7 @@ export function analyzeParticipant(
   const kda = (kills + assists) / Math.max(1, deaths);
   const damageShare = teamDamage > 0 ? damage / teamDamage : 0;
   const tankShare = teamDamageTaken > 0 ? damageTaken / teamDamageTaken : 0;
+  const healShare = teamHeal > 0 ? totalHeal / teamHeal : 0;
   const killParticipation = teamKills > 0 ? (kills + assists) / teamKills : 0;
   const csPerMin = cs / durationMin;
   const visionPerMin = visionScore / durationMin;
@@ -172,24 +204,11 @@ export function analyzeParticipant(
   const win = stats.win === true || stats.win === 1;
   const championId = toNumber(participant.championId);
   const position = detectLane(game, participant);
-
-  const score = performanceScore(
-    {
-      kda,
-      damageShare,
-      damagePerMin,
-      tankShare,
-      killParticipation,
-      csPerMin,
-      visionPerMin,
-      win,
-    },
-    position,
-  );
-
-  const championName = championMap.get(championId)?.name ?? (championId ? `英雄 ${championId}` : '未知英雄');
+  const championName =
+    championMap.get(championId)?.name ?? (championId ? `英雄 ${championId}` : '未知英雄');
 
   return {
+    participantId: toNumber(participant.participantId),
     gameId: toNumber(game.gameId),
     queueId: toNumber(game.queueId),
     queueName: queueName(toNumber(game.queueId)),
@@ -201,39 +220,106 @@ export function analyzeParticipant(
     kills,
     deaths,
     assists,
+    kdaRaw: kda,
     kda: Math.round(kda * 100) / 100,
     cs,
     csPerMin: Math.round(csPerMin * 10) / 10,
     gold,
     damage,
     heal: totalHeal,
+    damageShareRaw: damageShare,
     damageShare: Math.round(damageShare * 1000) / 1000,
     damagePerMin: Math.round(damagePerMin),
+    tankShareRaw: tankShare,
     tankShare: Math.round(tankShare * 1000) / 1000,
+    killParticipationRaw: killParticipation,
     killParticipation: Math.round(killParticipation * 1000) / 1000,
+    healShareRaw: healShare,
     visionScore,
     visionPerMin: Math.round(visionPerMin * 100) / 100,
     position,
+    largestKillingSpree,
+    pentaKills,
+    quadraKills,
+    turretKills,
+    firstBloodKill,
+  };
+}
+
+/** 按本局所有参与者计算 0–100 的单场评分 */
+export function computeMatchScores(
+  game: RawGame,
+  championMap: Map<number, ChampionSummary>,
+): Map<number, number> {
+  const bases = (game.participants ?? [])
+    .map((participant) => analyzeBase(game, participant, championMap))
+    .filter((base): base is BaseAnalysis => base !== null);
+  const scores = percentileScores(
+    bases.map((base) => ({
+      kda: base.kdaRaw,
+      killParticipation: base.killParticipationRaw,
+      damageShare: base.damageShareRaw,
+      tankShare: base.tankShareRaw,
+      healShare: base.healShareRaw,
+    })),
+  );
+  const result = new Map<number, number>();
+  bases.forEach((base, index) => {
+    result.set(base.participantId, scores[index] ?? 0);
+  });
+  return result;
+}
+
+export function analyzeGame(
+  game: RawGame,
+  identityKey: IdentityKey,
+  championMap: Map<number, ChampionSummary>,
+  scores?: Map<number, number>,
+): AnalyzedGame | null {
+  const participant = findParticipant(game, identityKey);
+  if (!participant) return null;
+  return analyzeParticipant(game, participant, championMap, scores);
+}
+
+/** 已知参与者时直接计算单场数据（对局详情记分板复用） */
+export function analyzeParticipant(
+  game: RawGame,
+  participant: RawParticipant,
+  championMap: Map<number, ChampionSummary>,
+  scores?: Map<number, number>,
+): AnalyzedGame | null {
+  const base = analyzeBase(game, participant, championMap);
+  if (!base) return null;
+
+  const scoreMap = scores ?? computeMatchScores(game, championMap);
+  const score = scoreMap.get(base.participantId) ?? 0;
+
+  const {
+    participantId: _participantId,
+    kdaRaw: _kdaRaw,
+    damageShareRaw: _damageShareRaw,
+    tankShareRaw: _tankShareRaw,
+    killParticipationRaw: _killParticipationRaw,
+    healShareRaw: _healShareRaw,
+    largestKillingSpree,
+    pentaKills,
+    quadraKills,
+    turretKills,
+    firstBloodKill,
+    ...data
+  } = base;
+
+  return {
+    ...data,
     score,
     tags: gameTags({
-      win,
+      ...data,
       score,
-      kills,
-      deaths,
-      assists,
-      kda,
-      damageShare,
-      damagePerMin,
-      tankShare,
-      killParticipation,
-      csPerMin,
-      durationMin: displayDurationMin,
-      position,
+      totalHeal: data.heal,
       largestKillingSpree,
       pentaKills,
       quadraKills,
       turretKills,
-      totalHeal,
       firstBloodKill,
     }),
   };

@@ -93,6 +93,7 @@ function ratio(value: number, target: number): number {
   return clamp(value / target, 0, 1.3) * 100;
 }
 
+/** 旧版单场评分：保留给 demo 和单元测试；业务评分改用 percentileScores */
 export function performanceScore(input: PerformanceInput, lane: Lane): number {
   const profile = PROFILES[lane] ?? PROFILES.UNKNOWN;
   const w = profile.weight;
@@ -109,6 +110,52 @@ export function performanceScore(input: PerformanceInput, lane: Lane): number {
 
   // 表现分映射到 0-100，胜利 +10 / 失败 -5（单纯输赢不足以决定评分）
   return round(clamp(weighted * 0.8 + (input.win ? 10 : 0) - 5, 0, 100), 1);
+}
+
+export interface MatchPercentileInput {
+  kda: number;
+  killParticipation: number;
+  damageShare: number;
+  tankShare: number;
+  healShare: number;
+}
+
+/** 0–1 百分位；并列时取平均名次 */
+function percentileRank(values: number[], value: number): number {
+  if (!values.length) return 0.5;
+  const sorted = [...values].sort((a, b) => a - b);
+  const below = sorted.filter((item) => item < value).length;
+  const equal = sorted.filter((item) => item === value).length;
+  return (below + Math.max(0, equal - 1) / 2) / Math.max(1, sorted.length - 1);
+}
+
+/**
+ * 单场评分：按本局所有参与者的 KDA / 参团 / 输出 / 承伤 / 治疗百分位加权。
+ * 权重来自 20 个掌盟评分样本的拟合结果，再缩放到 0–100（平均约 54）。
+ */
+export function percentileScores(inputs: MatchPercentileInput[]): number[] {
+  if (!inputs.length) return [];
+  const rank = (key: keyof MatchPercentileInput): number[] => {
+    const values = inputs.map((input) => input[key]);
+    return inputs.map((input) => percentileRank(values, input[key]));
+  };
+
+  const kda = rank('kda');
+  const kp = rank('killParticipation');
+  const damage = rank('damageShare');
+  const taken = rank('tankShare');
+  const heal = rank('healShare');
+
+  return inputs.map((_, index) => {
+    const score20 =
+      1.93 +
+      6.05 * (kda[index] ?? 0.5) +
+      2.15 * (kp[index] ?? 0.5) +
+      6.22 * (damage[index] ?? 0.5) +
+      2.21 * (taken[index] ?? 0.5) +
+      1.14 * (heal[index] ?? 0.5);
+    return round(clamp(score20 * 5, 0, 100), 1);
+  });
 }
 
 export function gradeOf(rating: number): Grade {

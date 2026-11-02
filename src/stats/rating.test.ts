@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { AnalyzedGame, Lane, RawGame } from '../types.js';
 import { analyzeGame, detectLane } from './analyze.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
-import { PROFILES, gameTags, isAfkLike, performanceScore, summarize } from './rating.js';
+import { PROFILES, gameTags, isAfkLike, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 
 let passed = 0;
@@ -500,6 +500,22 @@ test('自己坑/逃跑也会打标签', () => {
     }),
     ['自己逃跑'],
   );
+});
+
+test('局内百分位评分：强于队友的玩家分更高', () => {
+  const inputs = Array.from({ length: 10 }, (_, index) => ({
+    kda: 1 + index * 0.5,
+    killParticipation: 0.4 + index * 0.04,
+    damageShare: 0.12 + index * 0.015,
+    tankShare: 0.1 + index * 0.01,
+    healShare: 0.02 + index * 0.01,
+  }));
+  const scores = percentileScores(inputs);
+  assert.equal(scores.length, 10);
+  assert.ok(scores.every((score) => score >= 0 && score <= 100));
+  assert.ok(scores[9]! > scores[0]!, `scores=${scores.join(',')}`);
+  const avg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+  assert.ok(avg > 45 && avg < 65, `avg=${avg}`);
 });
 
 console.log(`\n${passed} 项测试全部通过`);

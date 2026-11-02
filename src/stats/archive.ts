@@ -9,7 +9,7 @@ import type {
   RawStats,
 } from '../types.js';
 import { toNumber } from '../util.js';
-import { analyzeParticipant, detectLane } from './analyze.js';
+import { analyzeParticipant, computeMatchScores, detectLane } from './analyze.js';
 import {
   badLevelLabel,
   badLevelOfScore,
@@ -289,6 +289,7 @@ export async function archiveGames(
 
         const rows: unknown[][] = [];
         const participants = game.participants ?? [];
+        const scoreMap = computeMatchScores(game, championMap);
         participants.forEach((participant: RawParticipant, index: number) => {
           const participantId = toNumber(participant.participantId) || index + 1;
           const identity = identities.find(
@@ -301,11 +302,11 @@ export async function archiveGames(
           const bot = isBotPlayer(puuid, name, summonerId);
           const analyzed = bot
             ? null
-            : analyzeParticipant(game, participant, championMap);
+            : analyzeParticipant(game, participant, championMap, scoreMap);
           const stats = participant.stats ?? {};
           const championId = toNumber(participant.championId);
           const teamId = toNumber(participant.teamId);
-          const flags = gameFlags(game, participantId, championMap);
+          const flags = gameFlags(game, participantId, championMap, scoreMap);
           const tags = [
             ...new Set([
               ...gameFlagTags(flags),
