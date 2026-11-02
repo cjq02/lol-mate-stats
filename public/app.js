@@ -1327,7 +1327,10 @@ function mergeMatchLists(...lists) {
 
 function renderMyMatches() {
   const games = state.myGames ?? [];
+  // 重新渲染会重置滚动位置，先记住，避免“加载更早”后跳回顶部
+  const scrollTop = els.matchesList.scrollTop;
   renderMatchesView(games, `我的战绩 · ${games.length} 场`, true);
+  els.matchesList.scrollTop = scrollTop;
   state.currentView = renderMyMatches;
   setMatchesRefresh(() => openMyMatches());
 
@@ -1730,6 +1733,17 @@ els.matchesClose.addEventListener('click', closeMatches);
 els.matchesRefresh.addEventListener('click', () => void refreshMatchesView());
 els.matchesBack.addEventListener('click', () => {
   goMatchesBack();
+});
+els.matchesList.addEventListener('scroll', () => {
+  // “我的战绩”滚到接近底部时自动加载更早的对局
+  if (state.archiveLoading) return;
+  if (state.currentView !== renderMyMatches) return;
+  const button = els.matchesList.querySelector('[data-action="archive-more"]');
+  if (!button) return;
+  const { scrollTop, clientHeight, scrollHeight } = els.matchesList;
+  if (scrollTop + clientHeight >= scrollHeight - 200) {
+    void loadMoreArchive(button);
+  }
 });
 els.matchesList.addEventListener('click', (event) => {
   const more = event.target.closest('[data-action="archive-more"]');
