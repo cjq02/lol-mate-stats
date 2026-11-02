@@ -1,8 +1,10 @@
 import type { ChampionSummary } from '../lcu/api.js';
-import type { RawGame, RawIdentityPlayer, RawParticipant, RawStats } from '../types.js';
+import type { Lane, RawGame, RawIdentityPlayer, RawParticipant, RawStats } from '../types.js';
 import { toNumber } from '../util.js';
 import { analyzeParticipant, detectLane } from './analyze.js';
+import { gameFlagTags, gameFlags, isRemakeMeta } from './flags.js';
 import { queueName } from './constants.js';
+import { isAfkLikeStats } from './rating.js';
 import { getDb, readMeta, writeMeta } from './store.js';
 
 /** 长期保存的单场战绩（按玩家维度查询） */
@@ -56,6 +58,17 @@ function isBotPlayer(puuid: string, name: string, summonerId: number): boolean {
   if (!puuid && !summonerId) return true;
   if (/(^|\s)bot$/i.test(name)) return true;
   return /^0{32}$/.test(puuid.replace(/-/g, ''));
+}
+
+function parseTagList(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) return parsed.filter((tag) => typeof tag === 'string');
+  } catch {
+    /* 忽略损坏的 tags */
+  }
+  return [];
 }
 
 /**
@@ -132,6 +145,13 @@ export function archiveGames(games: RawGame[], championMap: Map<number, Champion
         const stats = participant.stats ?? {};
         const championId = toNumber(participant.championId);
         const teamId = toNumber(participant.teamId);
+        const flags = gameFlags(game, participantId, championMap);
+        const tags = [
+          ...new Set([
+            ...gameFlagTags(flags),
+            ...(analyzed?.tags ?? (bot ? ['人机'] : [])),
+          ]),
+        ].slice(0, 6);
 
         insertParticipant.run(
           gameId,
@@ -156,7 +176,7 @@ export function archiveGames(games: RawGame[], championMap: Map<number, Champion
           stat(stats, 'visionScore'),
           bot ? 1 : 0,
           analyzed?.score ?? null,
-          JSON.stringify(analyzed?.tags ?? (bot ? ['人机'] : [])),
+          JSON.stringify(tags),
         );
       });
 
@@ -201,6 +221,55 @@ export function getPlayerScores(puuid: string, gameIds: number[]): Map<number, n
   return scores;
 }
 
+/** 批量读取某个玩家这些对局里已保存的标签（含重开/队友逃跑） */
+export function getPlayerMatchTags(
+  puuid: string,
+  gameIds: number[],
+): Map<number, string[]> {
+  const result = new Map<number, string[]>();
+  const ids = [...new Set(gameIds.filter((id) => id > 0))];
+  const db = getDb();
+  if (!db || !puuid || !ids.length) return result;
+
+  try {
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = db
+      .prepare(
+        `SELECT p.game_id, p.tags, m.queue_id, m.duration_seconds
+         FROM match_participants p
+         JOIN matches m ON m.game_id = p.game_id
+         WHERE p.puuid = ? AND p.game_id IN (${placeholders})`,
+      )
+      .all(puuid, ...ids) as unknown as Array<{
+      game_id: number;
+      tags: string | null;
+      queue_id: number;
+      duration_seconds: number;
+    }>;
+    for (const row of rows) {
+      let tags: string[] = [];
+      if (row.tags) {
+        try {
+          const parsed = JSON.parse(row.tags) as unknown;
+          if (Array.isArray(parsed)) tags = parsed.filter((tag) => typeof tag === 'string');
+        } catch {
+          /* 忽略损坏的 tags */
+        }
+      }
+      if (
+        isRemakeMeta(Number(row.queue_id), Number(row.duration_seconds)) &&
+        !tags.includes('重开')
+      ) {
+        tags.unshift('重开');
+      }
+      result.set(Number(row.game_id), tags);
+    }
+  } catch {
+    /* 查询失败时按无标签处理 */
+  }
+  return result;
+}
+
 export function countPlayerMatches(puuid: string): number {
   const db = getDb();
   if (!db || !puuid) return 0;
@@ -225,7 +294,7 @@ export function getPlayerMatches(
     const rows = db
       .prepare(
         `SELECT m.game_id, m.queue_id, m.game_creation, m.duration_seconds,
-                p.champion_id, p.champion_name, p.position, p.win,
+                p.team_id, p.champion_id, p.champion_name, p.position, p.win,
                 p.kills, p.deaths, p.assists, p.cs, p.gold, p.damage,
                 p.damage_taken, p.heal, p.vision, p.score, p.tags
          FROM match_participants p
@@ -239,6 +308,7 @@ export function getPlayerMatches(
       queue_id: number;
       game_creation: number;
       duration_seconds: number;
+      team_id: number;
       champion_id: number;
       champion_name: string | null;
       position: string | null;
@@ -256,18 +326,81 @@ export function getPlayerMatches(
       tags: string | null;
     }>;
 
-    return rows.map((row) => {
-      let tags: string[] = [];
-      if (row.tags) {
-        try {
-          const parsed = JSON.parse(row.tags) as unknown;
-          if (Array.isArray(parsed)) tags = parsed.filter((tag) => typeof tag === 'string');
-        } catch {
-          /* 忽略损坏的 tags */
-        }
+    const gameIds = [...new Set(rows.map((row) => Number(row.game_id)))];
+    const participantsByGame = new Map<
+      number,
+      Array<{
+        puuid: string | null;
+        team_id: number;
+        kills: number;
+        deaths: number;
+        assists: number;
+        cs: number;
+        gold: number;
+        damage: number;
+        vision: number;
+        position: string | null;
+      }>
+    >();
+    if (gameIds.length) {
+      const placeholders = gameIds.map(() => '?').join(',');
+      const participants = db
+        .prepare(
+          `SELECT game_id, puuid, team_id, kills, deaths, assists, cs, gold, damage, vision, position
+           FROM match_participants
+           WHERE game_id IN (${placeholders})`,
+        )
+        .all(...gameIds) as unknown as Array<{
+        game_id: number;
+        puuid: string | null;
+        team_id: number;
+        kills: number;
+        deaths: number;
+        assists: number;
+        cs: number;
+        gold: number;
+        damage: number;
+        vision: number;
+        position: string | null;
+      }>;
+      for (const participant of participants) {
+        const gameId = Number(participant.game_id);
+        const list = participantsByGame.get(gameId) ?? [];
+        list.push(participant);
+        participantsByGame.set(gameId, list);
       }
+    }
+
+    return rows.map((row) => {
+      const gameId = Number(row.game_id);
+      const durationMin = Number(row.duration_seconds) / 60;
+      const tags = parseTagList(row.tags);
+      if (
+        isRemakeMeta(Number(row.queue_id), Number(row.duration_seconds)) &&
+        !tags.includes('重开')
+      ) {
+        tags.unshift('重开');
+      }
+      const teammateAfk = (participantsByGame.get(gameId) ?? []).some(
+        (participant) =>
+          participant.team_id === Number(row.team_id) &&
+          Boolean(participant.puuid) &&
+          participant.puuid !== puuid &&
+          isAfkLikeStats({
+            durationMin,
+            gold: Number(participant.gold),
+            damage: Number(participant.damage),
+            cs: Number(participant.cs),
+            kills: Number(participant.kills),
+            deaths: Number(participant.deaths),
+            assists: Number(participant.assists),
+            visionScore: Number(participant.vision),
+            position: (participant.position as Lane | null) ?? undefined,
+          }),
+      );
+      if (teammateAfk && !tags.includes('队友逃跑')) tags.push('队友逃跑');
       return {
-        gameId: Number(row.game_id),
+        gameId,
         queueId: Number(row.queue_id),
         queueName: queueName(Number(row.queue_id)),
         gameCreation: Number(row.game_creation),

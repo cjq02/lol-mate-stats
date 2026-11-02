@@ -1409,7 +1409,17 @@ function matchRow(game, showScore) {
     )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b><small>${escapeHtml(
       game.queueName ?? '',
     )} · ${durationMin} 分钟 · ${formatGameTime(game.gameCreation)}${
-      game.tags?.length ? ` · ${escapeHtml(game.tags.join(' / '))}` : ''
+      game.tags?.length
+        ? ` · ${game.tags
+            .map((tag) =>
+              tag === '重开' || tag === '队友逃跑'
+                ? `<b class="match-flag ${tag === '重开' ? 'remake' : 'afk'}">${escapeHtml(
+                    tag,
+                  )}</b>`
+                : escapeHtml(tag),
+            )
+            .join(' / ')}`
+        : ''
     }</small></span>
     <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
     <span class="pts"${score === null ? '' : ` style="color:${ratingColor(score)}"`}>${

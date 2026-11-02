@@ -159,21 +159,49 @@ function deathTagsApply(position: Lane | undefined): boolean {
  * 时长 ≥ 8 分钟，且伤害、经济、补刀、参团、视野同时极低。
  * 宁可漏判，也不要把被针对/辅助玩家误标成挂机。
  */
-export function isAfkLike(game: AnalyzedGame): boolean {
-  if (game.durationMin < 8) return false;
-  const goldPerMin = game.gold / Math.max(1, game.durationMin);
+export interface AfkLikeStats {
+  durationMin: number;
+  gold: number;
+  damage: number;
+  cs: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  visionScore: number;
+  position?: Lane;
+}
+
+export function isAfkLikeStats(input: AfkLikeStats): boolean {
+  if (input.durationMin < 8) return false;
+  const minutes = Math.max(1, input.durationMin);
   const checks = [
-    game.damagePerMin < 150,
-    goldPerMin < 220,
-    game.csPerMin < 1.2,
-    game.kills + game.assists <= 1,
+    input.damage / minutes < 150,
+    input.gold / minutes < 220,
+    input.cs / minutes < 1.2,
+    input.kills + input.assists <= 1,
   ];
-  if (appliesVision(game.position)) checks.push(game.visionPerMin < 0.35);
+  if (appliesVision(input.position ?? 'UNKNOWN')) {
+    checks.push(input.visionScore / minutes < 0.35);
+  }
   const hits = checks.filter(Boolean).length;
   return (
     hits >= checks.length ||
-    (hits >= checks.length - 1 && game.kills + game.deaths + game.assists === 0)
+    (hits >= checks.length - 1 && input.kills + input.deaths + input.assists === 0)
   );
+}
+
+export function isAfkLike(game: AnalyzedGame): boolean {
+  return isAfkLikeStats({
+    durationMin: game.durationMin,
+    gold: game.gold,
+    damage: game.damage,
+    cs: game.cs,
+    kills: game.kills,
+    deaths: game.deaths,
+    assists: game.assists,
+    visionScore: game.visionScore,
+    position: game.position,
+  });
 }
 
 export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): RecentSummary {

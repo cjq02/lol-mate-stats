@@ -288,6 +288,8 @@ export interface MatchSummary {
   assists: number;
   /** 本场评分（从本地存档或实时分析得到） */
   score?: number;
+  /** 本场标记：重开、队友逃跑等 */
+  tags?: string[];
 }
 
 export interface MatchScoreboardPlayer {

@@ -26,6 +26,7 @@ import { analyzeGame } from './stats/analyze.js';
 import {
   archiveGames,
   countPlayerMatches,
+  getPlayerMatchTags,
   getPlayerMatches,
   getPlayerScores,
   getSavedSelfPuuid,
@@ -33,6 +34,7 @@ import {
   type ArchivedMatch,
 } from './stats/archive.js';
 import { modeFromQueue, queueName } from './stats/constants.js';
+import { gameFlagTags, gameFlags } from './stats/flags.js';
 import { gradeOf } from './stats/rating.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
@@ -268,6 +270,11 @@ export class LiveSource implements DataSource {
         const stats = statsOf(participant);
         const championId = toNumber(participant?.championId);
         const rawDuration = toNumber(game.gameDuration);
+        const flags = gameFlags(
+          game,
+          participant ? toNumber(participant.participantId) : undefined,
+          championMap,
+        );
         return {
           gameId: toNumber(game.gameId),
           queueId: toNumber(game.queueId),
@@ -280,13 +287,22 @@ export class LiveSource implements DataSource {
           kills: toNumber(stats.kills),
           deaths: toNumber(stats.deaths),
           assists: toNumber(stats.assists),
+          tags: gameFlagTags(flags),
         };
       })
       .filter((game) => game.gameId > 0);
 
     // 读取/补算每场评分；还没归档的对局会顺便写入历史存档
     const scores = await this.fillMissingScores(api, games, championMap, summoner);
-    const scored = games.map((game) => ({ ...game, score: scores.get(game.gameId) }));
+    const archivedTags = getPlayerMatchTags(
+      puuid,
+      games.map((game) => game.gameId),
+    );
+    const scored = games.map((game) => ({
+      ...game,
+      score: scores.get(game.gameId),
+      tags: archivedTags.get(game.gameId) ?? game.tags,
+    }));
 
     logTag(
       'match',
