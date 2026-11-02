@@ -1410,10 +1410,12 @@ function matchFlagsHtml(tags) {
 function matchRow(game, showScore) {
   const durationMin = game.durationMin ?? Math.round((Number(game.gameDuration) || 0) / 60);
   const score = showScore && Number.isFinite(Number(game.score)) ? Math.round(game.score) : null;
-  return `<button class="game-row match-item ${game.win ? '' : 'loss'}" type="button" data-game-id="${
-    game.gameId
-  }">
-    <span class="result">${game.win ? '胜' : '负'}</span>
+  const remake = (game.tags ?? []).includes('重开');
+  const displayTags = remake ? game.tags.filter((tag) => tag !== '重开') : game.tags;
+  return `<button class="game-row match-item ${
+    remake ? 'remake' : game.win ? '' : 'loss'
+  }" type="button" data-game-id="${game.gameId}">
+    <span class="result">${remake ? '重开' : game.win ? '胜' : '负'}</span>
     <span class="who">${iconHtml(
       champPath(game.championId),
       game.championName,
@@ -1421,7 +1423,7 @@ function matchRow(game, showScore) {
     )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b><small>${escapeHtml(
       game.queueName ?? '',
     )} · ${durationMin} 分钟 · ${formatGameTime(game.gameCreation)}${
-      game.tags?.length ? ` · ${matchFlagsHtml(game.tags)}` : ''
+      displayTags?.length ? ` · ${matchFlagsHtml(displayTags)}` : ''
     }</small></span>
     <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
     <span class="pts"${score === null ? '' : ` style="color:${ratingColor(score)}"`}>${

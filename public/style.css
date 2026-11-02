@@ -1620,6 +1620,15 @@ body::before {
   background: var(--loss);
 }
 
+.game-row.remake {
+  background: rgba(139, 184, 255, 0.06);
+}
+
+.game-row.remake .result {
+  color: #0b1830;
+  background: #8bb8ff;
+}
+
 .game-row .who {
   min-width: 0;
   white-space: nowrap;

@@ -16,16 +16,8 @@ function durationSeconds(game: RawGame): number {
   return raw > 100_000 ? Math.round(raw / 1000) : raw;
 }
 
-export function isRemakeMeta(
-  queueId: number,
-  duration: number,
-  gameMode?: string | null,
-): boolean {
-  if (duration <= 0 || duration > 300) return false;
-  if (queueId === 450 || queueId === 1700 || queueId === 1710) return false;
-  const mode = String(gameMode ?? '').toUpperCase();
-  if (mode === 'ARAM' || mode === 'CHERRY') return false;
-  return true;
+export function isRemakeMeta(duration: number): boolean {
+  return duration > 0 && duration <= 300;
 }
 
 /** 官方没有直接的重开标记，用 early surrender 字段或极短时长推断 */
@@ -34,7 +26,7 @@ export function isRemakeGame(game: RawGame): boolean {
     const flag = participant.stats?.gameEndedInEarlySurrender;
     if (flag === true || flag === 1) return true;
   }
-  return isRemakeMeta(toNumber(game.queueId), durationSeconds(game), game.gameMode);
+  return isRemakeMeta(durationSeconds(game));
 }
 
 /**
