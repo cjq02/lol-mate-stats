@@ -614,6 +614,34 @@ body::before {
   color: #ff6b81;
 }
 
+.match-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 11.5px;
+}
+
+.match-flags .match-flag {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.match-flags .match-flag.remake {
+  background: rgba(139, 184, 255, 0.14);
+}
+
+.match-flags .match-flag.afk {
+  background: rgba(255, 171, 94, 0.12);
+}
+
+.match-flags .match-flag.enemy-afk {
+  background: rgba(255, 107, 129, 0.12);
+}
+
 .modal-card.wide {
   width: min(1520px, 96vw);
 }

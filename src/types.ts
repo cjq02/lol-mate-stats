@@ -327,6 +327,16 @@ export interface MatchScoreboardPlayer {
   tags?: string[];
 }
 
+export interface MatchAfkPlayer {
+  puuid?: string;
+  name: string;
+  championId: number;
+  championName?: string;
+  teamId: number;
+  isEnemy: boolean;
+  position?: string;
+}
+
 export interface MatchDetail {
   gameId: number;
   queueId?: number;
@@ -337,8 +347,10 @@ export interface MatchDetail {
   selfPuuid?: string;
   players: PlayerReport[];
   scoreboard: MatchScoreboardPlayer[];
-  /** 本局标记：重开、队友逃跑等 */
+  /** 本局标记：重开、队友逃跑、对手逃跑等 */
   tags?: string[];
+  /** 被推断为逃跑/挂机的具体玩家 */
+  afkPlayers?: MatchAfkPlayer[];
 }
 
 export interface LiveGameData {

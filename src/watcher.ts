@@ -35,7 +35,7 @@ import {
 } from './stats/archive.js';
 import { modeFromQueue, queueName } from './stats/constants.js';
 import { gameFlagTags, gameFlags } from './stats/flags.js';
-import { gradeOf } from './stats/rating.js';
+import { gradeOf, isAfkLike } from './stats/rating.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
 export interface LiveSourceOptions {
@@ -409,6 +409,10 @@ export class LiveSource implements DataSource {
           analyzed?.durationMin || (durationSeconds > 0 ? Math.round(durationSeconds / 60) : 0);
         const perMin = (value: number): number =>
           durationMin > 0 ? Math.round(value / durationMin) : 0;
+        const afk = Boolean(
+          analyzed && isAfkLike(analyzed) && player?.puuid !== summoner.puuid,
+        );
+        const tags = afk ? ['逃跑', ...(analyzed?.tags ?? [])] : analyzed?.tags;
 
         return {
           puuid: typeof player?.puuid === 'string' ? player.puuid : undefined,
@@ -450,11 +454,23 @@ export class LiveSource implements DataSource {
           damagePerMin: analyzed?.damagePerMin,
           damageTakenPerMin: perMin(toNumber(stats.totalDamageTaken)),
           visionPerMin: analyzed?.visionPerMin,
-          tags: analyzed?.tags,
+          tags,
         };
       })
       .filter((player) => player.championId > 0)
       .sort((a, b) => Number(a.isEnemy) - Number(b.isEnemy));
+
+    const afkPlayers = scoreboard
+      .filter((player) => player.tags?.includes('逃跑'))
+      .map((player) => ({
+        puuid: player.puuid,
+        name: player.name,
+        championId: player.championId,
+        championName: player.championName,
+        teamId: player.teamId,
+        isEnemy: player.isEnemy,
+        position: player.position,
+      }));
 
     const collector = this.ensureCollector(api, recent);
     collector.setSelfPuuid(summoner.puuid);
@@ -492,6 +508,7 @@ export class LiveSource implements DataSource {
         players,
         scoreboard,
         tags: gameFlagTags(flags),
+        afkPlayers,
       };
     } catch (error) {
       logTag(

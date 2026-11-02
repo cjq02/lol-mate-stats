@@ -30,6 +30,7 @@ const els = {
   matchesRefresh: document.getElementById('matches-refresh'),
   matchesAi: document.getElementById('matches-ai'),
   matchTabs: document.getElementById('match-tabs'),
+  matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
   aiModalTitle: document.getElementById('ai-modal-title'),
   aiMeta: document.getElementById('ai-meta'),
@@ -477,6 +478,7 @@ function buildCard(player, isLocal, options = {}) {
             '伤害过低',
             '常挂机',
             '疑似挂机',
+            '逃跑',
           ].includes(label);
           const gold = label === '大腿' || label === 'MVP';
           return `<span class="chip${gold ? ' gold' : ''}${danger ? ' danger' : ''}">${escapeHtml(label)}</span>`;
@@ -1411,6 +1413,47 @@ function matchFlagsHtml(tags) {
     .join(' / ');
 }
 
+function afkPlayerLabel(player) {
+  const champion = player.championName ?? '未知英雄';
+  return `${champion}（${player.name}）`;
+}
+
+function renderMatchFlags(detail) {
+  const tags = detail.tags ?? [];
+  const afk = detail.afkPlayers ?? [];
+  const parts = [];
+  if (tags.includes('重开')) {
+    parts.push('<span class="match-flag remake">重开</span>');
+  }
+  const allies = afk.filter((player) => !player.isEnemy);
+  const enemies = afk.filter((player) => player.isEnemy);
+  if (allies.length) {
+    parts.push(
+      `<span class="match-flag afk">队友逃跑：${allies
+        .map((player) => escapeHtml(afkPlayerLabel(player)))
+        .join('、')}</span>`,
+    );
+  } else if (tags.includes('队友逃跑')) {
+    parts.push('<span class="match-flag afk">队友逃跑</span>');
+  }
+  if (enemies.length) {
+    parts.push(
+      `<span class="match-flag enemy-afk">对手逃跑：${enemies
+        .map((player) => escapeHtml(afkPlayerLabel(player)))
+        .join('、')}</span>`,
+    );
+  } else if (tags.includes('对手逃跑')) {
+    parts.push('<span class="match-flag enemy-afk">对手逃跑</span>');
+  }
+  els.matchFlags.innerHTML = parts.join('');
+  els.matchFlags.classList.toggle('hidden', parts.length === 0);
+}
+
+function clearMatchFlags() {
+  els.matchFlags.innerHTML = '';
+  els.matchFlags.classList.add('hidden');
+}
+
 function matchRow(game, showScore) {
   const durationMin = game.durationMin ?? Math.round((Number(game.gameDuration) || 0) / 60);
   const score = showScore && Number.isFinite(Number(game.score)) ? Math.round(game.score) : null;
@@ -1632,6 +1675,7 @@ function renderMatchesView(games, title, showScore) {
   state.matchDetail = null;
   state.matchTab = 'scoreboard';
   resetAiView();
+  clearMatchFlags();
   els.matchesAi.classList.add('hidden');
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
@@ -2045,6 +2089,7 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
   )} · 对局详情${
     detail.tags?.length ? ` · ${matchFlagsHtml(detail.tags)}` : ''
   }`;
+  renderMatchFlags(detail);
   updateMatchesBackButton();
   renderMatchTab(tab);
 }
@@ -2062,6 +2107,7 @@ async function openMatchDetail(gameId, options = {}) {
   els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
   els.matchTabs.classList.add('hidden');
   resetAiView();
+  clearMatchFlags();
   els.matchesAi.classList.add('hidden');
   els.matchesTitle.textContent = '对局详情';
   updateMatchesBackButton();
@@ -2105,6 +2151,7 @@ async function openMatchDetail(gameId, options = {}) {
     stopLoadingTimer();
     state.matchDetail = null;
     els.matchTabs.classList.add('hidden');
+    clearMatchFlags();
     els.matchesAi.classList.add('hidden');
     els.matchesList.className = 'match-list';
     els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
@@ -2136,6 +2183,7 @@ function closeMatches() {
   els.matchesModal.classList.add('hidden');
   els.matchesList.replaceChildren();
   els.matchTabs.classList.add('hidden');
+  clearMatchFlags();
   els.matchesAi.classList.add('hidden');
   els.matchesBack.classList.add('hidden');
   setMatchesRefresh(null);
