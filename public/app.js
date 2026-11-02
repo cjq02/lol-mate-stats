@@ -164,6 +164,7 @@ const state = {
   selfPuuid: '',
   matchRequestToken: 0,
   backStack: [],
+  backScrollStack: [],
   currentView: null,
   loadingTimer: null,
   loadingProgress: null,
@@ -1729,8 +1730,10 @@ function openMatches(player, context) {
     typeof state.currentView === 'function';
   if (inDetail) {
     state.backStack.push(state.currentView);
+    state.backScrollStack.push(els.matchesList.scrollTop);
   } else {
     state.backStack = [];
+    state.backScrollStack = [];
     state.currentView = null;
   }
   renderPlayerMatches(games, title, player, context);
@@ -1739,8 +1742,13 @@ function openMatches(player, context) {
 function goMatchesBack() {
   state.matchRequestToken += 1;
   const previous = state.backStack.pop();
-  if (previous) previous();
-  else closeMatches();
+  const scrollTop = state.backScrollStack.pop();
+  if (previous) {
+    previous();
+    if (Number.isFinite(scrollTop)) {
+      els.matchesList.scrollTop = scrollTop;
+    }
+  } else closeMatches();
 }
 
 function mergeMatchLists(...lists) {
@@ -1872,6 +1880,7 @@ async function loadMoreArchive(button) {
 
 async function openMyMatches() {
   state.backStack = [];
+  state.backScrollStack = [];
   state.currentView = null;
   state.matchRequestToken += 1;
   state.matchDetail = null;
@@ -2024,7 +2033,10 @@ async function openMatchDetail(gameId, options = {}) {
   const push = options.push !== false;
   state.matchRequestToken += 1;
   const token = state.matchRequestToken;
-  if (push && typeof state.currentView === 'function') state.backStack.push(state.currentView);
+  if (push && typeof state.currentView === 'function') {
+    state.backStack.push(state.currentView);
+    state.backScrollStack.push(els.matchesList.scrollTop);
+  }
 
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
@@ -2092,6 +2104,7 @@ function closeMatches() {
   state.matchRequestToken += 1;
   state.matchDetail = null;
   state.backStack = [];
+  state.backScrollStack = [];
   state.currentView = null;
   state.myGames = [];
   state.myLcuOffset = 0;
