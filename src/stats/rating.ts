@@ -225,10 +225,10 @@ export function isAfkLikeRelative(
 
   const avgDamage = others.reduce((sum, item) => sum + item.damage, 0) / others.length;
   const avgGold = others.reduce((sum, item) => sum + item.gold, 0) / others.length;
-  const totalKA = team.reduce((sum, item) => sum + item.kills + item.assists, 0);
+  const totalKills = team.reduce((sum, item) => sum + item.kills, 0);
   const participation =
     player.killParticipation ??
-    (totalKA > 0 ? (player.kills + player.assists) / totalKA : 0);
+    (totalKills > 0 ? (player.kills + player.assists) / totalKills : 0);
 
   const lowDamage = avgDamage > 0 && player.damage < avgDamage * 0.35;
   const lowGold = avgGold > 0 && player.gold < avgGold * 0.55;

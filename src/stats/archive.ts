@@ -71,6 +71,11 @@ function parseTagList(raw: string | null): string[] {
   return [];
 }
 
+/** 逃跑标签每次读取时重新推断，避免旧数据里的误判一直保留 */
+function stripAfkTags(tags: string[]): string[] {
+  return tags.filter((tag) => tag !== '队友逃跑' && tag !== '对手逃跑');
+}
+
 /**
  * 把完整对局写入 SQLite。重复对局会覆盖参与者数据，不会产生重复行。
  * 只保存结构化字段，不保存原始 LCU JSON，避免数据库膨胀。
@@ -247,15 +252,7 @@ export function getPlayerMatchTags(
       duration_seconds: number;
     }>;
     for (const row of rows) {
-      let tags: string[] = [];
-      if (row.tags) {
-        try {
-          const parsed = JSON.parse(row.tags) as unknown;
-          if (Array.isArray(parsed)) tags = parsed.filter((tag) => typeof tag === 'string');
-        } catch {
-          /* 忽略损坏的 tags */
-        }
-      }
+      const tags = stripAfkTags(parseTagList(row.tags));
       if (
         isRemakeMeta(Number(row.duration_seconds)) &&
         !tags.includes('重开')
@@ -374,7 +371,7 @@ export function getPlayerMatches(
     return rows.map((row) => {
       const gameId = Number(row.game_id);
       const durationMin = Number(row.duration_seconds) / 60;
-      const tags = parseTagList(row.tags);
+      const tags = stripAfkTags(parseTagList(row.tags));
       if (
         isRemakeMeta(Number(row.duration_seconds)) &&
         !tags.includes('重开')
