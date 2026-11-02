@@ -474,6 +474,7 @@ function buildCard(player, isLocal, options = {}) {
           const danger = [
             '坑',
             '偏坑',
+            '有点坑',
             '疑似新手',
             '伤害过低',
             '常挂机',

@@ -309,6 +309,7 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
     avgVisionPerMin,
     avgDeaths,
     avgKillParticipation,
+    avgScore,
     winRate,
     level: signals.level,
   });
@@ -384,33 +385,34 @@ interface RiskAverages {
   avgVisionPerMin: number;
   avgDeaths: number;
   avgKillParticipation: number;
+  avgScore: number;
   winRate: number;
   level?: number;
 }
 
-/** 单场“不达标”权重：>=2.2 算明显不达标，>=3.6 算严重不达标 */
+/** 单场“不达标”权重：>=2.0 算明显不达标，>=3.2 算严重不达标 */
 function gameDeficit(game: AnalyzedGame): number {
   const profile = PROFILES[game.position] ?? PROFILES.UNKNOWN;
   const target = profile.target;
   let flags = 0;
 
-  if (game.damagePerMin < target.damagePerMin * 0.38) flags += 2.0;
-  else if (game.damagePerMin < target.damagePerMin * 0.6) flags += 1.1;
+  if (game.damagePerMin < target.damagePerMin * 0.42) flags += 1.8;
+  else if (game.damagePerMin < target.damagePerMin * 0.65) flags += 1.0;
 
   if (game.position === 'TOP' || game.position === 'JUNGLE' || game.position === 'MID' || game.position === 'ADC') {
-    if (game.csPerMin < target.csPerMin * 0.35) flags += 1.4;
-    else if (game.csPerMin < target.csPerMin * 0.55) flags += 0.7;
+    if (game.csPerMin < target.csPerMin * 0.38) flags += 1.2;
+    else if (game.csPerMin < target.csPerMin * 0.6) flags += 0.6;
   }
 
-  if (game.deaths >= 10) flags += 1.0;
-  else if (game.deaths >= 8) flags += 0.5;
+  if (game.deaths >= 9) flags += 1.0;
+  else if (game.deaths >= 7) flags += 0.5;
 
-  if (game.killParticipation < 0.3) flags += 1.0;
-  else if (game.killParticipation < 0.4) flags += 0.5;
+  if (game.killParticipation < 0.33) flags += 1.0;
+  else if (game.killParticipation < 0.45) flags += 0.5;
 
   if (appliesVision(game.position)) {
-    if (game.visionPerMin < target.visionPerMin * 0.35) flags += 0.8;
-    else if (game.visionPerMin < target.visionPerMin * 0.55) flags += 0.4;
+    if (game.visionPerMin < target.visionPerMin * 0.38) flags += 0.8;
+    else if (game.visionPerMin < target.visionPerMin * 0.6) flags += 0.4;
   }
 
   return flags;
@@ -425,8 +427,8 @@ function assessRisk(games: AnalyzedGame[], averages: RiskAverages): RiskAssessme
   let severeGames = 0;
   for (const game of games) {
     const deficit = gameDeficit(game);
-    if (deficit >= 3.6) severeGames += 1;
-    if (deficit >= 2.2) badGames += 1;
+    if (deficit >= 3.2) severeGames += 1;
+    if (deficit >= 2.0) badGames += 1;
   }
 
   const badRatio = badGames / games.length;
@@ -439,22 +441,28 @@ function assessRisk(games: AnalyzedGame[], averages: RiskAverages): RiskAssessme
   const weakCs = reference.target.csPerMin * 0.55;
   const weakVision = reference.target.visionPerMin * 0.55;
 
-  if (averages.avgDeaths >= 8) score += 5;
-  if (averages.winRate <= 0.3 && games.length >= 5) score += 4;
+  if (averages.avgScore < 55) {
+    score += Math.min(12, (55 - averages.avgScore) * 0.5);
+  }
+  if (averages.avgDeaths >= 7.5) score += 5;
+  if (averages.winRate <= 0.35 && games.length >= 5) score += 4;
   if (averages.avgDamagePerMin < weakDamage) score += 4;
-  if (averages.level !== undefined && averages.level < 40 && score >= 25) score += 8;
+  if (averages.level !== undefined && averages.level < 40 && score >= 20) score += 8;
 
   // 样本太少时不要直接判死刑
   if (games.length < 3) score = Math.min(score, 45);
   score = Math.round(clamp(score, 0, 100));
 
   const level: RiskAssessment['level'] =
-    score >= 65 ? 'severe' : score >= 45 ? 'high' : score >= 25 ? 'medium' : 'low';
+    score >= 60 ? 'severe' : score >= 40 ? 'high' : score >= 20 ? 'medium' : 'low';
 
   const reasons: string[] = [];
   const csApplies = latest.position !== 'SUPPORT' && latest.position !== 'ARAM' && latest.position !== 'ARENA';
   const visionApplies = appliesVision(latest.position);
 
+  if (averages.avgScore < 50) {
+    reasons.push(`近 ${games.length} 场场均评分 ${Math.round(averages.avgScore)}`);
+  }
   if (averages.avgDamagePerMin < weakDamage) {
     reasons.push(`分均伤害 ${Math.round(averages.avgDamagePerMin)}（参考 ≥${Math.round(weakDamage)}）`);
   }
@@ -474,7 +482,7 @@ function assessRisk(games: AnalyzedGame[], averages: RiskAverages): RiskAssessme
   if (averages.level !== undefined && averages.level < 40) {
     reasons.push(`账号等级 Lv.${averages.level}`);
   }
-  if (averages.winRate <= 0.3 && games.length >= 5) {
+  if (averages.winRate <= 0.35 && games.length >= 5) {
     reasons.push(`近 ${games.length} 场胜率 ${Math.round(averages.winRate * 100)}%`);
   }
 
@@ -581,6 +589,7 @@ function buildLabels(input: LabelInput, lane: Lane): string[] {
   }
   if (input.risk.level === 'severe') labels.push('坑');
   else if (input.risk.level === 'high') labels.push('偏坑');
+  else if (input.risk.level === 'medium') labels.push('有点坑');
   if (input.risk.newbie) labels.push('疑似新手');
   if (input.games <= 2) labels.push('样本较少');
   if (input.avgDamagePerMin < profile.target.damagePerMin * 0.45) labels.push('伤害过低');
