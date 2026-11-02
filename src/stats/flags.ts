@@ -45,6 +45,10 @@ export interface GameFlags {
   teammateAfk: boolean;
   /** 是否有对手表现出明显的挂机/逃跑特征（数据推断） */
   opponentAfk: boolean;
+  /** 自己是否被推断为挂机/逃跑 */
+  selfAfk?: boolean;
+  /** 自己这局“坑”的程度 */
+  selfBad?: BadLevel;
   /** 队友里最严重的“坑”程度 */
   teammateBad?: BadLevel;
   /** 对手里最严重的“坑”程度 */
@@ -133,10 +137,17 @@ export function gameFlags(
     participantId === undefined
       ? undefined
       : participants.find((item) => toNumber(item.participantId) === participantId);
-  if (!self) return { remake, teammateAfk: false, opponentAfk: false };
+  if (!self) {
+    return { remake, teammateAfk: false, opponentAfk: false, selfAfk: false };
+  }
 
   const teamId = toNumber(self.teamId);
   const afkIds = afkParticipantIds(game, championMap);
+  const selfAfk = afkIds.has(toNumber(self.participantId));
+  const selfBad =
+    !remake && !selfAfk
+      ? badLevelOfScore(analyzeParticipant(game, self, championMap)?.score)
+      : undefined;
   let teammateAfk = false;
   let opponentAfk = false;
   let teammateBad: BadLevel | undefined;
@@ -163,12 +174,14 @@ export function gameFlags(
   if (teammateAfk) teammateBad = undefined;
   if (opponentAfk) opponentBad = undefined;
 
-  return { remake, teammateAfk, opponentAfk, teammateBad, opponentBad };
+  return { remake, teammateAfk, opponentAfk, selfAfk, selfBad, teammateBad, opponentBad };
 }
 
 export function gameFlagTags(flags: GameFlags): string[] {
   const tags: string[] = [];
   if (flags.remake) tags.push('重开');
+  if (flags.selfAfk) tags.push('自己逃跑');
+  else if (flags.selfBad) tags.push(`自己${badLevelLabel(flags.selfBad)}`);
   if (flags.teammateAfk) tags.push('队友逃跑');
   if (flags.opponentAfk) tags.push('对手逃跑');
   if (flags.teammateBad) tags.push(`队友${badLevelLabel(flags.teammateBad)}`);

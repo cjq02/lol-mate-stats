@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import type { AnalyzedGame, Lane, RawGame } from '../types.js';
 import { analyzeGame, detectLane } from './analyze.js';
-import { badLevelLabel, badLevelOfScore, worseBadLevel } from './flags.js';
+import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
 import { PROFILES, gameTags, isAfkLike, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 
@@ -478,6 +478,28 @@ test('单场坑的程度分档', () => {
   assert.equal(worseBadLevel('mild', 'severe'), 'severe');
   assert.equal(worseBadLevel(undefined, 'bad'), 'bad');
   assert.equal(worseBadLevel('bad', 'mild'), 'bad');
+});
+
+test('自己坑/逃跑也会打标签', () => {
+  assert.deepEqual(
+    gameFlagTags({
+      remake: false,
+      teammateAfk: false,
+      opponentAfk: false,
+      selfBad: 'severe',
+    }),
+    ['自己巨坑'],
+  );
+  assert.deepEqual(
+    gameFlagTags({
+      remake: false,
+      teammateAfk: false,
+      opponentAfk: false,
+      selfAfk: true,
+      selfBad: 'severe',
+    }),
+    ['自己逃跑'],
+  );
 });
 
 console.log(`\n${passed} 项测试全部通过`);

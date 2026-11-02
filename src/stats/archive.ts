@@ -87,7 +87,7 @@ function parseTagList(raw: string | null): string[] {
 /** 逃跑/坑标签每次读取时重新推断，避免旧数据里的误判一直保留 */
 function stripComputedTags(tags: string[]): string[] {
   return tags.filter(
-    (tag) => !/^(?:队友|对手|敌方)(?:小坑|坑|巨坑|逃跑)$/.test(tag),
+    (tag) => !/^(?:自己|队友|对手|敌方)(?:小坑|坑|巨坑|逃跑)$/.test(tag),
   );
 }
 
@@ -149,6 +149,23 @@ function archivedGameTags(
     if (participant.team_id === teamId) teammateAfk = true;
     else opponentAfk = true;
   }
+
+  const selfIndex = gameParticipants.findIndex((participant) => participant.puuid === puuid);
+  const self = selfIndex >= 0 ? gameParticipants[selfIndex] : undefined;
+  const selfStats = selfIndex >= 0 ? relativeStats[selfIndex] : undefined;
+  const selfAfk = Boolean(
+    self && selfStats && isAfkLikeRelative(selfStats, statsByTeam.get(self.team_id) ?? []),
+  );
+  const selfBad =
+    !remake && !selfAfk && self
+      ? badLevelOfScore(self.score === null ? undefined : Number(self.score))
+      : undefined;
+  if (selfAfk) {
+    if (!tags.includes('自己逃跑')) tags.push('自己逃跑');
+  } else if (selfBad) {
+    tags.push(`自己${badLevelLabel(selfBad)}`);
+  }
+
   if (teammateAfk && !tags.includes('队友逃跑')) tags.push('队友逃跑');
   if (opponentAfk && !tags.includes('对手逃跑')) tags.push('对手逃跑');
 

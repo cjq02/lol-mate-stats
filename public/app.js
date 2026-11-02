@@ -1411,13 +1411,13 @@ function matchFlagsHtml(tags) {
           tag,
         )}</b>`;
       }
-      const badMatch = /^(队友|敌方)(小坑|坑|巨坑)$/.exec(tag);
+      const badMatch = /^(队友|敌方|自己)(小坑|坑|巨坑)$/.exec(tag);
       if (badMatch) {
-        const enemy = badMatch[1] === '敌方';
+        const side = badMatch[1];
         const level = badMatch[2] === '巨坑' ? 'severe' : badMatch[2] === '小坑' ? 'mild' : 'bad';
-        return `<b class="match-flag ${enemy ? 'enemy-bad' : 'teammate-bad'} ${level}">${escapeHtml(
-          tag,
-        )}</b>`;
+        const sideClass =
+          side === '敌方' ? 'enemy-bad' : side === '自己' ? 'self-bad' : 'teammate-bad';
+        return `<b class="match-flag ${sideClass} ${level}">${escapeHtml(tag)}</b>`;
       }
       return escapeHtml(tag);
     })
@@ -1452,6 +1452,16 @@ function renderMatchFlags(detail) {
   const parts = [];
   if (tags.includes('重开')) {
     parts.push('<span class="match-flag remake">重开</span>');
+  }
+  if (tags.includes('自己逃跑')) {
+    parts.push('<span class="match-flag self-afk">自己逃跑</span>');
+  }
+  const selfBadTag = tags.find((item) => /^自己(小坑|坑|巨坑)$/.test(item));
+  if (selfBadTag) {
+    const level = badLevelFromTag(selfBadTag);
+    parts.push(
+      `<span class="match-flag self-bad ${BAD_LEVEL_CLASS[level]}">${escapeHtml(selfBadTag)}</span>`,
+    );
   }
   const allies = afk.filter((player) => !player.isEnemy);
   const enemies = afk.filter((player) => player.isEnemy);
