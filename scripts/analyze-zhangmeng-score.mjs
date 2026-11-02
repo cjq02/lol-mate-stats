@@ -30,6 +30,30 @@ const MATCHES = [
   { match: '11/02 23:21', name: '小小小小郡主#45293', win: 0, k: 15, d: 7, a: 33, dmg: 0.23, taken: 0.14, heal: 0.20, teamKills: 61, score: 15.8 },
   { match: '11/02 23:21', name: '哀啊啊#32774', win: 0, k: 15, d: 12, a: 29, dmg: 0.22, taken: 0.32, heal: 0.23, teamKills: 61, score: 14.8 },
   { match: '11/02 23:21', name: '紫衿箫#69039', win: 0, k: 7, d: 7, a: 34, dmg: 0.17, taken: 0.13, heal: 0.14, teamKills: 61, score: 9.8 },
+  // 10/31 03:32，败方（69 杀）
+  { match: '10/31 03:32', name: '吾乃青帝#46599', win: 0, k: 8, d: 20, a: 39, dmg: 0.16, taken: 0.26, heal: 0.17, teamKills: 69, score: 10.0 },
+  { match: '10/31 03:32', name: '职业中单#67570', win: 0, k: 5, d: 19, a: 28, dmg: 0.17, taken: 0.22, heal: 0.24, teamKills: 69, score: 7.2 },
+  { match: '10/31 03:32', name: '司马晨沐1#60097', win: 0, k: 17, d: 15, a: 33, dmg: 0.28, taken: 0.18, heal: 0.07, teamKills: 69, score: 13.2 },
+  { match: '10/31 03:32', name: '玛雅神秘人#18015', win: 0, k: 23, d: 10, a: 17, dmg: 0.21, taken: 0.14, heal: 0.33, teamKills: 69, score: 10.0 },
+  { match: '10/31 03:32', name: '亚洲男神屿泽哥#49493', win: 0, k: 16, d: 17, a: 35, dmg: 0.18, taken: 0.20, heal: 0.20, teamKills: 69, score: 9.4 },
+  // 10/31 03:32，胜方（81 杀）
+  { match: '10/31 03:32', name: '有多少爱刻意重来#62939', win: 1, k: 38, d: 12, a: 18, dmg: 0.28, taken: 0.16, heal: 0.23, teamKills: 81, score: 15.1 },
+  { match: '10/31 03:32', name: 'PLYw厨娘#60621', win: 1, k: 6, d: 15, a: 41, dmg: 0.12, taken: 0.25, heal: 0.16, teamKills: 81, score: 7.5 },
+  { match: '10/31 03:32', name: '晚风吹我心#28973', win: 1, k: 8, d: 14, a: 52, dmg: 0.13, taken: 0.16, heal: 0.28, teamKills: 81, score: 7.2 },
+  { match: '10/31 03:32', name: 'ZDCSNDM#56472', win: 1, k: 16, d: 14, a: 33, dmg: 0.25, taken: 0.26, heal: 0.33, teamKills: 81, score: 12.6 },
+  { match: '10/31 03:32', name: '你眨眼萌死他呀#61461', win: 1, k: 13, d: 14, a: 45, dmg: 0.22, taken: 0.17, heal: 0.01, teamKills: 81, score: 12.2 },
+  // 10/31 16:34，胜方（76 杀）
+  { match: '10/31 16:34', name: '吾乃青帝#46599', win: 1, k: 18, d: 15, a: 43, dmg: 0.27, taken: 0.20, heal: 0.36, teamKills: 76, score: 12.4 },
+  { match: '10/31 16:34', name: '淡淡烟草味12#51944', win: 1, k: 5, d: 15, a: 44, dmg: 0.09, taken: 0.31, heal: 0.12, teamKills: 76, score: 8.8 },
+  { match: '10/31 16:34', name: 'rofsf#30421', win: 1, k: 8, d: 19, a: 32, dmg: 0.12, taken: 0.18, heal: 0.19, teamKills: 76, score: 3.0 },
+  { match: '10/31 16:34', name: '蛋蛋丶tmd#49712', win: 1, k: 14, d: 10, a: 41, dmg: 0.15, taken: 0.14, heal: 0.16, teamKills: 76, score: 9.8 },
+  { match: '10/31 16:34', name: '散华礼弥#95614', win: 1, k: 31, d: 13, a: 30, dmg: 0.37, taken: 0.16, heal: 0.17, teamKills: 76, score: 15.3 },
+  // 10/31 16:34，败方（72 杀）
+  { match: '10/31 16:34', name: '叨光柱哥#42670', win: 0, k: 18, d: 17, a: 24, dmg: 0.24, taken: 0.19, heal: 0.21, teamKills: 72, score: 10.9 },
+  { match: '10/31 16:34', name: '扎颗小磨#65236', win: 0, k: 5, d: 18, a: 28, dmg: 0.09, taken: 0.26, heal: 0.31, teamKills: 72, score: 4.5 },
+  { match: '10/31 16:34', name: '1911日创#85217', win: 0, k: 18, d: 14, a: 24, dmg: 0.20, taken: 0.21, heal: 0.28, teamKills: 72, score: 9.1 },
+  { match: '10/31 16:34', name: '半支烟的心事#35399', win: 0, k: 16, d: 13, a: 24, dmg: 0.29, taken: 0.15, heal: 0.08, teamKills: 72, score: 10.9 },
+  { match: '10/31 16:34', name: '㐅寂静欢喜#78444', win: 0, k: 15, d: 14, a: 33, dmg: 0.18, taken: 0.19, heal: 0.13, teamKills: 72, score: 7.8 },
 ];
 
 const rows = MATCHES.map((m) => ({

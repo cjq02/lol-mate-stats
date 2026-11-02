@@ -465,13 +465,13 @@ test('队列/模式分组', () => {
 });
 
 test('单场坑的程度分档', () => {
-  assert.equal(badLevelOfScore(60), undefined);
-  assert.equal(badLevelOfScore(47), 'mild');
-  assert.equal(badLevelOfScore(48), undefined);
-  assert.equal(badLevelOfScore(40), 'mild');
-  assert.equal(badLevelOfScore(39), 'bad');
-  assert.equal(badLevelOfScore(25), 'bad');
-  assert.equal(badLevelOfScore(24), 'severe');
+  assert.equal(badLevelOfScore(40), undefined);
+  assert.equal(badLevelOfScore(32), undefined);
+  assert.equal(badLevelOfScore(31), 'mild');
+  assert.equal(badLevelOfScore(25), 'mild');
+  assert.equal(badLevelOfScore(24), 'bad');
+  assert.equal(badLevelOfScore(18), 'bad');
+  assert.equal(badLevelOfScore(17), 'severe');
   assert.equal(badLevelLabel('mild'), '小坑');
   assert.equal(badLevelLabel('bad'), '坑');
   assert.equal(badLevelLabel('severe'), '巨坑');
@@ -515,7 +515,9 @@ test('局内百分位评分：强于队友的玩家分更高', () => {
   assert.ok(scores.every((score) => score >= 0 && score <= 100));
   assert.ok(scores[9]! > scores[0]!, `scores=${scores.join(',')}`);
   const avg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-  assert.ok(avg > 60 && avg < 75, `avg=${avg}`);
+  assert.ok(avg > 42 && avg < 52, `avg=${avg}`);
+  assert.ok(scores[9]! > 80, `top=${scores[9]}`);
+  assert.ok(scores[0]! < 10, `bottom=${scores[0]}`);
 });
 
 console.log(`\n${passed} 项测试全部通过`);

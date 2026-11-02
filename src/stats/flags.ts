@@ -5,11 +5,11 @@ import { analyzeParticipant, computeMatchScores } from './analyze.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 
 /** 低于此分数算“坑” */
-export const BAD_GAME_SCORE = 40;
+export const BAD_GAME_SCORE = 25;
 /** 略低于正常水平，算“小坑” */
-export const MILD_BAD_GAME_SCORE = 48;
+export const MILD_BAD_GAME_SCORE = 32;
 /** 多项数据严重不达标，算“巨坑” */
-export const SEVERE_BAD_GAME_SCORE = 25;
+export const SEVERE_BAD_GAME_SCORE = 18;
 
 const BAD_LEVEL_RANK: Record<BadLevel, number> = { mild: 1, bad: 2, severe: 3 };
 
