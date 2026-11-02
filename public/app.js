@@ -1353,17 +1353,38 @@ async function loadMoreArchive(button) {
   state.archiveLoading = true;
   button.disabled = true;
   button.textContent = '正在读取更早的战绩…';
-  let lcuError = '';
   try {
+    const knownIds = new Set(state.myGames.map((game) => String(game.gameId)));
+    const hasNew = (list) => list.some((game) => !knownIds.has(String(game.gameId)));
     let incoming = [];
+    let added = false;
 
-    // 先继续往前翻客户端战绩；客户端翻到底或不可用时再读本地历史存档
-    if (!state.lcuExhausted) {
+    // 本地存档读取快，而且通常存着更多更早的对局，优先翻存档
+    if (state.archiveLoaded < state.archiveTotal) {
+      const response = await fetch(
+        `/api/archive/matches?limit=100&offset=${state.archiveOffset}`,
+        { cache: 'no-store' },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error ?? `HTTP ${response.status}`);
+      }
+      const archived = Array.isArray(payload.games) ? payload.games : [];
+      state.archiveTotal = Number(payload.total) || state.archiveTotal;
+      state.archiveOffset += archived.length;
+      state.archiveLoaded += archived.length;
+      if (!archived.length) state.archiveLoaded = state.archiveTotal;
+      incoming = mergeMatchLists(incoming, archived);
+      added = hasNew(archived);
+    }
+
+    // 存档没有新增时，再继续往前翻客户端战绩
+    if (!added && !state.lcuExhausted) {
+      let lcuError = '';
       try {
-        // 存档里可能已经有这几页，跳过重复页直到翻出没见过的对局
-        const knownIds = new Set(state.myGames.map((game) => String(game.gameId)));
         let pages = 0;
-        while (!state.lcuExhausted && pages < 10) {
+        let previousKey = '';
+        while (!state.lcuExhausted && pages < 5) {
           pages += 1;
           const response = await fetch(
             `/api/me/matches?recent=${MY_MATCH_PAGE}&offset=${state.myLcuOffset}`,
@@ -1378,33 +1399,26 @@ async function loadMoreArchive(button) {
           state.myLcuOffset += page.length;
           if (page.length < MY_MATCH_PAGE) state.lcuExhausted = true;
           if (!page.length) break;
+          // 客户端没有按 offset 返回新的一页时，避免反复请求同一批对局
+          const key = page.map((game) => String(game.gameId)).join(',');
+          if (key === previousKey) {
+            state.lcuExhausted = true;
+            break;
+          }
+          previousKey = key;
           incoming = mergeMatchLists(incoming, page);
-          if (page.some((game) => !knownIds.has(String(game.gameId)))) break;
+          if (hasNew(page)) {
+            added = true;
+            break;
+          }
         }
       } catch (error) {
         lcuError = error instanceof Error ? error.message : String(error);
-        // 客户端读不到时不再重试，改走本地历史存档
         state.lcuExhausted = true;
       }
+      if (!incoming.length && lcuError) throw new Error(lcuError);
     }
 
-    if (!incoming.length && state.archiveLoaded < state.archiveTotal) {
-      const response = await fetch(
-        `/api/archive/matches?limit=100&offset=${state.archiveOffset}`,
-        { cache: 'no-store' },
-      );
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload?.ok === false) {
-        throw new Error(payload?.error ?? `HTTP ${response.status}`);
-      }
-      incoming = Array.isArray(payload.games) ? payload.games : [];
-      state.archiveTotal = Number(payload.total) || state.archiveTotal;
-      state.archiveOffset += incoming.length;
-      state.archiveLoaded += incoming.length;
-      if (!incoming.length) state.archiveLoaded = state.archiveTotal;
-    }
-
-    if (!incoming.length && lcuError) throw new Error(lcuError);
     state.myGames = mergeMatchLists(state.myGames, incoming);
     renderMyMatches();
   } catch (error) {

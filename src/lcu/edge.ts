@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import https from 'node:https';
 import { dirname, join, resolve } from 'node:path';
-import type { LcuConnection } from '../types.js';
+import type { LcuConnection, RawGame } from '../types.js';
 import { candidateLogDirs } from './discover.js';
 
 /** 单个客户端会话里的战绩请求统计 */
@@ -135,6 +135,107 @@ function sessionStartTime(name: string): Date | undefined {
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})/.exec(name);
   if (!match) return undefined;
   return new Date(`${match[1]}T${match[2]}:${match[3]}:${match[4]}`);
+}
+
+/** 从最近的客户端日志里找 Player Platform Edge 地址（分页查询战绩用） */
+export async function findEdgeUrl(
+  connection?: Pick<LcuConnection, 'source'>,
+): Promise<string | undefined> {
+  const logDir = await findClientLogDir(connection);
+  if (!logDir) return undefined;
+
+  let names: string[] = [];
+  try {
+    names = (await readdir(logDir, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && /_LeagueClient\.log$/i.test(entry.name))
+      .map((entry) => entry.name)
+      .sort((a, b) => b.localeCompare(a));
+  } catch {
+    return undefined;
+  }
+
+  for (const name of names.slice(0, 4)) {
+    try {
+      const text = await readFile(join(logDir, name), 'utf8');
+      const edge = /PlayerPlatformEdgeUrl via ClientConfig:\s*(\S+)/.exec(text)?.[1];
+      if (edge) return edge;
+    } catch {
+      /* 单个日志读不到时继续查看其它会话 */
+    }
+  }
+  return undefined;
+}
+
+/** 直接用客户端的 RSO token 查询 edge 的分页战绩（LCU 的 products 接口会忽略分页参数） */
+export function fetchEdgeMatchHistory(
+  edgeUrl: string,
+  token: string,
+  puuid: string,
+  startIndex: number,
+  count: number,
+  timeoutMs = 15_000,
+): Promise<RawGame[]> {
+  return new Promise((resolveGames, reject) => {
+    let url: URL;
+    try {
+      url = new URL(
+        `${edgeUrl.replace(/\/$/, '')}/match-history-query/v1/products/lol/player/${encodeURIComponent(puuid)}/SUMMARY`,
+      );
+    } catch {
+      reject(new Error(`战绩 edge 地址不正确：${edgeUrl}`));
+      return;
+    }
+    url.searchParams.set('startIndex', String(Math.max(0, Math.trunc(startIndex))));
+    url.searchParams.set('count', String(Math.max(1, Math.trunc(count))));
+    url.searchParams.set('tagsQueryType', 'AND');
+
+    const req = https.request(
+      {
+        host: url.hostname,
+        port: url.port || 443,
+        path: `${url.pathname}${url.search}`,
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+        rejectUnauthorized: false,
+        timeout: timeoutMs,
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          const status = response.statusCode ?? 0;
+          const text = Buffer.concat(chunks).toString('utf8');
+          if (status < 200 || status >= 300) {
+            reject(new Error(`战绩 edge HTTP ${status}: ${text.slice(0, 200)}`));
+            return;
+          }
+          try {
+            const payload = JSON.parse(text) as {
+              games?: Array<{ json?: RawGame }>;
+            };
+            const games = (payload?.games ?? [])
+              .map((item) => item?.json)
+              .filter((game): game is RawGame => Boolean(game && typeof game === 'object'));
+            resolveGames(games);
+          } catch (error) {
+            reject(
+              new Error(
+                `战绩 edge 返回无法解析：${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              ),
+            );
+          }
+        });
+      },
+    );
+    req.on('timeout', () => req.destroy(new Error(`战绩 edge 请求超时（${timeoutMs}ms）`)));
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 export interface EdgeProbeResult {

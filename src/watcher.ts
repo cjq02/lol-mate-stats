@@ -6,6 +6,9 @@ import type {
   MatchDetail,
   MatchSummary,
   PlayerReport,
+  RawGame,
+  RawParticipant,
+  RawStats,
   Snapshot,
   SummonerInfo,
 } from './types.js';
@@ -13,6 +16,7 @@ import type { AssetResult, DataSource } from './source.js';
 import { LcuApi } from './lcu/api.js';
 import type { ChampionSummary } from './lcu/api.js';
 import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
+import { fetchEdgeMatchHistory, findEdgeUrl } from './lcu/edge.js';
 import { openEventStream } from './lcu/events.js';
 import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
 import { analyzeParticipant } from './stats/analyze.js';
@@ -81,6 +85,7 @@ export class LiveSource implements DataSource {
   private api?: LcuApi;
   private readonly collectors = new Map<number, ReportCollector>();
   private connection?: LcuConnection;
+  private edgeUrl?: string;
   private eventStream?: { close(): void };
   private pollTimer?: NodeJS.Timeout;
   private eventTimer?: NodeJS.Timeout;
@@ -220,8 +225,9 @@ export class LiveSource implements DataSource {
     if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
 
     const summoner = await api.getCurrentSummoner();
-    if (!summoner.puuid) throw new Error('无法读取当前账号的 puuid');
-    saveSelfPuuid(summoner.puuid);
+    const puuid = summoner.puuid;
+    if (!puuid) throw new Error('无法读取当前账号的 puuid');
+    saveSelfPuuid(puuid);
 
     logTag(
       'match',
@@ -229,21 +235,36 @@ export class LiveSource implements DataSource {
         ? `读取我的战绩第 ${offset + 1}-${offset + recent} 场…`
         : `读取我的最近 ${recent} 场战绩…`,
     );
-    let rawGames;
-    try {
-      rawGames = await api.getMatchListByPuuid(summoner.puuid, recent, offset);
-    } catch (error) {
-      logTag(
-        'match',
-        `读取我的战绩失败：${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw error;
+    let rawGames: RawGame[] | undefined;
+    if (offset > 0) {
+      try {
+        rawGames = await this.getMyMatchPageFromEdge(api, puuid, offset, recent);
+      } catch (error) {
+        this.edgeUrl = undefined;
+        logTag(
+          'match',
+          `战绩 edge 翻页失败，回退客户端接口：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    if (!rawGames) {
+      try {
+        rawGames = await api.getMatchListByPuuid(puuid, recent, offset);
+      } catch (error) {
+        logTag(
+          'match',
+          `读取我的战绩失败：${error instanceof Error ? error.message : String(error)}`,
+        );
+        throw error;
+      }
     }
     const championMap = await api.getChampionMap().catch(() => new Map());
     const games = rawGames
       .map((game) => {
-        const participant = game.participants?.[0];
-        const stats = participant?.stats ?? {};
+        const participant = participantOf(game, puuid);
+        const stats = statsOf(participant);
         const championId = toNumber(participant?.championId);
         const rawDuration = toNumber(game.gameDuration);
         return {
@@ -271,6 +292,28 @@ export class LiveSource implements DataSource {
       `我的战绩读取完成：${scored.length} 场（含评分），用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
     );
     return { summoner, games: scored };
+  }
+
+  /** 从 Player Platform Edge 读取“我的战绩”的下一页（LCU 的 products 接口不认分页参数） */
+  private async getMyMatchPageFromEdge(
+    api: LcuApi,
+    puuid: string,
+    offset: number,
+    count: number,
+  ): Promise<RawGame[] | undefined> {
+    if (!this.edgeUrl) {
+      this.edgeUrl = await findEdgeUrl(this.connection);
+      if (this.edgeUrl) logTag('match', `战绩翻页使用 edge：${this.edgeUrl}`);
+    }
+    if (!this.edgeUrl) return undefined;
+
+    const authorization = await api.http.get<{ token?: string }>(
+      '/lol-rso-auth/v1/authorization/access-token',
+      8_000,
+    );
+    const token = authorization?.token;
+    if (!token) return undefined;
+    return fetchEdgeMatchHistory(this.edgeUrl, token, puuid, offset, count);
   }
 
   /** 某场对局里 10 名玩家的近期战绩 */
@@ -928,6 +971,7 @@ export class LiveSource implements DataSource {
     for (const collector of this.collectors.values()) void collector.flush();
     this.collectors.clear();
     this.connection = undefined;
+    this.edgeUrl = undefined;
     this.lastMembersKey = '';
     this.nextDiscoveryAt = 0;
   }
@@ -961,6 +1005,36 @@ export class LiveSource implements DataSource {
       }
     }
   }
+}
+
+/** 在一场完整对局里找到指定 puuid 的参与者（edge 返回的是原始对局，participants 顺序不固定） */
+function participantOf(game: RawGame, puuid: string): RawParticipant | undefined {
+  const participants = game.participants ?? [];
+  if (puuid) {
+    // edge 的 SUMMARY 直接把 puuid 放在参与者上
+    const direct = participants.find((item) => item.puuid === puuid);
+    if (direct) return direct;
+
+    const identity = (game.participantIdentities ?? []).find(
+      (item) => item.player?.puuid === puuid,
+    );
+    if (identity) {
+      const participantId = toNumber(identity.participantId);
+      const match = participants.find(
+        (item) => toNumber(item.participantId) === participantId,
+      );
+      if (match) return match;
+    }
+  }
+  return participants[0];
+}
+
+/** LCU 的完整对局把数据放在 stats 下，edge 的 SUMMARY 则直接平铺在参与者上 */
+function statsOf(participant: RawParticipant | undefined): RawStats {
+  if (!participant) return {};
+  const nested = participant.stats;
+  if (nested && Object.keys(nested).length) return nested;
+  return participant as RawStats;
 }
 
 export async function waitForClient(options: LiveSourceOptions = {}): Promise<LiveSource> {
