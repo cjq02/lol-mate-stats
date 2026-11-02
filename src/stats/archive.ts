@@ -2,7 +2,7 @@ import type { ChampionSummary } from '../lcu/api.js';
 import type { Lane, RawGame, RawIdentityPlayer, RawParticipant, RawStats } from '../types.js';
 import { toNumber } from '../util.js';
 import { analyzeParticipant, detectLane } from './analyze.js';
-import { gameFlagTags, gameFlags, isRemakeMeta } from './flags.js';
+import { BAD_GAME_SCORE, gameFlagTags, gameFlags, isRemakeMeta } from './flags.js';
 import { queueName } from './constants.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 import { getDb, readMeta, writeMeta } from './store.js';
@@ -71,9 +71,15 @@ function parseTagList(raw: string | null): string[] {
   return [];
 }
 
-/** 逃跑标签每次读取时重新推断，避免旧数据里的误判一直保留 */
-function stripAfkTags(tags: string[]): string[] {
-  return tags.filter((tag) => tag !== '队友逃跑' && tag !== '对手逃跑');
+/** 逃跑/坑标签每次读取时重新推断，避免旧数据里的误判一直保留 */
+function stripComputedTags(tags: string[]): string[] {
+  return tags.filter(
+    (tag) =>
+      tag !== '队友逃跑' &&
+      tag !== '对手逃跑' &&
+      tag !== '队友坑' &&
+      tag !== '敌方坑',
+  );
 }
 
 /**
@@ -151,9 +157,23 @@ export function archiveGames(games: RawGame[], championMap: Map<number, Champion
         const championId = toNumber(participant.championId);
         const teamId = toNumber(participant.teamId);
         const flags = gameFlags(game, participantId, championMap);
+        let teammateBad = false;
+        let enemyBad = false;
+        if (!flags.remake) {
+          for (const other of participants) {
+            if (other === participant) continue;
+            const otherAnalyzed = analyzeParticipant(game, other, championMap);
+            if (!otherAnalyzed || otherAnalyzed.score >= BAD_GAME_SCORE) continue;
+            if (toNumber(other.teamId) === teamId) teammateBad = true;
+            else enemyBad = true;
+          }
+        }
+        const computedTags = gameFlagTags(flags);
+        if (teammateBad && !flags.teammateAfk) computedTags.push('队友坑');
+        if (enemyBad && !flags.opponentAfk) computedTags.push('敌方坑');
         const tags = [
           ...new Set([
-            ...gameFlagTags(flags),
+            ...computedTags,
             ...(analyzed?.tags ?? (bot ? ['人机'] : [])),
           ]),
         ].slice(0, 6);
@@ -252,7 +272,7 @@ export function getPlayerMatchTags(
       duration_seconds: number;
     }>;
     for (const row of rows) {
-      const tags = stripAfkTags(parseTagList(row.tags));
+      const tags = stripComputedTags(parseTagList(row.tags));
       if (
         isRemakeMeta(Number(row.duration_seconds)) &&
         !tags.includes('重开')
@@ -337,13 +357,14 @@ export function getPlayerMatches(
         damage: number;
         vision: number;
         position: string | null;
+        score: number | null;
       }>
     >();
     if (gameIds.length) {
       const placeholders = gameIds.map(() => '?').join(',');
       const participants = db
         .prepare(
-          `SELECT game_id, puuid, team_id, kills, deaths, assists, cs, gold, damage, vision, position
+          `SELECT game_id, puuid, team_id, kills, deaths, assists, cs, gold, damage, vision, position, score
            FROM match_participants
            WHERE game_id IN (${placeholders})`,
         )
@@ -359,6 +380,7 @@ export function getPlayerMatches(
         damage: number;
         vision: number;
         position: string | null;
+        score: number | null;
       }>;
       for (const participant of participants) {
         const gameId = Number(participant.game_id);
@@ -371,11 +393,9 @@ export function getPlayerMatches(
     return rows.map((row) => {
       const gameId = Number(row.game_id);
       const durationMin = Number(row.duration_seconds) / 60;
-      const tags = stripAfkTags(parseTagList(row.tags));
-      if (
-        isRemakeMeta(Number(row.duration_seconds)) &&
-        !tags.includes('重开')
-      ) {
+      const tags = stripComputedTags(parseTagList(row.tags));
+      const remake = isRemakeMeta(Number(row.duration_seconds));
+      if (remake && !tags.includes('重开')) {
         tags.unshift('重开');
       }
       let teammateAfk = false;
@@ -411,6 +431,27 @@ export function getPlayerMatches(
       }
       if (teammateAfk && !tags.includes('队友逃跑')) tags.push('队友逃跑');
       if (opponentAfk && !tags.includes('对手逃跑')) tags.push('对手逃跑');
+      if (!remake && !teammateAfk) {
+        const teammateBad = gameParticipants.some(
+          (participant) =>
+            Boolean(participant.puuid) &&
+            participant.puuid !== puuid &&
+            participant.team_id === Number(row.team_id) &&
+            participant.score !== null &&
+            Number(participant.score) < BAD_GAME_SCORE,
+        );
+        if (teammateBad && !tags.includes('队友坑')) tags.push('队友坑');
+      }
+      if (!remake && !opponentAfk) {
+        const enemyBad = gameParticipants.some(
+          (participant) =>
+            Boolean(participant.puuid) &&
+            participant.team_id !== Number(row.team_id) &&
+            participant.score !== null &&
+            Number(participant.score) < BAD_GAME_SCORE,
+        );
+        if (enemyBad && !tags.includes('敌方坑')) tags.push('敌方坑');
+      }
       return {
         gameId,
         queueId: Number(row.queue_id),

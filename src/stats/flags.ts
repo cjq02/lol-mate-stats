@@ -4,6 +4,8 @@ import { toNumber } from '../util.js';
 import { analyzeParticipant } from './analyze.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 
+export const BAD_GAME_SCORE = 40;
+
 export interface GameFlags {
   /** 对局是否在 5 分钟内重开 */
   remake: boolean;

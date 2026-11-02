@@ -34,7 +34,7 @@ import {
   type ArchivedMatch,
 } from './stats/archive.js';
 import { modeFromQueue, queueName } from './stats/constants.js';
-import { afkParticipantIds, gameFlagTags, gameFlags } from './stats/flags.js';
+import { afkParticipantIds, BAD_GAME_SCORE, gameFlagTags, gameFlags } from './stats/flags.js';
 import { gradeOf } from './stats/rating.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
@@ -495,6 +495,20 @@ export class LiveSource implements DataSource {
         selfParticipant ? toNumber(selfParticipant.participantId) : undefined,
         championMap,
       );
+      const extraTags: string[] = [];
+      if (!flags.remake) {
+        const teammateBad = scoreboard.some(
+          (player) =>
+            !player.isEnemy &&
+            player.puuid !== summoner.puuid &&
+            (player.score ?? 100) < BAD_GAME_SCORE,
+        );
+        const enemyBad = scoreboard.some(
+          (player) => player.isEnemy && (player.score ?? 100) < BAD_GAME_SCORE,
+        );
+        if (teammateBad && !flags.teammateAfk) extraTags.push('队友坑');
+        if (enemyBad && !flags.opponentAfk) extraTags.push('敌方坑');
+      }
       logTag(
         'match',
         `[${gameId}] 全部完成：${players.length} 人，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
@@ -510,7 +524,7 @@ export class LiveSource implements DataSource {
         selfPuuid: summoner.puuid,
         players,
         scoreboard,
-        tags: gameFlagTags(flags),
+        tags: [...gameFlagTags(flags), ...extraTags],
         afkPlayers,
       };
     } catch (error) {

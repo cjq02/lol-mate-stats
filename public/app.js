@@ -1409,6 +1409,11 @@ function matchFlagsHtml(tags) {
           tag,
         )}</b>`;
       }
+      if (tag === '队友坑' || tag === '敌方坑') {
+        return `<b class="match-flag ${tag === '队友坑' ? 'teammate-bad' : 'enemy-bad'}">${escapeHtml(
+          tag,
+        )}</b>`;
+      }
       return escapeHtml(tag);
     })
     .join(' / ');

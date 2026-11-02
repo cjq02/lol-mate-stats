@@ -614,6 +614,14 @@ body::before {
   color: #ff6b81;
 }
 
+.match-flag.teammate-bad {
+  color: #f5c76a;
+}
+
+.match-flag.enemy-bad {
+  color: #ff8fa0;
+}
+
 .match-flags {
   display: flex;
   flex-wrap: wrap;
@@ -640,6 +648,14 @@ body::before {
 
 .match-flags .match-flag.enemy-afk {
   background: rgba(255, 107, 129, 0.12);
+}
+
+.match-flags .match-flag.teammate-bad {
+  background: rgba(245, 199, 106, 0.12);
+}
+
+.match-flags .match-flag.enemy-bad {
+  background: rgba(255, 143, 160, 0.12);
 }
 
 .modal-card.wide {
