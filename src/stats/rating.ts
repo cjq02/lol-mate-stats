@@ -7,6 +7,7 @@ import type {
   Streak,
   TopChampion,
 } from '../types.js';
+import type { ChampionRole } from './champion-roles.js';
 import { clamp, round } from '../util.js';
 import { LANE_NAMES } from './constants.js';
 
@@ -118,7 +119,32 @@ export interface MatchPercentileInput {
   damageShare: number;
   tankShare: number;
   healShare: number;
+  role?: ChampionRole;
 }
+
+interface RoleWeights {
+  kda: number;
+  kp: number;
+  damage: number;
+  taken: number;
+  heal: number;
+}
+
+/**
+ * 分英雄类型的权重：
+ * - carry（法师/ADC/刺客）：输出权重最高
+ * - support（软辅/治疗）：治疗和参团权重更高，输出权重降低
+ * - tank（坦克/硬辅）：承伤权重最高
+ * - fighter（战士）：输出和承伤均衡
+ * 总权重都保持在约 16.7，避免不同定位之间整体分数漂移。
+ */
+const ROLE_WEIGHTS: Record<ChampionRole, RoleWeights> = {
+  carry: { kda: 5.4, kp: 1.2, damage: 7.8, taken: 2.3, heal: 0.01 },
+  support: { kda: 5.0, kp: 3.5, damage: 3.0, taken: 3.5, heal: 1.7 },
+  tank: { kda: 4.0, kp: 2.5, damage: 3.5, taken: 6.0, heal: 0.7 },
+  fighter: { kda: 4.8, kp: 2.2, damage: 5.0, taken: 4.5, heal: 0.2 },
+  default: { kda: 5.3987, kp: 1.2844, damage: 6.7913, taken: 3.2165, heal: 0.0214 },
+};
 
 /** 0–1 百分位；并列时取平均名次 */
 function percentileRank(values: number[], value: number): number {
@@ -134,9 +160,12 @@ function percentileRank(values: number[], value: number): number {
  * 权重来自 40 个掌盟评分样本的拟合结果，先得到绝对分（掌盟 0–20 × 5），
  * 再用 0.7 次幂做单调校准：低分往上托、高分往 100 拉，但不会把 10 分直接变成 25 分。
  */
-export function percentileScores(inputs: MatchPercentileInput[]): number[] {
+function scoreWithWeights(
+  inputs: MatchPercentileInput[],
+  weightsFor: (input: MatchPercentileInput) => RoleWeights,
+): number[] {
   if (!inputs.length) return [];
-  const rank = (key: keyof MatchPercentileInput): number[] => {
+  const rank = (key: Exclude<keyof MatchPercentileInput, 'role'>): number[] => {
     const values = inputs.map((input) => input[key]);
     return inputs.map((input) => percentileRank(values, input[key]));
   };
@@ -147,18 +176,29 @@ export function percentileScores(inputs: MatchPercentileInput[]): number[] {
   const taken = rank('tankShare');
   const heal = rank('healShare');
 
-  return inputs.map((_, index) => {
+  return inputs.map((input, index) => {
+    const weights = weightsFor(input);
     const score20 =
       0.9764 +
-      5.3987 * (kda[index] ?? 0.5) +
-      1.2844 * (kp[index] ?? 0.5) +
-      6.7913 * (damage[index] ?? 0.5) +
-      3.2165 * (taken[index] ?? 0.5) +
-      0.0214 * (heal[index] ?? 0.5);
+      weights.kda * (kda[index] ?? 0.5) +
+      weights.kp * (kp[index] ?? 0.5) +
+      weights.damage * (damage[index] ?? 0.5) +
+      weights.taken * (taken[index] ?? 0.5) +
+      weights.heal * (heal[index] ?? 0.5);
     const absolute = clamp(score20 * 5, 0, 100);
     const curved = 100 * (absolute / 100) ** 0.7;
     return round(clamp(curved, 0, 100), 1);
   });
+}
+
+/** 按英雄类型选择权重 */
+export function percentileScores(inputs: MatchPercentileInput[]): number[] {
+  return scoreWithWeights(inputs, (input) => ROLE_WEIGHTS[input.role ?? 'default']);
+}
+
+/** 旧版全局权重：用于分阶段回滚/对比 */
+export function legacyPercentileScores(inputs: MatchPercentileInput[]): number[] {
+  return scoreWithWeights(inputs, () => ROLE_WEIGHTS.default);
 }
 
 export function gradeOf(rating: number): Grade {

@@ -520,4 +520,25 @@ test('局内百分位评分：强于队友的玩家分更高', () => {
   assert.ok(scores[0]! < 15, `bottom=${scores[0]}`);
 });
 
+test('分英雄类型权重：软辅高治疗吃香，法师高输出吃香', () => {
+  const base = Array.from({ length: 10 }, (_, index) => ({
+    kda: 2 + index * 0.4,
+    killParticipation: 0.5 + index * 0.03,
+    damageShare: 0.1 + index * 0.02,
+    tankShare: 0.1 + index * 0.01,
+    healShare: index === 0 ? 0.6 : 0.05,
+    role: index === 0 ? ('support' as const) : ('carry' as const),
+  }));
+  const supportScores = percentileScores(base);
+  const carryScores = percentileScores(
+    base.map((input, index) =>
+      index === 0 ? { ...input, role: 'carry' as const } : input,
+    ),
+  );
+  assert.ok(
+    supportScores[0]! > carryScores[0]!,
+    `support=${supportScores[0]} carry=${carryScores[0]}`,
+  );
+});
+
 console.log(`\n${passed} 项测试全部通过`);

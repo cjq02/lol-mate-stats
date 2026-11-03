@@ -8,6 +8,7 @@ import type {
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
 import { queueName } from './constants.js';
+import { championRole } from './champion-roles.js';
 import { gameTags, percentileScores } from './rating.js';
 
 export interface IdentityKey {
@@ -261,6 +262,7 @@ export function computeMatchScores(
       damageShare: base.damageShareRaw,
       tankShare: base.tankShareRaw,
       healShare: base.healShareRaw,
+      role: championRole(base.championId),
     })),
   );
   const result = new Map<number, number>();
