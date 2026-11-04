@@ -43,6 +43,7 @@ import {
   isRemakeGame,
 } from './stats/flags.js';
 import { gradeOf } from './stats/rating.js';
+import { linkLiveAnalysisToGameByTime } from './stats/store.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
 export interface LiveSourceOptions {
@@ -376,6 +377,14 @@ export class LiveSource implements DataSource {
     const queueId = toNumber(game.queueId);
     const gameMode = modeFromQueue(queueId, game.gameMode);
     const participants = game.participants?.length ?? 0;
+    const rawGameDuration = toNumber(game.gameDuration);
+    const durationSeconds =
+      rawGameDuration > 100_000 ? Math.round(rawGameDuration / 1000) : rawGameDuration;
+    const gameCreation = toNumber(game.gameCreation);
+    // 进行中的 AI 分析不知道 gameId，赛后按对局时间窗口补做关联
+    if (gameCreation > 0) {
+      await linkLiveAnalysisToGameByTime(gameId, gameCreation, durationSeconds);
+    }
     logTag(
       'match',
       `[${gameId}] ${queueName(queueId)}，${participants} 名玩家，开始并发读取战绩`,

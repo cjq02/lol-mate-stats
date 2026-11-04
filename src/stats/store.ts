@@ -218,8 +218,10 @@ async function ensureSchema(db: Pool): Promise<void> {
        model VARCHAR(191) NOT NULL,
        content LONGTEXT NOT NULL,
        created_at BIGINT NOT NULL,
+       game_id BIGINT NULL,
        PRIMARY KEY (session_key),
-       KEY idx_ai_live_analyses_created (created_at)
+       KEY idx_ai_live_analyses_created (created_at),
+       KEY idx_ai_live_analyses_game (game_id)
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   ];
 
@@ -240,6 +242,24 @@ async function ensureSchema(db: Pool): Promise<void> {
     }
   } catch {
     /* 补列失败时按 0 处理 */
+  }
+
+  // 旧版本数据库的实时 AI 分析没有 game_id，赛后需要用它关联到具体对局
+  try {
+    const [columns] = await db.query<RowDataPacket[]>(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'ai_live_analyses'
+          AND COLUMN_NAME = 'game_id'`,
+    );
+    if (!columns.length) {
+      await db.query('ALTER TABLE ai_live_analyses ADD COLUMN game_id BIGINT NULL');
+      await db.query(
+        'ALTER TABLE ai_live_analyses ADD KEY idx_ai_live_analyses_game (game_id)',
+      );
+    }
+  } catch {
+    /* 补列失败时不影响其它功能 */
   }
 }
 
@@ -373,6 +393,25 @@ export interface SavedLiveAiAnalysis {
   model: string;
   content: string;
   createdAt: number;
+  /** 关联到赛后对局后才有值 */
+  gameId?: number;
+}
+
+function mapLiveAiRow(
+  row: RowDataPacket | undefined,
+  fallbackSessionKey = '',
+): SavedLiveAiAnalysis | undefined {
+  if (!row?.content) return undefined;
+  return {
+    sessionKey: String(row.session_key ?? fallbackSessionKey),
+    model: String(row.model ?? ''),
+    content: String(row.content),
+    createdAt: Number(row.created_at ?? 0),
+    gameId:
+      row.game_id === null || row.game_id === undefined
+        ? undefined
+        : Number(row.game_id),
+  };
 }
 
 /** 读取当前对局实时 AI 分析 */
@@ -383,19 +422,88 @@ export async function getLiveAiAnalysis(
   if (!db || !sessionKey) return undefined;
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      'SELECT session_key, model, content, created_at FROM ai_live_analyses WHERE session_key = ?',
+      `SELECT session_key, model, content, created_at, game_id
+       FROM ai_live_analyses WHERE session_key = ?`,
       [sessionKey],
     );
-    const row = rows[0];
-    if (!row?.content) return undefined;
-    return {
-      sessionKey: String(row.session_key ?? sessionKey),
-      model: String(row.model ?? ''),
-      content: String(row.content),
-      createdAt: Number(row.created_at ?? 0),
-    };
+    return mapLiveAiRow(rows[0], sessionKey);
   } catch {
     return undefined;
+  }
+}
+
+/** 读取某场对局在比赛进行中生成的 AI 分析 */
+export async function getLiveAiAnalysisByGame(
+  gameId: number,
+): Promise<SavedLiveAiAnalysis | undefined> {
+  const db = await getDb();
+  if (!db || !gameId) return undefined;
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT session_key, model, content, created_at, game_id
+       FROM ai_live_analyses
+       WHERE game_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [gameId],
+    );
+    return mapLiveAiRow(rows[0]);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 把进行中生成的 AI 分析关联到具体对局。
+ * 实时接口拿不到 gameId，赛后用对局开始时间和时长找当时保存的记录。
+ */
+export async function linkLiveAnalysisToGameByTime(
+  gameId: number,
+  gameCreation: number,
+  durationSeconds: number,
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db || !gameId || !gameCreation) return false;
+  const end = gameCreation + Math.max(0, durationSeconds) * 1000 + 5 * 60_000;
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT session_key FROM ai_live_analyses
+       WHERE (game_id IS NULL OR game_id = ?)
+         AND created_at >= ? AND created_at <= ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [gameId, gameCreation, end],
+    );
+    const sessionKey = rows[0]?.session_key;
+    if (!sessionKey) return false;
+    await db.query('UPDATE ai_live_analyses SET game_id = ? WHERE session_key = ?', [
+      gameId,
+      sessionKey,
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 从已归档的对局里补做关联（打开赛后 AI 分析时兜底） */
+export async function linkLiveAnalysisToGameByArchive(gameId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db || !gameId) return false;
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      'SELECT game_creation, duration_seconds FROM matches WHERE game_id = ?',
+      [gameId],
+    );
+    const row = rows[0];
+    if (!row) return false;
+    return linkLiveAnalysisToGameByTime(
+      gameId,
+      Number(row.game_creation),
+      Number(row.duration_seconds),
+    );
+  } catch {
+    return false;
   }
 }
 

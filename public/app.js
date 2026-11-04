@@ -35,6 +35,7 @@ const els = {
   aiModalTitle: document.getElementById('ai-modal-title'),
   aiMeta: document.getElementById('ai-meta'),
   aiBody: document.getElementById('ai-body'),
+  aiTabs: document.getElementById('ai-tabs'),
   aiClose: document.getElementById('ai-close'),
   aiRerun: document.getElementById('ai-rerun'),
   myMatches: document.getElementById('my-matches'),
@@ -1074,6 +1075,7 @@ function resetAiView() {
   els.aiMeta.textContent = '';
   els.aiModalTitle.textContent = '✨ AI 复盘';
   els.aiRerun.classList.add('hidden');
+  els.aiTabs.classList.add('hidden');
   hideAiView();
   setAiButton(false);
 }
@@ -1109,7 +1111,7 @@ function startAiTimer(ai) {
       stopAiTimer();
       return;
     }
-    renderAiMeta(ai);
+    if (activeAiTab(ai) !== 'live') renderAiMeta(ai);
   }, 1000);
 }
 
@@ -1144,19 +1146,45 @@ function aiMarkdown(text) {
   return html;
 }
 
+function activeAiTab(ai) {
+  return ai.live?.content && ai.tab === 'live' ? 'live' : 'match';
+}
+
 function renderAiView() {
   const ai = state.ai;
   if (!ai) return;
   const body = els.aiBody;
   if (!body) return;
 
+  const hasLive = Boolean(ai.kind === 'match' && ai.live?.content?.trim());
+  const tab = activeAiTab(ai);
+  const liveTab = tab === 'live';
+
   els.aiModalTitle.textContent = ai.title ? `✨ AI 复盘 · ${ai.title}` : '✨ AI 复盘';
-  els.aiRerun.classList.toggle('hidden', ai.running);
+  els.aiTabs.classList.toggle('hidden', !hasLive);
+  if (hasLive) {
+    for (const button of els.aiTabs.querySelectorAll('[data-ai-tab]')) {
+      button.classList.toggle('active', button.dataset.aiTab === tab);
+    }
+  }
+
+  const canRerun = !ai.running;
+  els.aiRerun.classList.toggle('hidden', !canRerun);
   els.aiRerun.disabled = ai.running;
-  renderAiMeta(ai);
+  els.aiRerun.textContent =
+    liveTab && !String(ai.text ?? '').trim() ? '生成赛后复盘' : '重新分析';
+
+  if (liveTab) {
+    const savedAt = ai.live.savedAt ? ` · 对局中保存 ${formatGameTime(ai.live.savedAt)}` : '';
+    els.aiMeta.textContent = `${ai.live.model ?? ai.model ?? 'AI'}${savedAt}`;
+  } else {
+    renderAiMeta(ai);
+  }
 
   const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
-  if (ai.error) {
+  if (liveTab) {
+    body.innerHTML = `<div class="ai-content">${aiMarkdown(ai.live.content)}</div><div class="ai-foot">这段建议来自对局进行中的实时数据，赛后不会再更新</div>`;
+  } else if (ai.error) {
     const hint = state.aiStatus?.enabled === false ? `<p class="ai-hint">${escapeHtml(AI_CONFIG_HINT)}</p>` : '';
     body.innerHTML = `<div class="ai-error">${escapeHtml(ai.error)}</div>${hint}`;
   } else if (!ai.text) {
@@ -1181,14 +1209,27 @@ async function loadSavedAiAnalysis(gameId) {
     const response = await fetch(`/api/match/${gameId}/ai`, { cache: 'no-store' });
     if (!response.ok) return null;
     const payload = await response.json().catch(() => ({}));
-    const analysis = payload?.analysis;
-    if (!analysis || typeof analysis.content !== 'string' || !analysis.content.trim()) {
-      return null;
-    }
-    return analysis;
+    const valid = (analysis) =>
+      analysis && typeof analysis.content === 'string' && analysis.content.trim()
+        ? analysis
+        : null;
+    const analysis = valid(payload?.analysis);
+    const liveAnalysis = valid(payload?.liveAnalysis);
+    if (!analysis && !liveAnalysis) return null;
+    return { analysis, liveAnalysis };
   } catch {
     return null;
   }
+}
+
+function liveAiMeta(analysis) {
+  if (!analysis?.content) return null;
+  return {
+    content: analysis.content,
+    model: analysis.model || state.aiStatus?.model,
+    savedAt: Number(analysis.createdAt) || 0,
+    sessionKey: analysis.sessionKey,
+  };
 }
 
 async function streamAiAnalysis(url, meta) {
@@ -1295,25 +1336,53 @@ async function runAiAnalysis(options = {}) {
   if (state.aiLoading) return;
 
   const title = detail.queueName ?? '对局';
+  let live = existing?.kind === 'match' && existing.gameId === gameId ? existing.live : null;
+
   if (!options.force) {
     state.aiLoading = true;
     try {
       const saved = await loadSavedAiAnalysis(gameId);
       if (state.matchDetail?.gameId !== gameId) return;
-      if (saved) {
+      live = liveAiMeta(saved?.liveAnalysis) ?? live;
+      if (saved?.analysis) {
         state.ai = {
           kind: 'match',
           gameId,
           title,
           controller: null,
-          text: saved.content,
+          text: saved.analysis.content,
+          live,
+          tab: 'match',
           status: '',
           error: '',
-          model: saved.model || state.aiStatus?.model,
+          model: saved.analysis.model || state.aiStatus?.model,
           running: false,
           done: true,
           cached: true,
-          savedAt: saved.createdAt,
+          savedAt: saved.analysis.createdAt,
+          started: 0,
+        };
+        showAiView();
+        renderAiView();
+        return;
+      }
+      // 还没有赛后复盘，但有比赛中的建议：先展示建议，避免白等一次 AI 请求
+      if (live) {
+        state.ai = {
+          kind: 'match',
+          gameId,
+          title,
+          controller: null,
+          text: '',
+          live,
+          tab: 'live',
+          status: '',
+          error: '',
+          model: live.model || state.aiStatus?.model,
+          running: false,
+          done: false,
+          cached: true,
+          savedAt: live.savedAt,
           started: 0,
         };
         showAiView();
@@ -1323,9 +1392,23 @@ async function runAiAnalysis(options = {}) {
     } finally {
       state.aiLoading = false;
     }
+  } else {
+    // 重新生成赛后复盘时，也刷新一下已经保存的对局中建议（不会重新请求 AI）
+    try {
+      const saved = await loadSavedAiAnalysis(gameId);
+      live = liveAiMeta(saved?.liveAnalysis) ?? live;
+    } catch {
+      /* 忽略：没有对局中建议时继续正常分析 */
+    }
   }
 
-  await streamAiAnalysis(`/api/match/${gameId}/ai`, { kind: 'match', gameId, title });
+  await streamAiAnalysis(`/api/match/${gameId}/ai`, {
+    kind: 'match',
+    gameId,
+    title,
+    live,
+    tab: 'match',
+  });
 }
 
 async function loadSavedLiveAiAnalysis() {
@@ -2412,6 +2495,12 @@ els.matchesClose.addEventListener('click', closeMatches);
 els.matchesAi.addEventListener('click', () => void runAiAnalysis());
 els.liveAi.addEventListener('click', () => void runLiveAiAnalysis());
 els.aiClose.addEventListener('click', hideAiView);
+els.aiTabs.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-ai-tab]');
+  if (!button || !state.ai) return;
+  state.ai.tab = button.dataset.aiTab === 'live' ? 'live' : 'match';
+  renderAiView();
+});
 els.aiRerun.addEventListener('click', () => {
   if (state.ai?.kind === 'live') void runLiveAiAnalysis({ force: true });
   else void runAiAnalysis({ force: true });

@@ -19,6 +19,8 @@ import {
   DATA_DIR,
   getAiAnalysis,
   getLiveAiAnalysis,
+  getLiveAiAnalysisByGame,
+  linkLiveAnalysisToGameByArchive,
   saveAiAnalysis,
   saveLiveAiAnalysis,
 } from './stats/store.js';
@@ -504,7 +506,16 @@ async function handleRequest(
   const matchAiRoute = /^\/api\/match\/(\d+)\/ai$/.exec(url.pathname);
   if (method === 'GET' && matchAiRoute) {
     const gameId = Number(matchAiRoute[1]);
-    sendJson(res, 200, { ok: true, analysis: (await getAiAnalysis(gameId)) ?? null });
+    await linkLiveAnalysisToGameByArchive(gameId);
+    const [analysis, liveAnalysis] = await Promise.all([
+      getAiAnalysis(gameId),
+      getLiveAiAnalysisByGame(gameId),
+    ]);
+    sendJson(res, 200, {
+      ok: true,
+      analysis: analysis ?? null,
+      liveAnalysis: liveAnalysis ?? null,
+    });
     return;
   }
   if (method === 'POST' && matchAiRoute) {
