@@ -1945,12 +1945,13 @@ function winRecordText(record) {
   return `${record.wins}胜${record.losses}负 · 胜率 ${pct(record.winRate)}`;
 }
 
-/** 从长期存档读取当前模式/队列组的总胜率 */
-async function fetchModeRecord(puuid, context) {
+/** 从长期存档读取当前模式/英雄的总胜率 */
+async function fetchModeRecord(puuid, context, championId) {
   const params = new URLSearchParams();
   if (puuid) params.set('puuid', puuid);
   if (context?.queueId) params.set('queueId', String(context.queueId));
   if (context?.mode) params.set('mode', context.mode);
+  if (championId) params.set('championId', String(championId));
   try {
     const response = await fetch(`/api/archive/record?${params}`, { cache: 'no-store' });
     const payload = await response.json().catch(() => ({}));
@@ -2355,7 +2356,12 @@ async function openMyMatches(options = {}) {
 
   const recordContext =
     context ?? (games[0]?.queueId ? { queueId: games[0].queueId } : undefined);
-  const modeRecord = await fetchModeRecord(undefined, recordContext);
+  const championId = filter?.championId;
+  const modeRecord = await fetchModeRecord(
+    undefined,
+    championId ? undefined : recordContext,
+    championId,
+  );
   if (token !== state.matchRequestToken) return;
   state.modeRecord = modeRecord;
   stopLoadingTimer();

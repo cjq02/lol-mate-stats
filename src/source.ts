@@ -41,11 +41,12 @@ export interface DataSource {
     offset: number,
     puuid?: string,
   ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }>;
-  /** 长期存档：某个玩家（默认自己）在指定模式/队列组的总胜负 */
+  /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */
   getArchivedWinRecord?(
     puuid: string | undefined,
     queueId: number | undefined,
     mode: GameModeKey | undefined,
+    championId?: number,
   ): Promise<{
     puuid: string;
     group: string;

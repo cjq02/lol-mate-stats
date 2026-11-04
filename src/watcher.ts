@@ -637,11 +637,12 @@ export class LiveSource implements DataSource {
     return { puuid: id, total, games: await getPlayerMatches(id, limit, offset) };
   }
 
-  /** 长期存档：某个玩家（默认自己）在指定模式/队列组的总胜负 */
+  /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */
   async getArchivedWinRecord(
     puuid: string | undefined,
     queueId: number | undefined,
     mode: GameModeKey | undefined,
+    championId?: number,
   ): Promise<{
     puuid: string;
     group: string;
@@ -649,7 +650,7 @@ export class LiveSource implements DataSource {
     record: Awaited<ReturnType<typeof getPlayerWinRecord>>;
   }> {
     const id = await this.resolveArchivePuuid(puuid);
-    const hasContext = queueId !== undefined || mode !== undefined;
+    const hasContext = !championId && (queueId !== undefined || mode !== undefined);
     const group = hasContext ? currentQueueGroup(queueId, mode) : undefined;
     const groupName = !group
       ? '全部模式'
@@ -657,7 +658,7 @@ export class LiveSource implements DataSource {
         ? '召唤师峡谷'
         : queueGroupName(group, queueId);
     const record = id
-      ? await getPlayerWinRecord(id, group)
+      ? await getPlayerWinRecord(id, group, championId)
       : { games: 0, wins: 0, losses: 0, winRate: 0 };
     return { puuid: id, group: group ?? 'all', groupName, record };
   }

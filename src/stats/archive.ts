@@ -465,26 +465,32 @@ const QUEUE_GROUP_FILTERS: Record<string, string> = {
 };
 
 /**
- * 某个玩家在指定统计组的总胜负（来自长期存档）。
+ * 某个玩家在指定统计组 / 指定英雄的总胜负（来自长期存档）。
  * 重开对局不计入，和近期评分的统计口径一致。
  */
 export async function getPlayerWinRecord(
   puuid: string,
   group?: string,
+  championId?: number,
 ): Promise<PlayerWinRecord> {
   const db = await getDb();
   if (!db || !puuid) return { games: 0, wins: 0, losses: 0, winRate: 0 };
   const filter = group ? QUEUE_GROUP_FILTERS[group] : undefined;
   if (group && !filter) return { games: 0, wins: 0, losses: 0, winRate: 0 };
+  const conditions = ['p.puuid = ?', 'm.duration_seconds > 300'];
+  const params: Array<string | number> = [puuid];
+  if (filter) conditions.push(filter);
+  if (championId) {
+    conditions.push('p.champion_id = ?');
+    params.push(championId);
+  }
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT COUNT(*) AS games, COALESCE(SUM(p.win = 1), 0) AS wins
        FROM match_participants p
        JOIN matches m ON m.game_id = p.game_id
-       WHERE p.puuid = ?
-         AND m.duration_seconds > 300
-         ${filter ? `AND ${filter}` : ''}`,
-      [puuid],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
     const games = Number(rows[0]?.games ?? 0);
     const wins = Number(rows[0]?.wins ?? 0);

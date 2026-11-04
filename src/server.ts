@@ -441,8 +441,11 @@ async function handleRequest(
     const rawMode = url.searchParams.get('mode');
     const mode: GameModeKey | undefined =
       rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    const rawChampionId = Number(url.searchParams.get('championId') ?? 0);
+    const championId =
+      Number.isFinite(rawChampionId) && rawChampionId > 0 ? rawChampionId : undefined;
     try {
-      const data = await source.getArchivedWinRecord(puuid, queueId, mode);
+      const data = await source.getArchivedWinRecord(puuid, queueId, mode, championId);
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
       sendJson(res, 502, {
