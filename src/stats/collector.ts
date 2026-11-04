@@ -18,7 +18,7 @@ import { LcuError } from '../lcu/http.js';
 import { analyzeGame, computeMatchScores } from './analyze.js';
 import { archiveGames } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
-import { gameFlagTags, gameFlags } from './flags.js';
+import { gameFlagTags, gameFlags, isRemakeGame } from './flags.js';
 import { summarize } from './rating.js';
 import { getDb, withTransaction } from './store.js';
 
@@ -1086,13 +1086,10 @@ export class ReportCollector {
     const target = this.options.recent;
     const group = context ? currentQueueGroup(context.queueId, context.mode) : undefined;
 
-    // 只拉摘要的列表接口很轻，详情才是大头；先取一个窗口，同模式不够再扩窗
+    // 只拉摘要的列表接口很轻，详情才是大头。
+    // 重开不算一场正常对局，所以要多取一些候选，保证筛掉重开后仍能凑满 target 场。
     const MAX_CANDIDATES = 100;
-    let windowSize = Math.min(
-      MAX_CANDIDATES,
-      context ? Math.max(target * 2, target) : target,
-    );
-    let games: RawGame[] = [];
+    let windowSize = Math.min(MAX_CANDIDATES, Math.max(target * 2, target + 10));
 
     // 国服只有 v1 products 一个可用入口，v3/account 路由会直接 404
     const fetchGames = async (count: number): Promise<RawGame[]> => {
@@ -1105,58 +1102,68 @@ export class ReportCollector {
       }
     };
 
-    games = await fetchGames(windowSize);
-    if (!games.length) {
-      throw new Error('没有读取到对局记录（可能隐藏了战绩，或为新号）');
-    }
-    this.historyBackoffMs = 0;
-    this.historyRetryAt = 0;
-
     // 先按队列筛掉其它模式，避免为了 10 场大乱斗去请求几十场对局详情
     const sameMode = (list: RawGame[]): RawGame[] =>
       group
         ? list.filter((game) => gameQueueGroup(toNumber(game.queueId), 'UNKNOWN') === group)
         : list;
+    // 列表概要里的时长足够判断绝大多数重开；详情阶段还会再确认一次
+    const playable = (list: RawGame[]): RawGame[] =>
+      sameMode(list).filter((game) => !isRemakeGame(game));
 
-    let filtered = sameMode(games);
-    // “最近 N 场同模式”而不是“最近 N 场里恰好有几场同模式”：
-    // 不足时继续往前翻，只增加摘要请求，详情请求仍然最多 target 次
-    while (
-      group &&
-      filtered.length < target &&
-      games.length >= windowSize &&
-      windowSize < MAX_CANDIDATES
-    ) {
-      const next = Math.min(MAX_CANDIDATES, windowSize * 3);
-      let wider: RawGame[];
+    let fetched: RawGame[] = [];
+    let latestGameId = 0;
+
+    for (;;) {
+      let list: RawGame[];
       try {
-        wider = await fetchGames(next);
-      } catch {
-        // 扩窗失败时保留已经取到的同模式对局
-        break;
+        list = await fetchGames(windowSize);
+      } catch (error) {
+        if (!fetched.length) throw error;
+        // 扩窗失败时沿用上一轮已经取到的候选
+        list = fetched;
+        windowSize = MAX_CANDIDATES;
       }
-      if (wider.length <= games.length) break; // 没有更多历史
-      games = wider;
-      windowSize = next;
-      filtered = sameMode(games);
+      fetched = list;
+      if (!fetched.length) {
+        throw new Error('没有读取到对局记录（可能隐藏了战绩，或为新号）');
+      }
+      this.historyBackoffMs = 0;
+      this.historyRetryAt = 0;
+      // 记录“最新一场”（任意模式），用于判断报告缓存是否还有效
+      latestGameId = toNumber(fetched[0]?.gameId) || 0;
+
+      // 列表已经取完或没有更多历史时，就不需要再扩窗
+      const exhausted = fetched.length < windowSize || windowSize >= MAX_CANDIDATES;
+      const candidates = playable(fetched);
+      if (candidates.length < target && !exhausted) {
+        windowSize = Math.min(MAX_CANDIDATES, windowSize * 3);
+        continue;
+      }
+
+      const picked = candidates.slice(0, target);
+      if (!picked.length) return { games: [], latestGameId };
+
+      // 列表接口只给概要时（没有 10 人详情），再按 gameId 拉一次详情
+      const detailed = await mapLimit(picked, 4, async (game) => {
+        if (hasGameDetail(game)) return game;
+        const gameId = toNumber(game.gameId);
+        if (!gameId) return null;
+        return this.getGameDetail(gameId);
+      });
+
+      const loaded = detailed
+        .filter((game): game is RawGame => game !== null)
+        .filter((game) => !isRemakeGame(game))
+        .slice(0, target);
+      if (loaded.length >= target || exhausted) {
+        if (loaded.length) await archiveGames(loaded, await this.getChampionMap());
+        return { games: loaded, latestGameId };
+      }
+
+      // 详情确认后又发现重开，继续扩大窗口补齐
+      windowSize = Math.min(MAX_CANDIDATES, windowSize * 3);
     }
-
-    // 记录“最新一场”（任意模式），用于判断报告缓存是否还有效
-    const latestGameId = toNumber(games[0]?.gameId) || 0;
-    games = filtered.slice(0, target);
-    if (!games.length) return { games: [], latestGameId };
-
-    // 列表接口只给概要时（没有 10 人详情），再按 gameId 拉一次详情
-    const detailed = await mapLimit(games, 4, async (game) => {
-      if (hasGameDetail(game)) return game;
-      const gameId = toNumber(game.gameId);
-      if (!gameId) return null;
-      return this.getGameDetail(gameId);
-    });
-
-    const loaded = detailed.filter((game): game is RawGame => game !== null);
-    if (loaded.length) await archiveGames(loaded, await this.getChampionMap());
-    return { games: loaded, latestGameId };
   }
 
   /** 战绩服务异常时指数退避：60s → 120s → 240s，封顶 5 分钟 */
