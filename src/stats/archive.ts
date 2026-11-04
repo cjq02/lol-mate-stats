@@ -445,6 +445,61 @@ export async function countPlayerMatches(puuid: string): Promise<number> {
   }
 }
 
+export interface PlayerWinRecord {
+  games: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+}
+
+/** 统计组 → 存档里的队列/位置过滤条件（与 currentQueueGroup 保持一致） */
+const QUEUE_GROUP_FILTERS: Record<string, string> = {
+  aram: "(m.queue_id IN (450, 720) OR p.`position` = 'ARAM')",
+  arena: "(m.queue_id IN (1700, 1710) OR p.`position` = 'ARENA')",
+  solo: 'm.queue_id = 420',
+  flex: 'm.queue_id = 440',
+  normal: 'm.queue_id IN (400, 430)',
+  sr:
+    "(m.queue_id NOT IN (450, 720, 1700, 1710, 420, 440, 400, 430) " +
+    "AND COALESCE(p.`position`, '') NOT IN ('ARAM', 'ARENA'))",
+};
+
+/**
+ * 某个玩家在指定统计组的总胜负（来自长期存档）。
+ * 重开对局不计入，和近期评分的统计口径一致。
+ */
+export async function getPlayerWinRecord(
+  puuid: string,
+  group?: string,
+): Promise<PlayerWinRecord> {
+  const db = await getDb();
+  if (!db || !puuid) return { games: 0, wins: 0, losses: 0, winRate: 0 };
+  const filter = group ? QUEUE_GROUP_FILTERS[group] : undefined;
+  if (group && !filter) return { games: 0, wins: 0, losses: 0, winRate: 0 };
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS games, COALESCE(SUM(p.win = 1), 0) AS wins
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE p.puuid = ?
+         AND m.duration_seconds > 300
+         ${filter ? `AND ${filter}` : ''}`,
+      [puuid],
+    );
+    const games = Number(rows[0]?.games ?? 0);
+    const wins = Number(rows[0]?.wins ?? 0);
+    const losses = Math.max(0, games - wins);
+    return {
+      games,
+      wins,
+      losses,
+      winRate: games > 0 ? wins / games : 0,
+    };
+  } catch {
+    return { games: 0, wins: 0, losses: 0, winRate: 0 };
+  }
+}
+
 export async function getPlayerMatches(
   puuid: string,
   limit: number,

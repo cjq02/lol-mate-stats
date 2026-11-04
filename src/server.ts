@@ -429,6 +429,30 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/archive/record') {
+    if (!source.getArchivedWinRecord) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持历史胜率' });
+      return;
+    }
+    const puuid = url.searchParams.get('puuid')?.trim() || undefined;
+    const rawQueueId = Number(url.searchParams.get('queueId') ?? 0);
+    const queueId =
+      Number.isFinite(rawQueueId) && rawQueueId > 0 ? rawQueueId : undefined;
+    const rawMode = url.searchParams.get('mode');
+    const mode: GameModeKey | undefined =
+      rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    try {
+      const data = await source.getArchivedWinRecord(puuid, queueId, mode);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (error) {
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   const matchStreamRoute = /^\/api\/match\/(\d+)\/stream$/.exec(url.pathname);
   if (method === 'GET' && matchStreamRoute) {
     if (!source.getMatchDetail) {

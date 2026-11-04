@@ -3,6 +3,7 @@ import type {
   ChampSelectMember,
   ChampSelectSession,
   GameContext,
+  GameModeKey,
   LcuConnection,
   LiveEvent,
   MatchDetail,
@@ -30,11 +31,12 @@ import {
   getPlayerMatchTags,
   getPlayerMatches,
   getPlayerScores,
+  getPlayerWinRecord,
   getSavedSelfPuuid,
   saveSelfPuuid,
   type ArchivedMatch,
 } from './stats/archive.js';
-import { modeFromQueue, queueName } from './stats/constants.js';
+import { currentQueueGroup, modeFromQueue, queueGroupName, queueName } from './stats/constants.js';
 import {
   afkParticipantIds,
   badLevelLabel,
@@ -629,6 +631,38 @@ export class LiveSource implements DataSource {
     offset: number,
     puuid?: string,
   ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }> {
+    const id = await this.resolveArchivePuuid(puuid);
+    if (!id) return { puuid: '', total: 0, games: [] };
+    const total = await countPlayerMatches(id);
+    return { puuid: id, total, games: await getPlayerMatches(id, limit, offset) };
+  }
+
+  /** 长期存档：某个玩家（默认自己）在指定模式/队列组的总胜负 */
+  async getArchivedWinRecord(
+    puuid: string | undefined,
+    queueId: number | undefined,
+    mode: GameModeKey | undefined,
+  ): Promise<{
+    puuid: string;
+    group: string;
+    groupName: string;
+    record: Awaited<ReturnType<typeof getPlayerWinRecord>>;
+  }> {
+    const id = await this.resolveArchivePuuid(puuid);
+    const hasContext = queueId !== undefined || mode !== undefined;
+    const group = hasContext ? currentQueueGroup(queueId, mode) : undefined;
+    const groupName = !group
+      ? '全部模式'
+      : group === 'sr'
+        ? '召唤师峡谷'
+        : queueGroupName(group, queueId);
+    const record = id
+      ? await getPlayerWinRecord(id, group)
+      : { games: 0, wins: 0, losses: 0, winRate: 0 };
+    return { puuid: id, group: group ?? 'all', groupName, record };
+  }
+
+  private async resolveArchivePuuid(puuid?: string): Promise<string> {
     let id = puuid?.trim() || (await getSavedSelfPuuid()) || '';
     if (!id) {
       const api = await this.ensureApi();
@@ -636,9 +670,7 @@ export class LiveSource implements DataSource {
       id = summoner?.puuid ?? '';
       if (id) await saveSelfPuuid(id);
     }
-    if (!id) return { puuid: '', total: 0, games: [] };
-    const total = await countPlayerMatches(id);
-    return { puuid: id, total, games: await getPlayerMatches(id, limit, offset) };
+    return id;
   }
 
   async stop(): Promise<void> {

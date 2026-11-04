@@ -1,5 +1,13 @@
-import type { GameContext, MatchDetail, MatchSummary, PlayerReport, Snapshot, SummonerInfo } from './types.js';
-import type { ArchivedMatch } from './stats/archive.js';
+import type {
+  GameContext,
+  GameModeKey,
+  MatchDetail,
+  MatchSummary,
+  PlayerReport,
+  Snapshot,
+  SummonerInfo,
+} from './types.js';
+import type { ArchivedMatch, PlayerWinRecord } from './stats/archive.js';
 
 export interface AssetResult {
   body: Buffer;
@@ -33,6 +41,17 @@ export interface DataSource {
     offset: number,
     puuid?: string,
   ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }>;
+  /** 长期存档：某个玩家（默认自己）在指定模式/队列组的总胜负 */
+  getArchivedWinRecord?(
+    puuid: string | undefined,
+    queueId: number | undefined,
+    mode: GameModeKey | undefined,
+  ): Promise<{
+    puuid: string;
+    group: string;
+    groupName: string;
+    record: PlayerWinRecord;
+  }>;
   /** 某场对局里 10 名玩家的近期战绩卡片 */
   getMatchDetail?(
     gameId: number,

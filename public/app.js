@@ -172,6 +172,8 @@ const state = {
   loadingProgress: null,
   matchDetail: null,
   matchTab: 'scoreboard',
+  /** “我的战绩”当前模式的总胜负（来自历史存档） */
+  modeRecord: null,
   /** 非空时“我的战绩”只显示该英雄的对局 */
   championFilter: null,
   myGames: [],
@@ -1924,8 +1926,8 @@ async function refreshMatchesView() {
   }
 }
 
-/** 胜负统计：重开不计入胜负和胜率 */
-function matchRecord(games) {
+/** 本地列表的胜负统计：重开不计入胜负和胜率 */
+function winRecord(games) {
   const played = (games ?? []).filter((game) => !(game.tags ?? []).includes('重开'));
   const wins = played.filter((game) => game.win).length;
   const losses = played.length - wins;
@@ -1937,18 +1939,53 @@ function matchRecord(games) {
   };
 }
 
-/** 标题里的“X胜Y负 · 胜率Z%”，没有有效对局时返回空串 */
-function matchRecordText(record) {
-  if (!record.games) return '';
+/** “X胜Y负 · 胜率Z%”，没有有效对局时返回空串 */
+function winRecordText(record) {
+  if (!record?.games) return '';
   return `${record.wins}胜${record.losses}负 · 胜率 ${pct(record.winRate)}`;
 }
 
-function playerMatchesTitle(player) {
+/** 从长期存档读取当前模式/队列组的总胜率 */
+async function fetchModeRecord(puuid, context) {
+  const params = new URLSearchParams();
+  if (puuid) params.set('puuid', puuid);
+  if (context?.queueId) params.set('queueId', String(context.queueId));
+  if (context?.mode) params.set('mode', context.mode);
+  try {
+    const response = await fetch(`/api/archive/record?${params}`, { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false || !payload.record) return null;
+    return { groupName: payload.groupName ?? '', ...payload.record };
+  } catch {
+    return null;
+  }
+}
+
+/** 模式总胜率文案：极地大乱斗总胜率 51%（2500胜2400负） */
+function modeRecordText(record) {
+  if (!record?.games) return '';
+  const label =
+    !record.groupName || record.groupName === '全部模式'
+      ? '总胜率'
+      : `${record.groupName}总胜率`;
+  return `${label} ${pct(record.winRate)}（${record.wins}胜${record.losses}负）`;
+}
+
+function playerMatchesTitle(player, modeRecord) {
   const name = `${player.displayName ?? '玩家'}${player.tagLine ? `#${player.tagLine}` : ''}`;
-  const record = matchRecord(player.games);
-  const count = record.games || (player.games ?? []).length;
-  const stats = matchRecordText(record);
+  const local = winRecord(player.games);
+  const count = local.games || (player.games ?? []).length;
+  const stats = modeRecordText(modeRecord) || winRecordText(local);
   return `${name} · 最近 ${count} 场${stats ? ` · ${stats}` : ''}`;
+}
+
+/** 当前战绩列表对应的模式：优先取正在查看的对局，其次取当前游戏 */
+function matchesContext() {
+  const detail = state.matchDetail;
+  if (detail && (detail.queueId || detail.gameMode)) {
+    return { queueId: detail.queueId, mode: detail.gameMode };
+  }
+  return snapshotContext();
 }
 
 async function refreshPlayerMatches(player, context) {
@@ -1983,7 +2020,15 @@ async function refreshPlayerMatches(player, context) {
     }
     renderSearchPlayers(state.searchPlayers);
   }
-  renderPlayerMatches(player.games ?? [], playerMatchesTitle(player), player, context);
+  const modeContext = context ?? (state.matchDetail ? matchesContext() : undefined);
+  const modeRecord = await fetchModeRecord(player.puuid, modeContext);
+  if (token !== state.matchRequestToken) return;
+  renderPlayerMatches(
+    player.games ?? [],
+    playerMatchesTitle(player, modeRecord),
+    player,
+    context,
+  );
 }
 
 function mergeRefreshedPlayer(target, updated) {
@@ -2009,6 +2054,8 @@ function renderPlayerMatches(games, title, player, context) {
 
 function openMatches(player, context) {
   state.matchRequestToken += 1;
+  const token = state.matchRequestToken;
+  state.modeRecord = null;
   const games = player.games ?? [];
   const title = playerMatchesTitle(player);
 
@@ -2026,6 +2073,16 @@ function openMatches(player, context) {
     state.currentView = null;
   }
   renderPlayerMatches(games, title, player, context);
+
+  // 标题里的模式总胜率来自长期存档，异步补上，不阻塞列表显示
+  const modeContext = context ?? (state.matchDetail ? matchesContext() : undefined);
+  void fetchModeRecord(player.puuid, modeContext).then((record) => {
+    if (token !== state.matchRequestToken || !record) return;
+    const nextTitle = playerMatchesTitle(player, record);
+    els.matchesTitle.textContent = nextTitle;
+    state.currentView = () =>
+      renderPlayerMatches(games, nextTitle, player, context);
+  });
 }
 
 function goMatchesBack() {
@@ -2065,17 +2122,21 @@ function filteredMyGames() {
 function renderMyMatches() {
   const games = filteredMyGames();
   const filter = state.championFilter;
-  const record = matchRecord(games);
-  const statsText = matchRecordText(record);
-  const stats = statsText ? ` · ${statsText}` : '';
-  const count = record.games || games.length;
+  const modeStats = modeRecordText(state.modeRecord);
+  const local = winRecord(games);
+  const stats = modeStats
+    ? ` · ${modeStats}`
+    : local.games
+      ? ` · ${winRecordText(local)}`
+      : '';
+  const count = modeStats ? '' : ` · ${local.games || games.length} 场`;
   // 重新渲染会重置滚动位置，先记住，避免“加载更早”后跳回顶部
   const scrollTop = els.matchesList.scrollTop;
   renderMatchesView(
     games,
     filter
-      ? `${filter.championName || '该英雄'} · 我的战绩 · ${count} 场${stats}`
-      : `我的战绩 · ${count} 场${stats}`,
+      ? `${filter.championName || '该英雄'} · 我的战绩${count}${stats}`
+      : `我的战绩${count}${stats}`,
     true,
   );
   els.matchesList.scrollTop = scrollTop;
@@ -2227,6 +2288,8 @@ async function openMyMatches(options = {}) {
   }
   state.currentView = null;
   state.matchRequestToken += 1;
+  const token = state.matchRequestToken;
+  const context = matchesContext();
   state.matchDetail = null;
   state.myGames = [];
   state.myLcuOffset = 0;
@@ -2234,6 +2297,7 @@ async function openMyMatches(options = {}) {
   state.archiveOffset = 0;
   state.archiveLoaded = 0;
   state.archiveTotal = 0;
+  state.modeRecord = null;
   state.matchTab = 'scoreboard';
   const filter = state.championFilter;
   els.matchesModal.classList.remove('hidden');
@@ -2289,6 +2353,11 @@ async function openMyMatches(options = {}) {
     }
   }
 
+  const recordContext =
+    context ?? (games[0]?.queueId ? { queueId: games[0].queueId } : undefined);
+  const modeRecord = await fetchModeRecord(undefined, recordContext);
+  if (token !== state.matchRequestToken) return;
+  state.modeRecord = modeRecord;
   stopLoadingTimer();
   state.myGames = games;
   if (!games.length && !filter) {
@@ -2466,6 +2535,7 @@ function closeMatches() {
   state.backScrollStack = [];
   state.currentView = null;
   state.championFilter = null;
+  state.modeRecord = null;
   state.myGames = [];
   state.myLcuOffset = 0;
   state.lcuExhausted = false;
