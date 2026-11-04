@@ -137,6 +137,21 @@ test('新手菜鸟：伤害只有几 K、补刀低、死亡多 → 判为坑', (
   assert.ok(summary.rating < 50, `rating=${summary.rating}`);
 });
 
+test('重开不计入胜率和场次', () => {
+  const games = Array.from({ length: 4 }, (_, index) =>
+    makeGame(index, 'MID', { win: index !== 0 && index !== 3 }),
+  );
+  games[0]!.tags = ['重开'];
+  const summary = summarize(games);
+  assert.equal(summary.games, 3);
+  assert.equal(summary.wins, 2);
+  assert.equal(summary.losses, 1);
+  assert.ok(Math.abs(summary.winRate - 2 / 3) < 1e-9, `winRate=${summary.winRate}`);
+  assert.equal(summary.streak?.type, 'win');
+  assert.equal(summary.streak?.count, 2);
+  assert.equal(summary.topChampions[0]?.games, 3);
+});
+
 test('样本不足时坑指数会被限制', () => {
   const games = Array.from({ length: 2 }, (_, index) =>
     makeGame(index, 'MID', {

@@ -329,7 +329,9 @@ export function isAfkLikeRelative(
 }
 
 export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): RecentSummary {
-  const sorted = [...games].sort((a, b) => b.gameCreation - a.gameCreation);
+  // 重开不是一场正常对局：不计胜负/胜率，也不参与评分、英雄池等近期统计
+  const played = games.filter((game) => !game.tags?.includes('重开'));
+  const sorted = [...played].sort((a, b) => b.gameCreation - a.gameCreation);
   const wins = sorted.filter((game) => game.win).length;
   const losses = sorted.length - wins;
 
