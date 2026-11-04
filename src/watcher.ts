@@ -214,7 +214,9 @@ export class LiveSource implements DataSource {
       ],
     };
     const collector = this.ensureCollector(api, recent);
-    const reports = await collector.collect(session, undefined, options.context);
+    const reports = await collector.collect(session, undefined, options.context, {
+      force: true,
+    });
     const report = reports[0];
     if (!report) {
       throw new Error(

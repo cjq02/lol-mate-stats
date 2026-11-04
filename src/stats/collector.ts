@@ -497,15 +497,16 @@ export class ReportCollector {
     session: ChampSelectSession,
     onProgress?: (players: PlayerReport[]) => void,
     context?: GameContext,
+    options: { force?: boolean } = {},
   ): Promise<PlayerReport[]> {
     const members = [...(session.myTeam ?? [])].sort((a, b) => a.cellId - b.cellId);
     if (!members.length) return [];
 
-    const championMap = await this.getChampionMap();
+    const championMap = await this.getChampionMap(options.force);
 
     // 第一步：先把名字等基础信息填上，界面可以立即显示占位卡片
     const bases = await mapLimit(members, 5, async (member) => {
-      const info = await this.getSummoner(member.summonerId);
+      const info = await this.getSummoner(member.summonerId, options.force);
       return this.buildBaseReport(member, info, championMap, context);
     });
     onProgress?.(bases);
@@ -514,7 +515,13 @@ export class ReportCollector {
     const reports = [...bases];
     await mapLimit(members, this.options.concurrency, async (member, index) => {
       const base = bases[index] as PlayerReport;
-      const report = await this.buildFullReport(member, base, championMap, context);
+      const report = await this.buildFullReport(
+        member,
+        base,
+        championMap,
+        context,
+        options.force,
+      );
       reports[index] = report;
       onProgress?.([...reports]);
     });
@@ -537,7 +544,7 @@ export class ReportCollector {
     const identities = game.participantIdentities ?? [];
     if (!participants.length) return [];
 
-    const championMap = await this.getChampionMap();
+    const championMap = await this.getChampionMap(options.force);
     await archiveGames([game], championMap);
     const entries = participants
       .map((participant, index) => {
@@ -584,8 +591,10 @@ export class ReportCollector {
         /^0{32}$/.test((entry.puuid ?? '').replace(/-/g, ''));
 
       let info: SummonerInfo | null = null;
-      if (!isBot && entry.summonerId) info = await this.getSummoner(entry.summonerId);
-      if (!isBot && !info && entry.name) info = await this.getSummonerByName(entry.name);
+      if (!isBot && entry.summonerId) info = await this.getSummoner(entry.summonerId, options.force);
+      if (!isBot && !info && entry.name) {
+        info = await this.getSummonerByName(entry.name, options.force);
+      }
 
       const member: ChampSelectMember = {
         cellId: entry.cellId,
@@ -885,7 +894,7 @@ export class ReportCollector {
 
     try {
       const [rank, loaded] = await Promise.all([
-        summoner.puuid ? this.getRank(summoner.puuid) : Promise.resolve(null),
+        summoner.puuid ? this.getRank(summoner.puuid, force) : Promise.resolve(null),
         this.loadRecentGames(summoner, context),
       ]);
       const games = loaded.games;
@@ -1031,9 +1040,12 @@ export class ReportCollector {
     return base;
   }
 
-  private async getSummoner(summonerId: number): Promise<SummonerInfo | null> {
+  private async getSummoner(
+    summonerId: number,
+    force = false,
+  ): Promise<SummonerInfo | null> {
     const cached = this.summonerCache.get(summonerId);
-    if (cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.info;
+    if (!force && cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.info;
 
     let info: SummonerInfo | null = null;
     try {
@@ -1047,10 +1059,10 @@ export class ReportCollector {
   }
 
   /** 游戏内只有 Riot ID，通过名字查询召唤师信息（含 puuid） */
-  private async getSummonerByName(name: string): Promise<SummonerInfo | null> {
+  private async getSummonerByName(name: string, force = false): Promise<SummonerInfo | null> {
     if (!name) return null;
     const cached = this.summonerByNameCache.get(name);
-    if (cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.info;
+    if (!force && cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.info;
 
     let info: SummonerInfo | null = null;
     try {
@@ -1063,9 +1075,9 @@ export class ReportCollector {
     return info;
   }
 
-  private async getRank(puuid: string): Promise<RankInfo | null> {
+  private async getRank(puuid: string, force = false): Promise<RankInfo | null> {
     const cached = this.rankCache.get(puuid);
-    if (cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.rank;
+    if (!force && cached && Date.now() - cached.at < 24 * 60 * 60_000) return cached.rank;
     const rank = await this.api.getRankedStats(puuid);
     this.rankCache.set(puuid, { at: Date.now(), rank });
     this.scheduleSave();
@@ -1208,12 +1220,12 @@ export class ReportCollector {
     return game;
   }
 
-  private async getChampionMap(): Promise<Map<number, ChampionSummary>> {
-    if (this.championMap && Date.now() - this.championMapAt < 24 * 60 * 60_000) {
+  private async getChampionMap(force = false): Promise<Map<number, ChampionSummary>> {
+    if (!force && this.championMap && Date.now() - this.championMapAt < 24 * 60 * 60_000) {
       return this.championMap;
     }
     try {
-      this.championMap = await this.api.getChampionMap();
+      this.championMap = await this.api.getChampionMap(force);
       this.championMapAt = Date.now();
       this.scheduleSave();
     } catch {

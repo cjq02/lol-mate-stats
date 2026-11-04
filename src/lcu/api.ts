@@ -141,7 +141,8 @@ export class LcuApi {
 
   /* ----------------------------- 资源 ----------------------------- */
 
-  async getChampionMap(): Promise<Map<number, ChampionSummary>> {
+  async getChampionMap(force = false): Promise<Map<number, ChampionSummary>> {
+    if (force) this.championMapPromise = undefined;
     if (!this.championMapPromise) {
       this.championMapPromise = this.loadChampionMap().catch((error) => {
         this.championMapPromise = undefined;
