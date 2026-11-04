@@ -1924,9 +1924,31 @@ async function refreshMatchesView() {
   }
 }
 
+/** 胜负统计：重开不计入胜负和胜率 */
+function matchRecord(games) {
+  const played = (games ?? []).filter((game) => !(game.tags ?? []).includes('重开'));
+  const wins = played.filter((game) => game.win).length;
+  const losses = played.length - wins;
+  return {
+    games: played.length,
+    wins,
+    losses,
+    winRate: played.length ? wins / played.length : null,
+  };
+}
+
+/** 标题里的“X胜Y负 · 胜率Z%”，没有有效对局时返回空串 */
+function matchRecordText(record) {
+  if (!record.games) return '';
+  return `${record.wins}胜${record.losses}负 · 胜率 ${pct(record.winRate)}`;
+}
+
 function playerMatchesTitle(player) {
   const name = `${player.displayName ?? '玩家'}${player.tagLine ? `#${player.tagLine}` : ''}`;
-  return `${name} · 最近 ${(player.games ?? []).length} 场`;
+  const record = matchRecord(player.games);
+  const count = record.games || (player.games ?? []).length;
+  const stats = matchRecordText(record);
+  return `${name} · 最近 ${count} 场${stats ? ` · ${stats}` : ''}`;
 }
 
 async function refreshPlayerMatches(player, context) {
@@ -2043,13 +2065,17 @@ function filteredMyGames() {
 function renderMyMatches() {
   const games = filteredMyGames();
   const filter = state.championFilter;
+  const record = matchRecord(games);
+  const statsText = matchRecordText(record);
+  const stats = statsText ? ` · ${statsText}` : '';
+  const count = record.games || games.length;
   // 重新渲染会重置滚动位置，先记住，避免“加载更早”后跳回顶部
   const scrollTop = els.matchesList.scrollTop;
   renderMatchesView(
     games,
     filter
-      ? `${filter.championName || '该英雄'} · 我的战绩 · ${games.length} 场`
-      : `我的战绩 · ${games.length} 场`,
+      ? `${filter.championName || '该英雄'} · 我的战绩 · ${count} 场${stats}`
+      : `我的战绩 · ${count} 场${stats}`,
     true,
   );
   els.matchesList.scrollTop = scrollTop;
