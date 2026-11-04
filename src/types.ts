@@ -243,6 +243,29 @@ export interface LiveStats {
   visionPerMin?: number;
   /** 当前装备（物品 id） */
   items?: number[];
+  /** 召唤师技能名称 */
+  summonerSpells?: string[];
+  /** 基石 + 主系符文 */
+  runes?: string;
+  /** 复活剩余秒数；活着时为 0/undefined */
+  respawnTimer?: number;
+  /** 以下只有本人能拿到 */
+  currentGold?: number;
+  health?: number;
+  maxHealth?: number;
+  resourceValue?: number;
+  resourceMax?: number;
+  resourceType?: string;
+  attackDamage?: number;
+  abilityPower?: number;
+  armor?: number;
+  magicResist?: number;
+  moveSpeed?: number;
+  attackSpeed?: number;
+  abilityHaste?: number;
+  critChance?: number;
+  /** 本人 Q/W/E/R 等级 */
+  abilities?: Array<{ key: string; name?: string; level: number }>;
 }
 
 /** Live Client Data API 的装备条目（不同版本字段名略有差异） */
@@ -250,6 +273,75 @@ export interface LiveItem {
   itemID?: number;
   itemId?: number;
   displayName?: string;
+  count?: number;
+  price?: number;
+}
+
+/** 符文/基石 */
+export interface LiveRunes {
+  keystone?: { displayName?: string; id?: number };
+  primaryRuneTree?: { displayName?: string; id?: number };
+  secondaryRuneTree?: { displayName?: string; id?: number };
+}
+
+export interface LiveSummonerSpell {
+  displayName?: string;
+  rawDisplayName?: string;
+}
+
+export interface LiveSummonerSpells {
+  summonerSpellOne?: LiveSummonerSpell;
+  summonerSpellTwo?: LiveSummonerSpell;
+}
+
+/** activePlayer 的实时属性（只有本人有） */
+export interface LiveChampionStats {
+  currentHealth?: number;
+  maxHealth?: number;
+  resourceValue?: number;
+  resourceMax?: number;
+  resourceType?: string;
+  attackDamage?: number;
+  abilityPower?: number;
+  armor?: number;
+  magicResist?: number;
+  moveSpeed?: number;
+  attackSpeed?: number;
+  abilityHaste?: number;
+  critChance?: number;
+}
+
+export interface LiveAbility {
+  abilityLevel?: number;
+  displayName?: string;
+  id?: string;
+}
+
+export interface LiveActivePlayer {
+  riotId?: string;
+  riotIdGameName?: string;
+  riotIdTagLine?: string;
+  summonerName?: string;
+  currentGold?: number;
+  level?: number;
+  championStats?: LiveChampionStats;
+  abilities?: Record<string, LiveAbility>;
+  fullRunes?: LiveRunes;
+}
+
+/** 本局事件（击杀、推塔、小龙、大龙等） */
+export interface LiveEvent {
+  EventID?: number;
+  EventName?: string;
+  EventTime?: number;
+  KillerName?: string;
+  VictimName?: string;
+  Assisters?: string[];
+  TurretKilled?: string;
+  InhibKilled?: string;
+  DragonType?: string;
+  MonsterType?: string;
+  Stolen?: boolean;
 }
 
 /** Live Client Data API 返回的玩家结构（只保留用得到的字段） */
@@ -260,6 +352,7 @@ export interface LiveGamePlayer {
   isDead?: boolean;
   level?: number;
   position?: string;
+  respawnTimer?: number;
   riotId?: string;
   riotIdGameName?: string;
   riotIdTagLine?: string;
@@ -267,6 +360,10 @@ export interface LiveGamePlayer {
   team?: string;
   /** 装备栏：接口通常返回对象数组，偶尔是纯 id 数组 */
   items?: Array<number | LiveItem>;
+  runes?: LiveRunes;
+  summonerSpells?: LiveSummonerSpells;
+  /** 只有本人会被 watcher 补上 activePlayer 数据 */
+  active?: LiveActivePlayer;
   scores?: {
     kills?: number;
     deaths?: number;
@@ -372,17 +469,18 @@ export interface MatchDetail {
 }
 
 export interface LiveGameData {
-  activePlayer?: {
-    riotId?: string;
-    summonerName?: string;
-  };
+  activePlayer?: LiveActivePlayer;
   gameData?: {
     gameMode?: string;
     queue?: { id?: number };
     /** 对局已进行秒数 */
     gameTime?: number;
+    mapName?: string;
+    mapNumber?: number;
+    mapTerrain?: string;
   };
   allPlayers?: LiveGamePlayer[];
+  events?: { Events?: LiveEvent[] };
 }
 
 /** 本局玩家 + 己方/敌方标记（由当前玩家所在队伍推导） */
@@ -438,6 +536,8 @@ export interface Snapshot {
   gameMode?: GameModeKey;
   /** 当前这局游戏的临时会话 ID（用于保存实时 AI 分析） */
   liveSessionId?: string;
+  /** 本局事件（击杀、推塔、小龙、大龙等），用于实时 AI */
+  liveEvents?: LiveEvent[];
   localPlayer?: {
     summonerId: number;
     displayName: string;

@@ -1,4 +1,10 @@
-import type { MatchDetail, MatchScoreboardPlayer, PlayerReport, Snapshot } from './types.js';
+import type {
+  LiveEvent,
+  MatchDetail,
+  MatchScoreboardPlayer,
+  PlayerReport,
+  Snapshot,
+} from './types.js';
 import { queueName } from './stats/constants.js';
 
 export interface AiConfig {
@@ -141,7 +147,62 @@ function liveText(row: PlayerReport, itemName: (id: number) => string): string {
       `装备 ${live.items.map((id) => itemName(Number(id)) || `#${id}`).join('、')}`,
     );
   }
+  if (live.summonerSpells?.length) {
+    parts.push(`召唤师技能 ${live.summonerSpells.join('/')}`);
+  }
+  if (live.runes) parts.push(`符文 ${live.runes}`);
+  if (live.respawnTimer !== undefined) {
+    parts.push(`复活 ${Math.ceil(live.respawnTimer)}s`);
+  }
+  if (live.health !== undefined && live.maxHealth !== undefined) {
+    parts.push(`血量 ${fix(live.health)}/${fix(live.maxHealth)}`);
+  }
+  if (live.resourceValue !== undefined && live.resourceMax !== undefined) {
+    parts.push(
+      `${live.resourceType === 'ENERGY' ? '能量' : live.resourceType === 'NONE' ? '资源' : '蓝量'} ${fix(
+        live.resourceValue,
+      )}/${fix(live.resourceMax)}`,
+    );
+  }
+  if (live.currentGold !== undefined) parts.push(`金币 ${fix(live.currentGold)}`);
+  const attributes: string[] = [];
+  if (live.attackDamage !== undefined) attributes.push(`攻击 ${fix(live.attackDamage)}`);
+  if (live.abilityPower !== undefined) attributes.push(`法强 ${fix(live.abilityPower)}`);
+  if (live.armor !== undefined) attributes.push(`护甲 ${fix(live.armor)}`);
+  if (live.magicResist !== undefined) attributes.push(`魔抗 ${fix(live.magicResist)}`);
+  if (live.abilityHaste !== undefined) attributes.push(`急速 ${fix(live.abilityHaste)}`);
+  if (live.critChance !== undefined) attributes.push(`暴击 ${pct(live.critChance)}`);
+  if (attributes.length) parts.push(`属性 ${attributes.join(' ')}`);
+  if (live.abilities?.length) {
+    parts.push(`技能 ${live.abilities.map((ability) => `${ability.key}${ability.level}`).join(' ')}`);
+  }
   return parts.join('，');
+}
+
+function eventClock(value?: number): string {
+  const seconds = Math.max(0, Math.round(Number(value) || 0));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function eventText(event: LiveEvent): string {
+  switch (event.EventName) {
+    case 'ChampionKill':
+      return `${event.KillerName ?? '?'} 击杀 ${event.VictimName ?? '?'}`;
+    case 'TurretKilled':
+      return `${event.KillerName ?? '?'} 推掉 ${event.TurretKilled ?? '防御塔'}`;
+    case 'InhibKilled':
+      return `${event.KillerName ?? '?'} 推掉 ${event.InhibKilled ?? '水晶'}`;
+    case 'DragonKill':
+      return `${event.KillerName ?? '?'} 击杀 ${event.DragonType ?? ''}龙`;
+    case 'HeraldKill':
+      return `${event.KillerName ?? '?'} 击杀峡谷先锋`;
+    case 'BaronKill':
+      return `${event.KillerName ?? '?'} 击杀大龙`;
+    case 'Ace':
+      return `${event.KillerName ?? '?'} 团灭对手`;
+    default:
+      return event.EventName ?? '';
+  }
 }
 
 function rankText(report: PlayerReport | undefined): string {
@@ -189,10 +250,21 @@ export function buildLiveAnalysisMessages(
       .join('\n');
   };
 
+  const events = (snapshot.liveEvents ?? [])
+    .filter((event) =>
+      ['ChampionKill', 'TurretKilled', 'InhibKilled', 'DragonKill', 'HeraldKill', 'BaronKill', 'Ace'].includes(
+        event.EventName ?? '',
+      ),
+    )
+    .slice(-12)
+    .map((event) => `- ${eventClock(event.EventTime)} ${eventText(event)}`)
+    .join('\n');
+
   const user = [
     `【对局】模式：${queueName(snapshot.queueId)}${
       snapshot.gameMode ? `（${snapshot.gameMode}）` : ''
     }；已进行 ${fix(gameMinutes, 1)} 分钟；我方 ${allies.length} 人 / 敌方 ${enemies.length} 人`,
+    events ? `【本局事件】\n${events}` : '',
     `【我的英雄】${champion} / ${position}；${selfLine}`,
     recentText(self),
     '【我方】',

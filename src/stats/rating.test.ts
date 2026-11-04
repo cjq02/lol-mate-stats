@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import type { AnalyzedGame, Lane, RawGame } from '../types.js';
+import type { AnalyzedGame, Lane, RawGame, Snapshot } from '../types.js';
 import { analyzeGame, detectLane } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
+import { buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
 import { PROFILES, gameTags, isAfkLike, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
@@ -562,6 +563,79 @@ test('解析 Live Client Data 的装备对象', () => {
   assert.deepEqual(liveItemIds([6655, 3020]), [6655, 3020]);
   assert.deepEqual(liveItemIds([{ itemId: 3157 }, { itemID: 0 }]), [3157]);
   assert.deepEqual(liveItemIds(undefined), []);
+});
+
+test('实时 AI 提示词包含装备、召唤师技能、符文、血量和事件', () => {
+  const snapshot = {
+    mode: 'live',
+    phase: 'InProgress',
+    inChampSelect: false,
+    inGame: true,
+    collecting: false,
+    updatedAt: '',
+    queueId: 450,
+    gameMode: 'ARAM',
+    gameTime: 300,
+    liveSessionId: 'session',
+    liveEvents: [
+      { EventName: 'ChampionKill', EventTime: 100, KillerName: '我', VictimName: '敌人' },
+    ],
+    localPlayer: {
+      summonerId: 1,
+      displayName: '我',
+      cellId: 0,
+      championId: 1,
+      championName: '格温',
+    },
+    players: [
+      {
+        summonerId: 1,
+        displayName: '我',
+        championName: '格温',
+        position: 'ARAM',
+        isEnemy: false,
+        labels: [],
+        live: {
+          kills: 0,
+          deaths: 3,
+          assists: 7,
+          cs: 0,
+          championLevel: 5,
+          items: [6655],
+          summonerSpells: ['闪现', '点燃'],
+          runes: '电刑 / 主宰',
+          respawnTimer: 12,
+          currentGold: 1500,
+          health: 1200,
+          maxHealth: 1800,
+          resourceValue: 300,
+          resourceMax: 500,
+          resourceType: 'MANA',
+          attackDamage: 80,
+          abilityPower: 120,
+          armor: 50,
+          magicResist: 40,
+          abilityHaste: 20,
+          abilities: [
+            { key: 'Q', level: 4 },
+            { key: 'W', level: 2 },
+          ],
+        },
+      },
+    ],
+  } as unknown as Snapshot;
+  const text = buildLiveAnalysisMessages(snapshot, (id) =>
+    id === 6655 ? '峡谷制造者' : '',
+  )
+    .map((message) => message.content)
+    .join('\n');
+  assert.ok(text.includes('召唤师技能 闪现/点燃'), text);
+  assert.ok(text.includes('符文 电刑 / 主宰'), text);
+  assert.ok(text.includes('血量 1200/1800'), text);
+  assert.ok(text.includes('技能 Q4 W2'), text);
+  assert.ok(text.includes('峡谷制造者'), text);
+  assert.ok(text.includes('本局事件'), text);
+  assert.ok(text.includes('我 击杀 敌人'), text);
 });
 
 console.log(`\n${passed} 项测试全部通过`);

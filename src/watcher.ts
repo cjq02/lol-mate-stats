@@ -4,6 +4,7 @@ import type {
   ChampSelectSession,
   GameContext,
   LcuConnection,
+  LiveEvent,
   MatchDetail,
   MatchSummary,
   PlayerReport,
@@ -746,6 +747,7 @@ export class LiveSource implements DataSource {
         gameMode: undefined,
         gameTime: undefined,
         liveSessionId: undefined,
+        liveEvents: undefined,
         error: undefined,
       },
       false,
@@ -799,6 +801,7 @@ export class LiveSource implements DataSource {
     const self = members.find(
       (player) => !player.isEnemy && sameLiveName(player, activeName),
     );
+    if (self && game.activePlayer) self.active = game.activePlayer;
     if (!members.length) {
       this.patch({
         phase: 'InProgress',
@@ -829,6 +832,7 @@ export class LiveSource implements DataSource {
       queueId,
       gameMode,
       gameTime,
+      liveEvents: liveEventList(game.events?.Events),
       collecting: this.snapshot.players.length === 0,
       message: this.snapshot.players.length ? undefined : '正在读取本局 10 名玩家的战绩…',
       error: undefined,
@@ -1111,6 +1115,26 @@ export class LiveSource implements DataSource {
       }
     }
   }
+}
+
+/** 只保留 AI 需要的事件字段，避免 snapshot 过大 */
+function liveEventList(events?: LiveEvent[]): LiveEvent[] | undefined {
+  if (!Array.isArray(events) || !events.length) return undefined;
+  return events
+    .filter((event) => event && typeof event.EventName === 'string')
+    .slice(-30)
+    .map((event) => ({
+      EventName: event.EventName,
+      EventTime: Number(event.EventTime) || 0,
+      KillerName: event.KillerName,
+      VictimName: event.VictimName,
+      Assisters: Array.isArray(event.Assisters) ? event.Assisters.slice(0, 5) : undefined,
+      TurretKilled: event.TurretKilled,
+      InhibKilled: event.InhibKilled,
+      DragonType: event.DragonType,
+      MonsterType: event.MonsterType,
+      Stolen: event.Stolen,
+    }));
 }
 
 /** 在一场完整对局里找到指定 puuid 的参与者（edge 返回的是原始对局，participants 顺序不固定） */

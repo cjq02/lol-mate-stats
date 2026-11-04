@@ -1375,6 +1375,24 @@ function liveStats(
       : undefined;
   const wardScore =
     typeof player.scores?.wardScore === 'number' ? player.scores.wardScore : undefined;
+  const spells = [
+    player.summonerSpells?.summonerSpellOne?.displayName,
+    player.summonerSpells?.summonerSpellTwo?.displayName,
+  ].filter((name): name is string => Boolean(name));
+  const runeParts = [
+    player.runes?.keystone?.displayName,
+    player.runes?.primaryRuneTree?.displayName,
+  ].filter((name): name is string => Boolean(name));
+  const respawnTimer = toNumber(player.respawnTimer);
+  const active = player.active;
+  const stats = active?.championStats;
+  const abilities = active?.abilities
+    ? ['Q', 'W', 'E', 'R'].flatMap((key) => {
+        const ability = active.abilities?.[key];
+        const level = toNumber(ability?.abilityLevel);
+        return level > 0 ? [{ key, name: ability?.displayName, level }] : [];
+      })
+    : undefined;
 
   return {
     kills,
@@ -1393,6 +1411,28 @@ function liveStats(
     goldPerMin: gold === undefined ? undefined : perMin(gold),
     visionPerMin: wardScore === undefined ? undefined : perMin(wardScore),
     items: items.length ? items : undefined,
+    summonerSpells: spells.length ? spells : undefined,
+    runes: runeParts.length ? runeParts.join(' / ') : undefined,
+    respawnTimer: respawnTimer > 0 ? respawnTimer : undefined,
+    ...(active
+      ? {
+          currentGold: toNumber(active.currentGold),
+          health: toNumber(stats?.currentHealth),
+          maxHealth: toNumber(stats?.maxHealth),
+          resourceValue: toNumber(stats?.resourceValue),
+          resourceMax: toNumber(stats?.resourceMax),
+          resourceType: stats?.resourceType,
+          attackDamage: toNumber(stats?.attackDamage),
+          abilityPower: toNumber(stats?.abilityPower),
+          armor: toNumber(stats?.armor),
+          magicResist: toNumber(stats?.magicResist),
+          moveSpeed: toNumber(stats?.moveSpeed),
+          attackSpeed: toNumber(stats?.attackSpeed),
+          abilityHaste: toNumber(stats?.abilityHaste),
+          critChance: toNumber(stats?.critChance),
+        }
+      : {}),
+    abilities: abilities?.length ? abilities : undefined,
   };
 }
 

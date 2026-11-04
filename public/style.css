@@ -1528,6 +1528,15 @@ body::before {
   color: var(--muted);
 }
 
+.live-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 4px 10px 0;
+  font-size: 10.5px;
+  color: var(--muted-2);
+}
+
 .this-game-row.win {
   border-color: rgba(94, 234, 212, 0.26);
 }

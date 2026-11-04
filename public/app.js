@@ -592,6 +592,32 @@ function buildCard(player, isLocal, options = {}) {
       : '';
 
   const live = player.live;
+  const liveExtras = [];
+  if (live?.summonerSpells?.length) {
+    liveExtras.push(`召唤师技能 ${live.summonerSpells.join(' / ')}`);
+  }
+  if (live?.runes) liveExtras.push(`符文 ${live.runes}`);
+  if (live?.respawnTimer) liveExtras.push(`复活 ${Math.ceil(live.respawnTimer)}s`);
+  if (live?.health !== undefined && live?.maxHealth !== undefined) {
+    liveExtras.push(`血量 ${Math.round(live.health)}/${Math.round(live.maxHealth)}`);
+  }
+  if (
+    live?.resourceValue !== undefined &&
+    live?.resourceMax !== undefined &&
+    live.resourceType !== 'NONE'
+  ) {
+    const label = live.resourceType === 'ENERGY' ? '能量' : '蓝量';
+    liveExtras.push(`${label} ${Math.round(live.resourceValue)}/${Math.round(live.resourceMax)}`);
+  }
+  if (live?.currentGold !== undefined) liveExtras.push(`金币 ${kilo(live.currentGold)}`);
+  if (live?.abilities?.length) {
+    liveExtras.push(
+      `技能 ${live.abilities.map((ability) => `${ability.key}${ability.level}`).join(' ')}`,
+    );
+  }
+  const liveExtraRow = liveExtras.length
+    ? `<div class="live-extra">${liveExtras.map((item) => escapeHtml(item)).join(' · ')}</div>`
+    : '';
   const liveRow = live
     ? `<div class="live-row">
         <span class="live-tag">本局</span>
@@ -600,7 +626,7 @@ function buildCard(player, isLocal, options = {}) {
         <span class="live-stat">等级 <b>${live.championLevel ?? '-'}</b></span>
         ${
           live.gold !== undefined
-            ? `<span class="live-stat">装备 <b>${kilo(live.gold)}</b></span>`
+            ? `<span class="live-stat">装备价值 <b>${kilo(live.gold)}</b></span>`
             : ''
         }
         ${
@@ -609,7 +635,7 @@ function buildCard(player, isLocal, options = {}) {
             : ''
         }
         ${live.isDead ? '<span class="live-dead">已阵亡</span>' : ''}
-      </div>`
+      </div>${liveExtraRow}`
     : '';
 
   const gameRow = thisGame
