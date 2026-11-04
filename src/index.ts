@@ -171,7 +171,7 @@ async function startLive(options: CliOptions): Promise<void> {
 
   const source = new LiveSource({ recent: options.recent, quiet: options.quiet });
   if (!options.quiet) {
-    logTag('cache', `其他玩家战绩缓存 24 小时；自己的战绩每次实时读取（数据库：${DB_DESCRIPTION}）`);
+    logTag('cache', `其他玩家战绩缓存到出现新对局为止；自己的战绩每次实时读取（数据库：${DB_DESCRIPTION}）`);
   }
 
   const running = await startServer({

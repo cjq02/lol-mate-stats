@@ -17,7 +17,7 @@ export interface DataSource {
   getAsset(path: string): Promise<AssetResult | null>;
   /** 按名字查询任意玩家的近期战绩（可选，demo 模式不支持） */
   scanPlayer?(name: string, recent: number): Promise<PlayerReport[]>;
-  /** 强制更新单个玩家的近期战绩（绕过 24 小时报告缓存） */
+  /** 强制更新单个玩家的近期战绩（绕过报告缓存） */
   refreshPlayer?(
     summonerId: number,
     options?: { recent?: number; context?: GameContext },

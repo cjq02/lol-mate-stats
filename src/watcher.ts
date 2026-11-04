@@ -48,7 +48,7 @@ import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 export interface LiveSourceOptions {
   recent?: number;
   pollMs?: number;
-  /** 战绩缓存时长 */
+  /** 同一批队友在选人阶段的最长复用时间 */
   ttlMs?: number;
   quiet?: boolean;
 }
@@ -1078,10 +1078,7 @@ export class LiveSource implements DataSource {
   private ensureCollector(api: LcuApi, recent = this.options.recent): ReportCollector {
     const existing = this.collectors.get(recent);
     if (existing) return existing;
-    const collector = new ReportCollector(api, {
-      recent,
-      ttlMs: this.options.ttlMs,
-    });
+    const collector = new ReportCollector(api, { recent });
     this.collectors.set(recent, collector);
     return collector;
   }

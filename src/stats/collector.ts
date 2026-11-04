@@ -25,8 +25,6 @@ import { getDb, withTransaction } from './store.js';
 export interface CollectorOptions {
   /** 拉取最近多少场对局，默认 10 */
   recent: number;
-  /** 玩家报告缓存时长，默认 24 小时；自己的报告不读缓存 */
-  ttlMs: number;
   /** 对局详情缓存时长，默认 24 小时（对局数据不会变） */
   gameTtlMs: number;
   /** 单个玩家的拉取并发 */
@@ -35,19 +33,24 @@ export interface CollectorOptions {
 
 const DEFAULT_OPTIONS: CollectorOptions = {
   recent: 10,
-  ttlMs: 24 * 60 * 60_000,
   gameTtlMs: 24 * 60 * 60_000,
   concurrency: 3,
 };
 
 interface CachedReport {
   at: number;
+  /** 生成缓存时该玩家最新一场对局的 ID（任意模式）；0 表示当时没有可用对局 */
+  latestGameId: number;
   report: PlayerReport;
 }
 
 const DAY_MS = 24 * 60 * 60_000;
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 const CACHE_SAVE_DELAY = 2_000;
+/** 报告缓存保留时长：只用于清理长期不用的数据，是否过期由“最新对局 ID”决定 */
+const REPORT_RETENTION_MS = 30 * DAY_MS;
+/** 两次“检查有没有新对局”的最小间隔，避免对局中每轮都请求 LCU */
+const REPORT_RECHECK_MS = 5 * 60_000;
 /** 单类缓存最多落盘多少条，避免数据库无限增长 */
 const MAX_PERSISTED = 500;
 
@@ -186,10 +189,20 @@ export class ReportCollector {
       );
       for (const row of reports) {
         const at = Number(row.at);
-        if (!fresh(at, this.options.ttlMs)) continue;
+        if (!fresh(at, REPORT_RETENTION_MS)) continue;
         try {
-          const report = JSON.parse(row.payload as string) as PlayerReport;
-          if (report) this.reportCache.set(String(row.cache_key), { at, report });
+          const parsed = JSON.parse(row.payload as string) as {
+            latestGameId?: number;
+            report?: PlayerReport;
+          };
+          const report = parsed?.report;
+          if (report) {
+            this.reportCache.set(String(row.cache_key), {
+              at,
+              latestGameId: Number(parsed.latestGameId) || 0,
+              report,
+            });
+          }
         } catch {
           /* 单条损坏不影响其它缓存 */
         }
@@ -280,7 +293,7 @@ export class ReportCollector {
       b[1].at - a[1].at;
 
     const reports = [...this.reportCache.entries()]
-      .filter(([, entry]) => fresh(entry.at, this.options.ttlMs))
+      .filter(([, entry]) => fresh(entry.at, REPORT_RETENTION_MS))
       .sort(byNewest)
       .slice(0, MAX_PERSISTED);
     const summoners = [...this.summonerCache.entries()]
@@ -316,11 +329,12 @@ export class ReportCollector {
     if (!db) return;
 
     const data = this.serializeCache();
-    const cutoff = Date.now() - Math.max(this.options.ttlMs, DAY_MS);
+    const cutoff = Date.now() - DAY_MS;
+    const reportCutoff = Date.now() - REPORT_RETENTION_MS;
 
     try {
       await withTransaction(async (connection) => {
-        await connection.query('DELETE FROM reports WHERE at < ?', [cutoff]);
+        await connection.query('DELETE FROM reports WHERE at < ?', [reportCutoff]);
         if (data.reports.length) {
           await connection.query(
             `INSERT INTO reports (cache_key, at, payload) VALUES ?
@@ -329,7 +343,10 @@ export class ReportCollector {
               data.reports.map(([key, entry]) => [
                 key,
                 entry.at,
-                JSON.stringify(entry.report),
+                JSON.stringify({
+                  latestGameId: entry.latestGameId,
+                  report: entry.report,
+                }),
               ]),
             ],
           );
@@ -663,8 +680,16 @@ export class ReportCollector {
 
     const cacheKey = reportCacheKey(base.summonerId, context, this.options.recent);
     const cached = this.reportCache.get(cacheKey);
-    if (cached && Date.now() - cached.at < this.options.ttlMs) {
-      return this.withLiveData(cached.report, base);
+    if (cached) {
+      // 刚检查过就直接用；超过间隔才去客户端确认有没有新对局
+      if (Date.now() - cached.at < REPORT_RECHECK_MS) {
+        return this.withLiveData(cached.report, base);
+      }
+      const latestGameId = await this.peekLatestGameId(base.puuid);
+      if (latestGameId === undefined || latestGameId === cached.latestGameId) {
+        cached.at = Date.now();
+        return this.withLiveData(cached.report, base);
+      }
     }
 
     const summoner: SummonerInfo = {
@@ -677,10 +702,11 @@ export class ReportCollector {
     };
 
     try {
-      const [rank, games] = await Promise.all([
+      const [rank, loaded] = await Promise.all([
         this.getRank(base.puuid),
         this.loadRecentGames(summoner, context),
       ]);
+      const games = loaded.games;
 
       const analyzed = games
         .map((game) => {
@@ -713,7 +739,11 @@ export class ReportCollector {
             ? `最近 ${games.length} 场没有${label}记录`
             : '近期的对局无法解析（可能隐藏了战绩）',
         };
-        this.reportCache.set(cacheKey, { at: Date.now(), report });
+        this.reportCache.set(cacheKey, {
+          at: Date.now(),
+          latestGameId: loaded.latestGameId,
+          report,
+        });
         this.scheduleSave();
         return report;
       }
@@ -730,7 +760,11 @@ export class ReportCollector {
         loading: false,
         error: undefined,
       };
-      this.reportCache.set(cacheKey, { at: Date.now(), report });
+      this.reportCache.set(cacheKey, {
+        at: Date.now(),
+        latestGameId: loaded.latestGameId,
+        report,
+      });
       this.scheduleSave();
       return report;
     } catch (error) {
@@ -830,8 +864,16 @@ export class ReportCollector {
     const cacheKey = reportCacheKey(member.summonerId, context, this.options.recent);
     const self = await this.isSelf(base.puuid ?? member.puuid);
     const cached = self || force ? undefined : this.reportCache.get(cacheKey);
-    if (cached && Date.now() - cached.at < this.options.ttlMs) {
-      return this.withSessionData(cached.report, member, base, championMap);
+    if (cached && !self && !force) {
+      // 刚检查过就直接用；超过间隔才去客户端确认有没有新对局
+      if (Date.now() - cached.at < REPORT_RECHECK_MS) {
+        return this.withSessionData(cached.report, member, base, championMap);
+      }
+      const latestGameId = await this.peekLatestGameId(base.puuid ?? member.puuid);
+      if (latestGameId === undefined || latestGameId === cached.latestGameId) {
+        cached.at = Date.now();
+        return this.withSessionData(cached.report, member, base, championMap);
+      }
     }
 
     if (!base.summonerId || base.error) return base;
@@ -842,10 +884,11 @@ export class ReportCollector {
     }
 
     try {
-      const [rank, games] = await Promise.all([
+      const [rank, loaded] = await Promise.all([
         summoner.puuid ? this.getRank(summoner.puuid) : Promise.resolve(null),
         this.loadRecentGames(summoner, context),
       ]);
+      const games = loaded.games;
 
       const analyzed = games
         .map((game) => {
@@ -881,7 +924,11 @@ export class ReportCollector {
             ? `最近 ${games.length} 场没有${label}记录`
             : '近期的对局无法解析（可能隐藏了战绩）',
         };
-        this.reportCache.set(cacheKey, { at: Date.now(), report });
+        this.reportCache.set(cacheKey, {
+          at: Date.now(),
+          latestGameId: loaded.latestGameId,
+          report,
+        });
         this.scheduleSave();
         return report;
       }
@@ -899,7 +946,11 @@ export class ReportCollector {
         labels: summary.labels,
         error: undefined,
       };
-      this.reportCache.set(cacheKey, { at: Date.now(), report });
+      this.reportCache.set(cacheKey, {
+        at: Date.now(),
+        latestGameId: loaded.latestGameId,
+        report,
+      });
       this.scheduleSave();
       return report;
     } catch (error) {
@@ -1024,7 +1075,7 @@ export class ReportCollector {
   private async loadRecentGames(
     summoner: SummonerInfo,
     context?: GameContext,
-  ): Promise<RawGame[]> {
+  ): Promise<{ games: RawGame[]; latestGameId: number }> {
     const waitMs = this.historyRetryAt - Date.now();
     if (waitMs > 0) {
       throw new HistoryUnavailableError(
@@ -1090,8 +1141,10 @@ export class ReportCollector {
       filtered = sameMode(games);
     }
 
+    // 记录“最新一场”（任意模式），用于判断报告缓存是否还有效
+    const latestGameId = toNumber(games[0]?.gameId) || 0;
     games = filtered.slice(0, target);
-    if (!games.length) return [];
+    if (!games.length) return { games: [], latestGameId };
 
     // 列表接口只给概要时（没有 10 人详情），再按 gameId 拉一次详情
     const detailed = await mapLimit(games, 4, async (game) => {
@@ -1103,7 +1156,7 @@ export class ReportCollector {
 
     const loaded = detailed.filter((game): game is RawGame => game !== null);
     if (loaded.length) await archiveGames(loaded, await this.getChampionMap());
-    return loaded;
+    return { games: loaded, latestGameId };
   }
 
   /** 战绩服务异常时指数退避：60s → 120s → 240s，封顶 5 分钟 */
@@ -1115,6 +1168,19 @@ export class ReportCollector {
       ? Math.min(5 * 60_000, this.historyBackoffMs * 2)
       : 60_000;
     this.historyRetryAt = now + this.historyBackoffMs;
+  }
+
+  /** 只读取“最新一场”的 ID，非常轻量；用于判断报告缓存是否过期 */
+  private async peekLatestGameId(puuid: string | undefined): Promise<number | undefined> {
+    if (!puuid) return undefined;
+    try {
+      const games = await this.api.getMatchListByPuuid(puuid, 1);
+      const gameId = toNumber(games[0]?.gameId);
+      return gameId > 0 ? gameId : undefined;
+    } catch {
+      // 接口暂时不可用时沿用旧缓存，避免因为一次失败把所有玩家都重算
+      return undefined;
+    }
   }
 
   private async getGameDetail(gameId: number): Promise<RawGame | null> {
