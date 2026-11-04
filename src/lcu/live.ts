@@ -1,8 +1,27 @@
 import { request } from 'node:https';
-import type { LiveGameData, LiveGamePlayer, LiveMember } from '../types.js';
+import type { LiveGameData, LiveGamePlayer, LiveItem, LiveMember } from '../types.js';
 
 /** 游戏内 Live Client Data API 固定端口 */
 const DEFAULT_LIVE_PORT = 2999;
+
+/**
+ * Live Client Data 的装备栏通常是 [{ itemID, displayName, ... }]。
+ * 这里统一转成 id 数组，避免把对象直接 Number() 后得到 NaN。
+ */
+export function liveItemIds(items: LiveGamePlayer['items']): number[] {
+  if (!Array.isArray(items)) return [];
+  const ids: number[] = [];
+  for (const item of items) {
+    const raw =
+      typeof item === 'number'
+        ? item
+        : ((item as LiveItem | undefined)?.itemID ??
+          (item as LiveItem | undefined)?.itemId);
+    const id = Number(raw);
+    if (Number.isFinite(id) && id > 0) ids.push(id);
+  }
+  return ids;
+}
 
 /**
  * 只在对局中可用：按“己方 5 人 → 敌方 5 人”的顺序返回本局 10 名玩家。

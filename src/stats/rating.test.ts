@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { AnalyzedGame, Lane, RawGame } from '../types.js';
 import { analyzeGame, detectLane } from './analyze.js';
+import { liveItemIds } from '../lcu/live.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
 import { PROFILES, gameTags, isAfkLike, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
@@ -554,6 +555,13 @@ test('分英雄类型权重：软辅高治疗吃香，法师高输出吃香', ()
     supportScores[0]! > carryScores[0]!,
     `support=${supportScores[0]} carry=${carryScores[0]}`,
   );
+});
+
+test('解析 Live Client Data 的装备对象', () => {
+  assert.deepEqual(liveItemIds([{ itemID: 6655 }, { itemID: 3020 }]), [6655, 3020]);
+  assert.deepEqual(liveItemIds([6655, 3020]), [6655, 3020]);
+  assert.deepEqual(liveItemIds([{ itemId: 3157 }, { itemID: 0 }]), [3157]);
+  assert.deepEqual(liveItemIds(undefined), []);
 });
 
 console.log(`\n${passed} 项测试全部通过`);

@@ -15,6 +15,7 @@ import type {
 import { mapLimit, round, toNumber, truncate } from '../util.js';
 import type { ChampionSummary, LcuApi } from '../lcu/api.js';
 import { LcuError } from '../lcu/http.js';
+import { liveItemIds } from '../lcu/live.js';
 import { analyzeGame, computeMatchScores } from './analyze.js';
 import { archiveGames } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
@@ -1366,9 +1367,7 @@ function liveStats(
       ? round(Math.min(1, (kills + assists) / teamKills), 3)
       : undefined;
 
-  const items = Array.isArray(player.items)
-    ? player.items.map((itemId) => toNumber(itemId)).filter((itemId) => itemId > 0)
-    : [];
+  const items = liveItemIds(player.items);
   const prices = context?.itemPrices;
   const gold =
     prices && items.length

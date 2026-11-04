@@ -245,6 +245,13 @@ export interface LiveStats {
   items?: number[];
 }
 
+/** Live Client Data API 的装备条目（不同版本字段名略有差异） */
+export interface LiveItem {
+  itemID?: number;
+  itemId?: number;
+  displayName?: string;
+}
+
 /** Live Client Data API 返回的玩家结构（只保留用得到的字段） */
 export interface LiveGamePlayer {
   championName?: string;
@@ -258,8 +265,8 @@ export interface LiveGamePlayer {
   riotIdTagLine?: string;
   summonerName?: string;
   team?: string;
-  /** 装备栏物品 id */
-  items?: number[];
+  /** 装备栏：接口通常返回对象数组，偶尔是纯 id 数组 */
+  items?: Array<number | LiveItem>;
   scores?: {
     kills?: number;
     deaths?: number;
