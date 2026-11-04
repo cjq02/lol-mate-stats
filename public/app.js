@@ -2232,7 +2232,10 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
   state.matchDetail = detail;
   state.matchTab = tab;
   state.currentView = () => renderMatchDetailView(detail, tab);
-  setMatchesRefresh(() => openMatchDetail(detail.gameId, { push: false, tab, force: true }));
+  // 用点击时的当前页签，保证在「近期战绩」里更新后不会跳回「本局详情」
+  setMatchesRefresh(() =>
+    openMatchDetail(detail.gameId, { push: false, tab: state.matchTab, force: true }),
+  );
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
   els.matchTabs.classList.remove('hidden');
