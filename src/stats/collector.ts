@@ -45,7 +45,7 @@ interface CachedReport {
 }
 
 const DAY_MS = 24 * 60 * 60_000;
-const CACHE_VERSION = 5;
+const CACHE_VERSION = 6;
 const CACHE_SAVE_DELAY = 2_000;
 /** 报告缓存保留时长：只用于清理长期不用的数据，是否过期由“最新对局 ID”决定 */
 const REPORT_RETENTION_MS = 30 * DAY_MS;
