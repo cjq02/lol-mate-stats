@@ -235,6 +235,14 @@ body::before {
   border-style: dashed;
 }
 
+.champion-matches-btn {
+  margin-top: 8px;
+  color: var(--text);
+  background: rgba(110, 180, 255, 0.08);
+  border-color: rgba(110, 180, 255, 0.28);
+  border-style: solid;
+}
+
 .modal {
   position: fixed;
   inset: 0;

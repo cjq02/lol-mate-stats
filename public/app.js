@@ -171,6 +171,8 @@ const state = {
   loadingProgress: null,
   matchDetail: null,
   matchTab: 'scoreboard',
+  /** 非空时“我的战绩”只显示该英雄的对局 */
+  championFilter: null,
   myGames: [],
   myLcuOffset: 0,
   lcuExhausted: false,
@@ -569,6 +571,16 @@ function buildCard(player, isLocal, options = {}) {
     ? `<button class="btn matches-btn" type="button" data-action="matches">查看最近 ${games.length} 场战绩</button>`
     : '';
 
+  // 本人当前英雄（选人阶段的当前选择 / 对局详情里本局使用的英雄）的专属战绩
+  const championId = thisGame?.championId ?? player.championId;
+  const championName = thisGame?.championName ?? player.championName;
+  const championMatchesButton =
+    isLocal && championId && !player.isBot
+      ? `<button class="btn matches-btn champion-matches-btn" type="button" data-action="champion-matches">查看 ${escapeHtml(
+          championName ?? '该英雄',
+        )} 战绩</button>`
+      : '';
+
   const error = player.error
     ? `<div class="card-error">${escapeHtml(player.error)}</div>`
     : '';
@@ -732,11 +744,18 @@ function buildCard(player, isLocal, options = {}) {
     ${thisGame ? '' : champions}
     ${thisGame ? '' : error}
     ${detail}
+    ${championMatchesButton}
   `;
 
   const matchesButton = card.querySelector('[data-action="matches"]');
   if (matchesButton) {
     matchesButton.addEventListener('click', () => openMatches(player, options.context));
+  }
+  const championMatchesButtonEl = card.querySelector('[data-action="champion-matches"]');
+  if (championMatchesButtonEl) {
+    championMatchesButtonEl.addEventListener('click', () =>
+      openChampionMatches(championId, championName),
+    );
   }
 
   return card;
@@ -1905,17 +1924,41 @@ function mergeMatchLists(...lists) {
   );
 }
 
-function renderMyMatches() {
+function filteredMyGames() {
+  const filter = state.championFilter;
   const games = state.myGames ?? [];
+  if (!filter) return games;
+  return games.filter((game) => Number(game.championId) === filter.championId);
+}
+
+function renderMyMatches() {
+  const games = filteredMyGames();
+  const filter = state.championFilter;
   // 重新渲染会重置滚动位置，先记住，避免“加载更早”后跳回顶部
   const scrollTop = els.matchesList.scrollTop;
-  renderMatchesView(games, `我的战绩 · ${games.length} 场`, true);
+  renderMatchesView(
+    games,
+    filter
+      ? `${filter.championName || '该英雄'} · 我的战绩 · ${games.length} 场`
+      : `我的战绩 · ${games.length} 场`,
+    true,
+  );
   els.matchesList.scrollTop = scrollTop;
   state.currentView = renderMyMatches;
-  setMatchesRefresh(() => openMyMatches());
+  setMatchesRefresh(() =>
+    openMyMatches({ keepFilter: true, preserveNavigation: true }),
+  );
 
   const archiveRemaining = Math.max(0, state.archiveTotal - state.archiveLoaded);
   const hasMore = !state.lcuExhausted || archiveRemaining > 0;
+  if (filter && !games.length) {
+    const empty = els.matchesList.querySelector('.search-status');
+    if (empty) {
+      empty.textContent = hasMore
+        ? `已加载的战绩里没有 ${filter.championName || '该英雄'}，可以继续加载更早的战绩`
+        : `没有找到 ${filter.championName || '该英雄'} 的战绩`;
+    }
+  }
   if (hasMore) {
     const hint =
       archiveRemaining > 0 ? `（本地存档还有 ${archiveRemaining} 场）` : '';
@@ -1926,7 +1969,9 @@ function renderMyMatches() {
   } else {
     els.matchesList.insertAdjacentHTML(
       'beforeend',
-      `<div class="archive-more"><span>已加载全部历史战绩（共 ${games.length} 场）</span></div>`,
+      `<div class="archive-more"><span>已加载全部${
+        filter ? '该英雄' : ''
+      }历史战绩（共 ${games.length} 场）</span></div>`,
     );
   }
 }
@@ -2017,9 +2062,34 @@ async function loadMoreArchive(button) {
   }
 }
 
-async function openMyMatches() {
-  state.backStack = [];
-  state.backScrollStack = [];
+/** 本人当前英雄的专属战绩列表（选人阶段/对局详情里的按钮） */
+function openChampionMatches(championId, championName) {
+  const id = Number(championId) || 0;
+  if (!id) return;
+  const inDetail =
+    !els.matchesModal.classList.contains('hidden') &&
+    Boolean(state.matchDetail) &&
+    typeof state.currentView === 'function';
+  if (inDetail) {
+    state.backStack.push(state.currentView);
+    state.backScrollStack.push(els.matchesList.scrollTop);
+  } else {
+    state.backStack = [];
+    state.backScrollStack = [];
+  }
+  state.championFilter = {
+    championId: id,
+    championName: String(championName ?? ''),
+  };
+  void openMyMatches({ keepFilter: true, preserveNavigation: true });
+}
+
+async function openMyMatches(options = {}) {
+  if (!options.keepFilter) state.championFilter = null;
+  if (!options.preserveNavigation) {
+    state.backStack = [];
+    state.backScrollStack = [];
+  }
   state.currentView = null;
   state.matchRequestToken += 1;
   state.matchDetail = null;
@@ -2030,12 +2100,17 @@ async function openMyMatches() {
   state.archiveLoaded = 0;
   state.archiveTotal = 0;
   state.matchTab = 'scoreboard';
+  const filter = state.championFilter;
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   els.matchesBack.classList.add('hidden');
-  els.matchesTitle.textContent = '我的最近战绩';
+  els.matchesTitle.textContent = filter
+    ? `${filter.championName || '该英雄'} · 我的战绩`
+    : '我的最近战绩';
   setMatchesRefresh(null);
-  beginMatchesLoading('正在读取最近战绩和评分…');
+  beginMatchesLoading(
+    filter ? '正在读取该英雄的战绩…' : '正在读取最近战绩和评分…',
+  );
 
   let games = [];
   let lcuError = '';
@@ -2081,12 +2156,14 @@ async function openMyMatches() {
 
   stopLoadingTimer();
   state.myGames = games;
-  if (!games.length) {
+  if (!games.length && !filter) {
     els.matchesList.innerHTML = `<div class="search-status${
       lcuError ? ' error' : ''
     }">${lcuError ? `读取失败：${escapeHtml(lcuError)}` : '还没有对局记录'}</div>`;
     els.matchesTitle.textContent = '我的战绩';
-    setMatchesRefresh(() => openMyMatches());
+    setMatchesRefresh(() =>
+      openMyMatches({ keepFilter: true, preserveNavigation: true }),
+    );
     return;
   }
 
@@ -2250,6 +2327,7 @@ function closeMatches() {
   state.backStack = [];
   state.backScrollStack = [];
   state.currentView = null;
+  state.championFilter = null;
   state.myGames = [];
   state.myLcuOffset = 0;
   state.lcuExhausted = false;
