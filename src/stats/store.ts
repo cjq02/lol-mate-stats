@@ -8,6 +8,7 @@ import mysql, {
   type ResultSetHeader,
   type RowDataPacket,
 } from 'mysql2/promise';
+import type { MatchDetail } from '../types.js';
 
 /** Windows 的“文档”目录（可能被重定向到 E 盘） */
 function resolveDocumentsDir(): string {
@@ -222,6 +223,14 @@ async function ensureSchema(db: Pool): Promise<void> {
        PRIMARY KEY (session_key),
        KEY idx_ai_live_analyses_created (created_at),
        KEY idx_ai_live_analyses_game (game_id)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS match_details (
+       game_id BIGINT UNSIGNED NOT NULL,
+       at BIGINT NOT NULL,
+       payload LONGTEXT NOT NULL,
+       PRIMARY KEY (game_id),
+       KEY idx_match_details_at (at)
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   ];
 
@@ -528,5 +537,57 @@ export async function saveLiveAiAnalysis(
     return true;
   } catch {
     return false;
+  }
+}
+
+/** 对局详情缓存版本：卡片/标签口径变化时递增，旧缓存自动失效 */
+const MATCH_DETAIL_CACHE_VERSION = 2;
+/** 对局详情缓存保留 7 天，重复打开时不再重新抓取 10 人战绩 */
+const MATCH_DETAIL_TTL_MS = 7 * 24 * 60 * 60_000;
+
+/** 读取已缓存的完整对局详情（10 人本局数据 + 近期战绩） */
+export async function getSavedMatchDetail(
+  gameId: number,
+): Promise<MatchDetail | undefined> {
+  const db = await getDb();
+  if (!db || !gameId) return undefined;
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      'SELECT at, payload FROM match_details WHERE game_id = ?',
+      [gameId],
+    );
+    const row = rows[0];
+    if (!row) return undefined;
+    if (Date.now() - Number(row.at) > MATCH_DETAIL_TTL_MS) return undefined;
+    const parsed = JSON.parse(String(row.payload ?? '')) as {
+      version?: number;
+      detail?: MatchDetail;
+    };
+    if (parsed?.version !== MATCH_DETAIL_CACHE_VERSION || !parsed.detail) {
+      return undefined;
+    }
+    return parsed.detail;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 保存完整对局详情，供服务重启后直接复用 */
+export async function saveMatchDetail(detail: MatchDetail): Promise<void> {
+  const db = await getDb();
+  if (!db || !detail?.gameId) return;
+  try {
+    await db.query<ResultSetHeader>(
+      `INSERT INTO match_details (game_id, at, payload)
+       VALUES (?, ?, ?) AS new
+       ON DUPLICATE KEY UPDATE at = new.at, payload = new.payload`,
+      [
+        detail.gameId,
+        Date.now(),
+        JSON.stringify({ version: MATCH_DETAIL_CACHE_VERSION, detail }),
+      ],
+    );
+  } catch {
+    /* 缓存写入失败不影响本次返回 */
   }
 }

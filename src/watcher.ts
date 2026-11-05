@@ -48,7 +48,7 @@ import {
   isRemakeGame,
 } from './stats/flags.js';
 import { gradeOf } from './stats/rating.js';
-import { linkLiveAnalysisToGameByTime } from './stats/store.js';
+import { linkLiveAnalysisToGameByTime, getSavedMatchDetail, saveMatchDetail } from './stats/store.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
 export interface LiveSourceOptions {
@@ -362,6 +362,14 @@ export class LiveSource implements DataSource {
     options: { force?: boolean; onScoreboard?: (detail: MatchDetail) => void } = {},
   ): Promise<MatchDetail> {
     const started = Date.now();
+    if (!options.force) {
+      const cached = await getSavedMatchDetail(gameId);
+      if (cached) {
+        logTag('match', `[${gameId}] 命中对局详情缓存，直接返回`);
+        options.onScoreboard?.(cached);
+        return cached;
+      }
+    }
     const api = await this.ensureApi();
     if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
 
@@ -581,7 +589,9 @@ export class LiveSource implements DataSource {
         `[${gameId}] 全部完成：${players.length} 人，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
       );
 
-      return { ...baseDetail, players };
+      const detail: MatchDetail = { ...baseDetail, players };
+      await saveMatchDetail(detail);
+      return detail;
     } catch (error) {
       logTag(
         'match',
