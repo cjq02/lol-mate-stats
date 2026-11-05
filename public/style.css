@@ -1044,6 +1044,22 @@ body::before {
   stroke-linejoin: round;
 }
 
+.radar-label.rank-1 {
+  fill: #ffd166;
+}
+
+.radar-label.rank-top {
+  fill: #5eead4;
+}
+
+.radar-label.rank-mid {
+  fill: #cbd8ff;
+}
+
+.radar-label.rank-low {
+  fill: #ff8b9a;
+}
+
 .radar-value {
   fill: #ffffff;
   font-size: 12.5px;

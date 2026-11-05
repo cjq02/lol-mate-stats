@@ -1804,7 +1804,7 @@ function buildRadarContext(scoreboard) {
     const values = scoreboard.map((player) => metric.value(player));
     const max = Math.max(1, ...values);
     const avg = values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
-    return { ...metric, max, avg };
+    return { ...metric, values, max, avg };
   });
 }
 
@@ -1817,12 +1817,14 @@ function buildRadarSeries(player, context) {
     const valueText = plain(metric.format(value));
     const share = metric.share ? pct(metric.share(player)) : '';
     const display = share ? `${valueText} (${share})` : valueText;
+    const rank = 1 + metric.values.filter((item) => item > value).length;
     return {
-      label: metric.label,
+      label: `${metric.label}（第${rank}）`,
+      rank,
       valueText: display,
       selfRatio,
       avgRatio,
-      title: `${metric.label} 玩家 ${display} · 平均 ${plain(
+      title: `${metric.label} 第${rank}名 · 玩家 ${display} · 平均 ${plain(
         metric.format(metric.avg),
       )}`,
     };
@@ -1867,7 +1869,15 @@ function miniRadarSvg(series) {
         Math.cos(point) > 0.25 ? 'start' : Math.cos(point) < -0.25 ? 'end' : 'middle';
       const firstDy =
         Math.sin(point) < -0.6 ? '-1.05em' : Math.sin(point) > 0.6 ? '-0.15em' : '-0.35em';
-      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" class="radar-label">
+      const rankClass =
+        metric.rank === 1
+          ? 'rank-1'
+          : metric.rank <= 3
+            ? 'rank-top'
+            : metric.rank >= 8
+              ? 'rank-low'
+              : 'rank-mid';
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" class="radar-label ${rankClass}">
         <tspan x="${x.toFixed(1)}" dy="${firstDy}">${metric.label}</tspan>
         <tspan x="${x.toFixed(1)}" dy="1.08em" class="radar-value">${metric.valueText}</tspan>
       </text>`;
