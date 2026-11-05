@@ -1671,17 +1671,24 @@ function clearMatchFlags() {
 function matchRow(game, showScore) {
   const durationMin = game.durationMin ?? Math.round((Number(game.gameDuration) || 0) / 60);
   const score = showScore && Number.isFinite(Number(game.score)) ? Math.round(game.score) : null;
-  const remake = (game.tags ?? []).includes('重开');
-  const displayTags = remake ? game.tags.filter((tag) => tag !== '重开') : game.tags;
+  const tags = game.tags ?? [];
+  const remake = tags.includes('重开');
+  const bestTag = remake ? null : tags.includes('MVP') ? 'MVP' : tags.includes('SVP') ? 'SVP' : null;
+  const displayTags = (remake ? tags.filter((tag) => tag !== '重开') : tags).filter(
+    (tag) => tag !== 'MVP' && tag !== 'SVP',
+  );
+  const bestBadge = bestTag
+    ? `<span class="best-badge ${bestTag === 'MVP' ? 'mvp' : 'svp'}">${bestTag}</span>`
+    : '';
   return `<button class="game-row match-item ${
     remake ? 'remake' : game.win ? '' : 'loss'
-  }" type="button" data-game-id="${game.gameId}">
+  }${bestTag ? ` has-${bestTag.toLowerCase()}` : ''}" type="button" data-game-id="${game.gameId}">
     <span class="result">${remake ? '重开' : game.win ? '胜' : '负'}</span>
     <span class="who">${iconHtml(
       champPath(game.championId),
       game.championName,
       'sm',
-    )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b><small>${escapeHtml(
+    )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b>${bestBadge}<small>${escapeHtml(
       game.queueName ?? '',
     )} · ${durationMin} 分钟 · ${formatGameTime(game.gameCreation)}${
       displayTags?.length ? ` · ${matchFlagsHtml(displayTags)}` : ''
