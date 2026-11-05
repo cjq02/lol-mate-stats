@@ -522,7 +522,10 @@ async function handleRequest(
     try {
       const detail = await source.getMatchDetail(gameId, recent, (done, total, name) => {
         sendEvent({ type: 'progress', done, total, name });
-      }, { force });
+      }, {
+        force,
+        onScoreboard: (partial) => sendEvent({ type: 'partial', data: partial }),
+      });
       sendEvent({ type: 'done', data: detail });
       logTag(
         'api',

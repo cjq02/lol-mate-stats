@@ -70,7 +70,7 @@ export interface DataSource {
     gameId: number,
     recent: number,
     onProgress?: (done: number, total: number, name: string) => void,
-    options?: { force?: boolean },
+    options?: { force?: boolean; onScoreboard?: (detail: MatchDetail) => void },
   ): Promise<MatchDetail>;
   stop(): void | Promise<void>;
 }

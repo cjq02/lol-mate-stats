@@ -359,7 +359,7 @@ export class LiveSource implements DataSource {
     gameId: number,
     recent: number,
     onProgress?: (done: number, total: number, name: string) => void,
-    options: { force?: boolean } = {},
+    options: { force?: boolean; onScoreboard?: (detail: MatchDetail) => void } = {},
   ): Promise<MatchDetail> {
     const started = Date.now();
     const api = await this.ensureApi();
@@ -538,6 +538,32 @@ export class LiveSource implements DataSource {
 
     const collector = this.ensureCollector(api, recent);
     collector.setSelfPuuid(summoner.puuid);
+    const flags = gameFlags(
+      game,
+      selfParticipant ? toNumber(selfParticipant.participantId) : undefined,
+      championMap,
+      scoreMap,
+    );
+    const rawDuration = toNumber(game.gameDuration);
+    const normalizedDuration =
+      rawDuration > 100_000 ? Math.round(rawDuration / 1000) : rawDuration;
+    const baseDetail: MatchDetail = {
+      gameId,
+      queueId,
+      queueName: queueName(queueId),
+      gameMode,
+      gameCreation: toNumber(game.gameCreation),
+      gameDuration: normalizedDuration,
+      selfPuuid: summoner.puuid,
+      players: [],
+      scoreboard,
+      tags: gameFlagTags(flags),
+      afkPlayers,
+      badPlayers,
+    };
+
+    // 先返回本局双方数据，让前端立刻渲染；近期战绩继续在后台读取
+    options.onScoreboard?.(baseDetail);
     onProgress?.(0, participants, '');
     try {
       const players = await collector.collectMatch(
@@ -550,32 +576,12 @@ export class LiveSource implements DataSource {
         },
         { force: options.force },
       );
-      const rawDuration = toNumber(game.gameDuration);
-      const flags = gameFlags(
-        game,
-        selfParticipant ? toNumber(selfParticipant.participantId) : undefined,
-        championMap,
-        scoreMap,
-      );
       logTag(
         'match',
         `[${gameId}] 全部完成：${players.length} 人，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`,
       );
 
-      return {
-        gameId,
-        queueId,
-        queueName: queueName(queueId),
-        gameMode,
-        gameCreation: toNumber(game.gameCreation),
-        gameDuration: rawDuration > 100_000 ? Math.round(rawDuration / 1000) : rawDuration,
-        selfPuuid: summoner.puuid,
-        players,
-        scoreboard,
-        tags: gameFlagTags(flags),
-        afkPlayers,
-        badPlayers,
-      };
+      return { ...baseDetail, players };
     } catch (error) {
       logTag(
         'match',

@@ -490,6 +490,25 @@ body::before {
   color: var(--loss);
 }
 
+.match-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.match-progress::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(94, 234, 212, 0.28);
+  border-top-color: #5eead4;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
 .match-tabs .tab {
   padding: 7px 12px 9px;
   border: 0;

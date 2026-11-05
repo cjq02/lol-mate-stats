@@ -31,6 +31,7 @@ const els = {
   matchesAi: document.getElementById('matches-ai'),
   matchTabs: document.getElementById('match-tabs'),
   matchMeta: document.getElementById('match-meta'),
+  matchProgress: document.getElementById('match-progress'),
   matchSummary: document.getElementById('match-summary'),
   matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
@@ -1102,6 +1103,12 @@ function stopLoadingTimer() {
   }
 }
 
+function setMatchProgress(text) {
+  if (!els.matchProgress) return;
+  els.matchProgress.textContent = text || '';
+  els.matchProgress.classList.toggle('hidden', !text);
+}
+
 function beginMatchesLoading(text) {
   stopLoadingTimer();
   const started = Date.now();
@@ -2008,6 +2015,12 @@ function renderMatchTab(tab) {
 
   const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
   const players = Array.isArray(detail.players) ? detail.players : [];
+  if (!players.length) {
+    els.matchesList.className = 'match-list';
+    els.matchesList.innerHTML =
+      '<div class="search-status"><span class="spinner"></span><span>正在加载近期战绩…</span></div>';
+    return;
+  }
   const nodes = players.map((player) =>
     buildCard(player, Boolean(selfPuuid && player.puuid === selfPuuid), {
       mode: detail.gameMode ?? null,
@@ -2025,6 +2038,7 @@ function updateMatchesBackButton() {
 
 function renderMatchesView(games, title, showScore) {
   stopLoadingTimer();
+  setMatchProgress('');
   state.matchDetail = null;
   state.matchTab = 'scoreboard';
   resetAiView();
@@ -2673,7 +2687,9 @@ async function openMatchDetail(gameId, options = {}) {
   els.matchesTitle.textContent = '对局详情';
   updateMatchesBackButton();
   setMatchesRefresh(null);
-  beginMatchesLoading('正在读取 10 名玩家的战绩…');
+  beginMatchesLoading('正在读取本局详情…');
+  setMatchProgress('正在加载本局详情…');
+  state.matchTab = options.tab ?? 'scoreboard';
 
   try {
     const refreshQuery = options.force ? '&refresh=1' : '';
@@ -2684,8 +2700,17 @@ async function openMatchDetail(gameId, options = {}) {
 
     let detail = null;
     await readNdjson(response, (event) => {
-      if (event.type === 'progress') {
+      if (event.type === 'partial') {
+        if (token !== state.matchRequestToken || !event.data) return;
+        setMatchProgress('正在加载近期战绩…');
+        renderMatchDetailView(event.data, state.matchTab);
+      } else if (event.type === 'progress') {
         state.loadingProgress = { done: event.done, total: event.total };
+        setMatchProgress(
+          event.total
+            ? `近期战绩 ${event.done}/${event.total}${event.name ? ` · ${event.name}` : ''}`
+            : '正在加载近期战绩…',
+        );
       } else if (event.type === 'done') {
         detail = event.data;
       } else if (event.type === 'error') {
@@ -2706,10 +2731,12 @@ async function openMatchDetail(gameId, options = {}) {
     }
 
     if (token !== state.matchRequestToken) return;
-    renderMatchDetailView(detail, options.tab ?? 'scoreboard');
+    setMatchProgress('');
+    renderMatchDetailView(detail, state.matchTab);
   } catch (error) {
     if (token !== state.matchRequestToken) return;
     stopLoadingTimer();
+    setMatchProgress('');
     state.matchDetail = null;
     els.matchTabs.classList.add('hidden');
     clearMatchFlags();
@@ -2729,6 +2756,7 @@ async function openMatchDetail(gameId, options = {}) {
 
 function closeMatches() {
   stopLoadingTimer();
+  setMatchProgress('');
   state.matchRequestToken += 1;
   state.matchDetail = null;
   state.backStack = [];
