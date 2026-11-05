@@ -798,10 +798,9 @@ function buildCard(player, isLocal, options = {}) {
           ${bestBadge}
           ${badBadge}
           <span class="grade">${grade ?? '?'}</span>
-          <span class="record">${record}</span>
-          ${riskPill}
+          ${thisGame ? chips : `<span class="record">${record}</span>${riskPill}`}
         </div>
-        ${chips}
+        ${thisGame ? '' : chips}
       </div>
     </div>
 
