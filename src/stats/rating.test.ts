@@ -753,4 +753,106 @@ test('极端低输出且高死亡的对局按巨坑封顶', () => {
   assert.equal(badLevelOfScore(scores[0]), 'severe');
 });
 
+test('低伤害低承伤但 KDA 好看的局判为挂机', () => {
+  const player = {
+    durationMin: 21,
+    gold: 11802,
+    damage: 5817,
+    cs: 17,
+    kills: 5,
+    deaths: 2,
+    assists: 9,
+    visionScore: 0,
+    position: 'ARAM' as Lane,
+    killParticipation: 0.25,
+    damageTaken: 6971,
+    heal: 1737,
+  };
+  const team = [
+    player,
+    {
+      durationMin: 21,
+      gold: 15954,
+      damage: 48563,
+      cs: 49,
+      kills: 17,
+      deaths: 12,
+      assists: 28,
+      visionScore: 0,
+      position: 'ARAM' as Lane,
+      killParticipation: 0.804,
+      damageTaken: 46899,
+      heal: 8889,
+    },
+    {
+      durationMin: 21,
+      gold: 13018,
+      damage: 58206,
+      cs: 68,
+      kills: 3,
+      deaths: 20,
+      assists: 28,
+      visionScore: 0,
+      position: 'ARAM' as Lane,
+      killParticipation: 0.554,
+      damageTaken: 39588,
+      heal: 3589,
+    },
+    {
+      durationMin: 21,
+      gold: 13301,
+      damage: 29094,
+      cs: 34,
+      kills: 6,
+      deaths: 15,
+      assists: 24,
+      visionScore: 0,
+      position: 'ARAM' as Lane,
+      killParticipation: 0.536,
+      damageTaken: 51620,
+      heal: 3521,
+    },
+    {
+      durationMin: 21,
+      gold: 17596,
+      damage: 92438,
+      cs: 35,
+      kills: 25,
+      deaths: 13,
+      assists: 20,
+      visionScore: 0,
+      position: 'ARAM' as Lane,
+      killParticipation: 0.804,
+      damageTaken: 74100,
+      heal: 32456,
+    },
+  ];
+  assert.equal(isAfkLikeRelative(player, team), true);
+});
+
+test('低伤害低承伤低死亡的保 KDA 局评分也封顶', () => {
+  const scores = percentileScores([
+    {
+      kda: 7,
+      killParticipation: 0.25,
+      damageShare: 0.025,
+      tankShare: 0.032,
+      healShare: 0.035,
+      role: 'carry' as const,
+      deaths: 2,
+    },
+    {
+      kda: 3.5,
+      killParticipation: 0.8,
+      damageShare: 0.4,
+      tankShare: 0.34,
+      healShare: 0.65,
+      role: 'fighter' as const,
+      deaths: 13,
+    },
+  ]);
+  assert.ok(scores[0]! < 18, `score=${scores[0]}`);
+  assert.equal(badLevelOfScore(scores[0]), 'severe');
+});
+
 console.log(`\n${passed} 项测试全部通过`);

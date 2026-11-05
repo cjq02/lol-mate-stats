@@ -194,9 +194,16 @@ function scoreWithWeights(
     // 伤害占比和参团都极低、死亡还多：属于整局几乎没打出作用的“巨坑”局，
     // 不再让辅助/坦克权重把分数托到 25 分以上。
     const catastrophic =
-      input.damageShare < 0.06 &&
-      input.killParticipation < 0.35 &&
-      (input.deaths ?? 0) >= 10;
+      (input.damageShare < 0.06 &&
+        input.killParticipation < 0.35 &&
+        (input.deaths ?? 0) >= 10) ||
+      // 低伤害、低承伤、低治疗、低参团、低死亡：典型长时间挂机/避战后偶尔收残局，
+      // 即使 KDA 好看也不能算正常表现。
+      (input.damageShare < 0.05 &&
+        input.tankShare < 0.08 &&
+        input.healShare < 0.1 &&
+        input.killParticipation < 0.3 &&
+        (input.deaths ?? 0) <= 5);
     return round(clamp(catastrophic ? Math.min(curved, 12) : curved, 0, 100), 1);
   });
 }
@@ -345,6 +352,18 @@ export function isAfkLikeRelative(
   const lowGold = avgGold > 0 && player.gold < avgGold * 0.55;
   const lowParticipation = participation < 0.3;
   const lowTaken = avgTaken > 0 && damageTaken < avgTaken * 0.35;
+
+  // 低伤害 + 低承伤 + 低治疗 + 低参团 + 低死亡：
+  // 即使有几个击杀/助攻，也说明大部分时间没有进入战斗（常见于长期挂机后出来收残局）。
+  const offCombat =
+    avgDamage > 0 &&
+    player.damage < avgDamage * 0.2 &&
+    avgTaken > 0 &&
+    damageTaken < avgTaken * 0.2 &&
+    (avgHeal <= 0 || heal < avgHeal * 0.5) &&
+    participation < 0.3 &&
+    player.deaths <= 5;
+  if (offCombat) return true;
 
   // 只要有明确的参战/承伤/治疗痕迹，就说明不是逃跑，最多是坑
   const hasActivity =
