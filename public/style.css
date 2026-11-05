@@ -399,6 +399,11 @@ body::before {
   background: linear-gradient(135deg, #b8fff2, #5eead4);
 }
 
+.champion-rank-no.rank-mid {
+  color: #08203f;
+  background: linear-gradient(135deg, #d6e8ff, #8fb8ff);
+}
+
 .champion-rank-no.rank-low {
   color: #2b0308;
   background: linear-gradient(135deg, #ffc4cc, #ff8b9a);
@@ -1230,7 +1235,7 @@ body::before {
 }
 
 .radar-label.rank-mid {
-  fill: #cbd8ff;
+  fill: #8fb8ff;
 }
 
 .radar-label.rank-low {
