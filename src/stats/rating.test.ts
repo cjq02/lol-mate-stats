@@ -728,4 +728,29 @@ test('真正没有参与对局的玩家仍判逃跑', () => {
   assert.equal(isAfkLikeRelative(afk, [afk, normal]), true);
 });
 
+test('极端低输出且高死亡的对局按巨坑封顶', () => {
+  const scores = percentileScores([
+    {
+      kda: 0.78,
+      killParticipation: 0.28,
+      damageShare: 0.032,
+      tankShare: 0.208,
+      healShare: 0.146,
+      role: 'support' as const,
+      deaths: 18,
+    },
+    {
+      kda: 3.2,
+      killParticipation: 0.65,
+      damageShare: 0.26,
+      tankShare: 0.2,
+      healShare: 0.1,
+      role: 'carry' as const,
+      deaths: 8,
+    },
+  ]);
+  assert.ok(scores[0]! < 18, `score=${scores[0]}`);
+  assert.equal(badLevelOfScore(scores[0]), 'severe');
+});
+
 console.log(`\n${passed} 项测试全部通过`);

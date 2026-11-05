@@ -120,6 +120,8 @@ export interface MatchPercentileInput {
   tankShare: number;
   healShare: number;
   role?: ChampionRole;
+  /** 本局死亡数，用于识别极端的“没输出又一直死”局 */
+  deaths?: number;
 }
 
 interface RoleWeights {
@@ -165,7 +167,9 @@ function scoreWithWeights(
   weightsFor: (input: MatchPercentileInput) => RoleWeights,
 ): number[] {
   if (!inputs.length) return [];
-  const rank = (key: Exclude<keyof MatchPercentileInput, 'role'>): number[] => {
+  const rank = (
+    key: 'kda' | 'killParticipation' | 'damageShare' | 'tankShare' | 'healShare',
+  ): number[] => {
     const values = inputs.map((input) => input[key]);
     return inputs.map((input) => percentileRank(values, input[key]));
   };
@@ -187,7 +191,13 @@ function scoreWithWeights(
       weights.heal * (heal[index] ?? 0.5);
     const absolute = clamp(score20 * 5, 0, 100);
     const curved = 100 * (absolute / 100) ** 0.7;
-    return round(clamp(curved, 0, 100), 1);
+    // 伤害占比和参团都极低、死亡还多：属于整局几乎没打出作用的“巨坑”局，
+    // 不再让辅助/坦克权重把分数托到 25 分以上。
+    const catastrophic =
+      input.damageShare < 0.06 &&
+      input.killParticipation < 0.35 &&
+      (input.deaths ?? 0) >= 10;
+    return round(clamp(catastrophic ? Math.min(curved, 12) : curved, 0, 100), 1);
   });
 }
 

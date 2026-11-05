@@ -263,6 +263,7 @@ export function computeMatchScores(
       tankShare: base.tankShareRaw,
       healShare: base.healShareRaw,
       role: championRole(base.championId),
+      deaths: base.deaths,
     })),
   );
   const result = new Map<number, number>();
