@@ -1772,18 +1772,6 @@ body::before {
   background: linear-gradient(90deg, rgba(255, 107, 129, 0.09), rgba(255, 255, 255, 0.02));
 }
 
-.game-result {
-  flex: none;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #5eead4;
-}
-
-.this-game-row.loss .game-result {
-  color: #ff8b9a;
-}
-
 .live-tag {
   flex: none;
   font-size: 9.5px;
