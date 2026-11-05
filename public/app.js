@@ -654,6 +654,7 @@ function buildCard(player, isLocal, options = {}) {
   const gameRow = thisGame
     ? `<div class="live-row this-game-row ${thisGame.win ? 'win' : 'loss'}">
         <span class="game-result">${thisGame.win ? '胜' : '负'}</span>
+        <span class="live-kda">${thisGame.kills} / <b class="loss">${thisGame.deaths}</b> / ${thisGame.assists}</span>
         <span class="live-stat">补刀 <b>${thisGame.cs}</b></span>
         ${
           visionGame
