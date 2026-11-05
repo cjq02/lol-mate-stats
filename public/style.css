@@ -725,46 +725,113 @@ body::before {
 }
 
 .match-summary {
+  padding: 10px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.team-summary-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 5px 18px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.025);
-  font-size: 11.5px;
+  gap: 6px 14px;
+  margin-bottom: 9px;
+  font-size: 11px;
   color: var(--muted);
 }
 
-.summary-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  white-space: nowrap;
+.team-summary-meta b.win {
+  color: var(--win);
 }
 
-.summary-item em {
-  font-style: normal;
+.team-summary-meta b.loss {
+  color: var(--loss);
+}
+
+.team-summary-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
   font-size: 10px;
   color: var(--muted-2);
 }
 
-.summary-item > span {
-  color: #dbe6ff;
-  font-weight: 600;
+.team-summary-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.team-summary-legend i.ally {
+  background: #5eead4;
+}
+
+.team-summary-legend i.enemy {
+  background: #ff6b81;
+}
+
+.team-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px 16px;
+}
+
+.compare-metric {
+  min-width: 0;
+}
+
+.compare-values {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
-.summary-item b {
-  font-variant-numeric: tabular-nums;
+.compare-values em {
+  flex: none;
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--muted-2);
 }
 
-.summary-item b.win {
-  color: var(--win);
+.compare-values .ally {
+  color: #9ff5e7;
 }
 
-.summary-item b.loss {
-  color: var(--loss);
+.compare-values .enemy {
+  color: #ffb3bd;
+}
+
+.compare-values .better {
+  font-weight: 800;
+  text-shadow: 0 0 10px currentColor;
+}
+
+.compare-track {
+  display: flex;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.compare-track i {
+  display: block;
+  height: 100%;
+}
+
+.compare-track i.ally {
+  background: linear-gradient(90deg, #2dd4bf, #5eead4);
+}
+
+.compare-track i.enemy {
+  background: linear-gradient(90deg, #ff8fa0, #ff5c7a);
 }
 
 .match-flags .match-flag {

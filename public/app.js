@@ -1671,40 +1671,72 @@ function renderMatchFlags(detail) {
 function renderMatchSummary(detail) {
   if (!els.matchSummary) return;
   const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
-  const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
-  const self = scoreboard.find((player) => player.puuid && player.puuid === selfPuuid);
-  if (!self) {
+  const allies = scoreboard.filter((player) => !player.isEnemy);
+  const enemies = scoreboard.filter((player) => player.isEnemy);
+  if (!allies.length || !enemies.length) {
     clearMatchSummary();
     return;
   }
 
   const int = (value) => Math.round(Number(value) || 0).toLocaleString('zh-CN');
+  const sum = (rows, key) =>
+    rows.reduce((total, player) => total + (Number(player[key]) || 0), 0);
   const durationMin = Math.max(0, Math.round((Number(detail.gameDuration) || 0) / 60));
-  const score = Number.isFinite(Number(self.score)) ? Math.round(Number(self.score)) : null;
-  const items = [
-    [
-      '时间',
-      `${formatGameTime(detail.gameCreation)}${durationMin ? ` · ${durationMin} 分钟` : ''}`,
-    ],
-    ['结果', `<b class="${self.win ? 'win' : 'loss'}">${self.win ? '胜' : '负'}</b>`],
-    ['击杀', int(self.kills)],
-    ['死亡', `<b class="loss">${int(self.deaths)}</b>`],
-    ['助攻', int(self.assists)],
-    ['伤害', int(self.damage)],
-    ['承伤', int(self.damageTaken)],
-    ['治疗', int(self.heal)],
-    ['经济', int(self.gold)],
+  const win = Boolean(allies[0]?.win);
+  const metrics = [
+    { key: 'kills', label: '击杀', better: 'high' },
+    { key: 'deaths', label: '死亡', better: 'low' },
+    { key: 'assists', label: '助攻', better: 'high' },
+    { key: 'damage', label: '总伤害', better: 'high' },
+    { key: 'damageTaken', label: '总承伤', better: 'neutral' },
+    { key: 'heal', label: '总治疗', better: 'high' },
+    { key: 'gold', label: '总经济', better: 'high' },
   ];
-  if (score !== null) {
-    items.push(['评分', `<b style="color:${ratingColor(score)}">${score}</b>`]);
-  }
 
-  els.matchSummary.innerHTML = items
-    .map(
-      ([label, value]) =>
-        `<span class="summary-item"><em>${label}</em><span>${value}</span></span>`,
-    )
+  const cells = metrics
+    .map((metric) => {
+      const ally = sum(allies, metric.key);
+      const enemy = sum(enemies, metric.key);
+      const total = ally + enemy;
+      const allyPercent = total > 0 ? (ally / total) * 100 : 50;
+      const allyBetter =
+        metric.better === 'high'
+          ? ally > enemy
+          : metric.better === 'low'
+            ? ally < enemy
+            : false;
+      const enemyBetter =
+        metric.better === 'high'
+          ? enemy > ally
+          : metric.better === 'low'
+            ? enemy < ally
+            : false;
+      return `<div class="compare-metric">
+        <div class="compare-values">
+          <span class="ally${allyBetter ? ' better' : ''}">${int(ally)}</span>
+          <em>${metric.label}</em>
+          <span class="enemy${enemyBetter ? ' better' : ''}">${int(enemy)}</span>
+        </div>
+        <div class="compare-track">
+          <i class="ally" style="width:${allyPercent.toFixed(1)}%"></i>
+          <i class="enemy" style="width:${(100 - allyPercent).toFixed(1)}%"></i>
+        </div>
+      </div>`;
+    })
     .join('');
+
+  els.matchSummary.innerHTML = `
+    <div class="team-summary-meta">
+      <span>时间 ${escapeHtml(formatGameTime(detail.gameCreation))}</span>
+      ${durationMin ? `<span>时长 ${durationMin} 分钟</span>` : ''}
+      <span>结果 <b class="${win ? 'win' : 'loss'}">${win ? '胜' : '负'}</b></span>
+      <span class="team-summary-legend">
+        <i class="ally"></i>我方
+        <i class="enemy"></i>敌方
+      </span>
+    </div>
+    <div class="team-summary-grid">${cells}</div>
+  `;
   els.matchSummary.classList.remove('hidden');
 }
 
