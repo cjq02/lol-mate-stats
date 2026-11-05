@@ -949,7 +949,7 @@ body::before {
 
 .radar-legend-label {
   fill: var(--muted-2);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .radar-legend-dot.self {
@@ -986,13 +986,13 @@ body::before {
 
 .radar-label {
   fill: var(--muted);
-  font-size: 8.5px;
+  font-size: 10.5px;
 }
 
 .radar-value {
-  fill: #dbe6ff;
-  font-size: 9px;
-  font-weight: 650;
+  fill: #eef4ff;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .match-cards::-webkit-scrollbar {

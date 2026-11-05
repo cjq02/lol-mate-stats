@@ -1881,8 +1881,8 @@ function miniRadarSvg(series) {
   const labels = series
     .map((metric, index) => {
       const point = angle(index);
-      const x = cx + Math.cos(point) * radius * 1.15;
-      const y = cy + Math.sin(point) * radius * 1.15;
+      const x = cx + Math.cos(point) * radius * 1.12;
+      const y = cy + Math.sin(point) * radius * 1.12;
       const anchor =
         Math.cos(point) > 0.25 ? 'start' : Math.cos(point) < -0.25 ? 'end' : 'middle';
       const firstDy =
