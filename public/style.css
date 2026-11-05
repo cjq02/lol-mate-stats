@@ -780,57 +780,66 @@ body::before {
 
 .compare-metric {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
-.compare-values {
+.compare-name {
+  font-size: 9.5px;
+  color: var(--muted-2);
+  letter-spacing: 0.04em;
+}
+
+.compare-line {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 4px;
-  font-size: 11px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.compare-value {
+  flex: none;
+  min-width: 4.2ch;
+  text-align: right;
+  font-size: 10.5px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.compare-values em {
-  flex: none;
-  font-style: normal;
-  font-size: 9.5px;
-  font-weight: 400;
-  color: var(--muted-2);
-}
-
-.compare-values .ally {
+.compare-line.ally .compare-value {
   color: #9ff5e7;
 }
 
-.compare-values .enemy {
+.compare-line.enemy .compare-value {
   color: #ffb3bd;
 }
 
-.compare-values .better {
+.compare-line.better .compare-value {
   font-weight: 800;
-  text-shadow: 0 0 10px currentColor;
+  text-shadow: 0 0 8px currentColor;
 }
 
 .compare-track {
-  display: flex;
-  height: 4px;
-  margin-top: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 5px;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .compare-track i {
   display: block;
   height: 100%;
+  border-radius: 999px;
 }
 
-.compare-track i.ally {
+.compare-line.ally .compare-track i {
   background: linear-gradient(90deg, #2dd4bf, #5eead4);
 }
 
-.compare-track i.enemy {
+.compare-line.enemy .compare-track i {
   background: linear-gradient(90deg, #ff8fa0, #ff5c7a);
 }
 

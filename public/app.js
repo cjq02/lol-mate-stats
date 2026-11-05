@@ -1685,7 +1685,6 @@ function renderMatchSummary(detail) {
   const win = Boolean(allies[0]?.win);
   const metrics = [
     { key: 'kills', label: '击杀', better: 'high' },
-    { key: 'deaths', label: '死亡', better: 'low' },
     { key: 'assists', label: '助攻', better: 'high' },
     { key: 'damage', label: '总伤害', better: 'high' },
     { key: 'damageTaken', label: '总承伤', better: 'neutral' },
@@ -1697,8 +1696,9 @@ function renderMatchSummary(detail) {
     .map((metric) => {
       const ally = sum(allies, metric.key);
       const enemy = sum(enemies, metric.key);
-      const total = ally + enemy;
-      const allyPercent = total > 0 ? (ally / total) * 100 : 50;
+      const max = Math.max(ally, enemy, 1);
+      const allyWidth = (ally / max) * 100;
+      const enemyWidth = (enemy / max) * 100;
       const allyBetter =
         metric.better === 'high'
           ? ally > enemy
@@ -1712,14 +1712,14 @@ function renderMatchSummary(detail) {
             ? enemy < ally
             : false;
       return `<div class="compare-metric">
-        <div class="compare-values">
-          <span class="ally${allyBetter ? ' better' : ''}">${int(ally)}</span>
-          <em>${metric.label}</em>
-          <span class="enemy${enemyBetter ? ' better' : ''}">${int(enemy)}</span>
+        <div class="compare-name">${metric.label}</div>
+        <div class="compare-line ally${allyBetter ? ' better' : ''}">
+          <b class="compare-value">${int(ally)}</b>
+          <span class="compare-track"><i style="width:${allyWidth.toFixed(1)}%"></i></span>
         </div>
-        <div class="compare-track">
-          <i class="ally" style="width:${allyPercent.toFixed(1)}%"></i>
-          <i class="enemy" style="width:${(100 - allyPercent).toFixed(1)}%"></i>
+        <div class="compare-line enemy${enemyBetter ? ' better' : ''}">
+          <b class="compare-value">${int(enemy)}</b>
+          <span class="compare-track"><i style="width:${enemyWidth.toFixed(1)}%"></i></span>
         </div>
       </div>`;
     })
