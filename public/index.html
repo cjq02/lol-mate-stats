@@ -128,6 +128,16 @@
             <button class="tab" type="button" data-ranking-mode="SR">召唤师峡谷</button>
             <button class="tab" type="button" data-ranking-mode="ARAM">极地大乱斗</button>
             <button class="tab" type="button" data-ranking-mode="ARENA">斗魂竞技场</button>
+            <select
+              id="champion-ranking-sort"
+              class="champion-ranking-sort"
+              aria-label="排序方式"
+            >
+              <option value="avg">按平均分</option>
+              <option value="games">按场次</option>
+              <option value="winRate">按胜率</option>
+              <option value="best">按最高分</option>
+            </select>
           </div>
           <div id="champion-ranking-list" class="champion-ranking-list"></div>
         </div>

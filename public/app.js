@@ -45,6 +45,7 @@ const els = {
   championRankingModal: document.getElementById('champion-ranking-modal'),
   championRankingList: document.getElementById('champion-ranking-list'),
   championRankingTabs: document.getElementById('champion-ranking-tabs'),
+  championRankingSort: document.getElementById('champion-ranking-sort'),
   championRankingMeta: document.getElementById('champion-ranking-meta'),
   championRankingClose: document.getElementById('champion-ranking-close'),
   latestMatch: document.getElementById('latest-match'),
@@ -155,6 +156,13 @@ const CHAMPION_RANKING_MODE_LABELS = {
   ARENA: '斗魂竞技场',
 };
 
+const CHAMPION_RANKING_SORT_LABELS = {
+  avg: '平均分',
+  games: '场次',
+  winRate: '胜率',
+  best: '最高分',
+};
+
 /** 根据当前游戏 / 选人模式，决定英雄排名默认打开哪个页签 */
 function rankingModeFromSnapshot() {
   const snapshot = state.snapshot;
@@ -220,6 +228,9 @@ const state = {
   championRankingLoading: false,
   /** 英雄评分排名当前模式：all / SR / ARAM / ARENA */
   championRankingMode: 'all',
+  /** 英雄评分排名排序：avg / games / winRate / best */
+  championRankingSort: 'avg',
+  championRankingData: [],
   championRankingToken: 0,
   itemIcons: null,
   searchPlayers: [],
@@ -2719,19 +2730,35 @@ function rankingClass(rank) {
 }
 
 function renderChampionRanking(champions, mode = state.championRankingMode) {
+  const sort = CHAMPION_RANKING_SORT_LABELS[state.championRankingSort]
+    ? state.championRankingSort
+    : 'avg';
+  const number = (value) => Number(value) || 0;
   const list = (Array.isArray(champions) ? champions : [])
     .filter((item) => Number(item?.games) > 0)
-    .sort(
-      (a, b) =>
-        (Number(b.avgScore) || 0) - (Number(a.avgScore) || 0) ||
-        (Number(b.games) || 0) - (Number(a.games) || 0),
-    );
+    .sort((a, b) => {
+      if (sort === 'games') {
+        return number(b.games) - number(a.games) || number(b.avgScore) - number(a.avgScore);
+      }
+      if (sort === 'winRate') {
+        return (
+          number(b.winRate) - number(a.winRate) ||
+          number(b.games) - number(a.games) ||
+          number(b.avgScore) - number(a.avgScore)
+        );
+      }
+      if (sort === 'best') {
+        return number(b.bestScore) - number(a.bestScore) || number(b.avgScore) - number(a.avgScore);
+      }
+      return number(b.avgScore) - number(a.avgScore) || number(b.games) - number(a.games);
+    });
   const modeLabel =
     CHAMPION_RANKING_MODE_LABELS[mode] ?? CHAMPION_RANKING_MODE_LABELS.all;
+  const sortLabel = CHAMPION_RANKING_SORT_LABELS[sort];
   const totalGames = list.reduce((sum, item) => sum + (Number(item.games) || 0), 0);
 
   els.championRankingMeta.textContent = list.length
-    ? `${modeLabel} · ${list.length} 个英雄 · ${totalGames} 场`
+    ? `${modeLabel} · 按${sortLabel} · ${list.length} 个英雄 · ${totalGames} 场`
     : '';
 
   if (!list.length) {
@@ -2803,7 +2830,8 @@ async function loadChampionRanking() {
     }
     if (token !== state.championRankingToken) return;
     state.selfPuuid = payload.puuid ?? state.selfPuuid;
-    renderChampionRanking(payload.champions, mode);
+    state.championRankingData = Array.isArray(payload.champions) ? payload.champions : [];
+    renderChampionRanking(state.championRankingData, mode);
   } catch (error) {
     if (token !== state.championRankingToken) return;
     els.championRankingMeta.textContent = '';
@@ -2817,6 +2845,7 @@ async function loadChampionRanking() {
 
 function openChampionRanking() {
   state.championRankingMode = rankingModeFromSnapshot();
+  if (els.championRankingSort) els.championRankingSort.value = state.championRankingSort;
   updateChampionRankingTabs();
   els.championRankingModal.classList.remove('hidden');
   void loadChampionRanking();
@@ -2896,6 +2925,12 @@ els.championRankingTabs.addEventListener('click', (event) => {
   state.championRankingMode = mode;
   updateChampionRankingTabs();
   void loadChampionRanking();
+});
+els.championRankingSort.addEventListener('change', () => {
+  const sort = els.championRankingSort.value;
+  if (!CHAMPION_RANKING_SORT_LABELS[sort]) return;
+  state.championRankingSort = sort;
+  renderChampionRanking(state.championRankingData, state.championRankingMode);
 });
 els.championRankingModal.addEventListener('click', (event) => {
   if (event.target === els.championRankingModal) closeChampionRanking();
