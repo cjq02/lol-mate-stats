@@ -451,7 +451,15 @@ function buildCard(player, isLocal, options = {}) {
   const color = ratingColor(rating);
   const name = player.displayName ?? '未知召唤师';
   const tag = player.tagLine;
-  const labels = (thisGame ? thisGame.tags ?? [] : player.labels ?? []).slice(0, 5);
+  const rawLabels = thisGame ? thisGame.tags ?? [] : player.labels ?? [];
+  const bestTag = thisGame
+    ? rawLabels.includes('MVP')
+      ? 'MVP'
+      : rawLabels.includes('SVP')
+        ? 'SVP'
+        : null
+    : null;
+  const labels = rawLabels.filter((label) => label !== 'MVP' && label !== 'SVP').slice(0, 5);
   const risk = recent?.risk;
   const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
   const cardMode = options.mode === undefined ? state.snapshot?.gameMode : options.mode;
@@ -462,7 +470,9 @@ function buildCard(player, isLocal, options = {}) {
   const card = document.createElement('article');
   card.className = `card${isLocal ? ' is-local' : ''}${
     !thisGame && risk?.level === 'severe' ? ' is-risk' : ''
-  }${player.isEnemy ? ' is-enemy' : ''}`;
+  }${player.isEnemy ? ' is-enemy' : ''}${
+    bestTag === 'MVP' ? ' is-mvp' : bestTag === 'SVP' ? ' is-svp' : ''
+  }`;
   card.style.setProperty('--ring-color', color);
   card.style.setProperty('--ring-glow', hexToRgba(color, 0.2));
 
@@ -498,6 +508,10 @@ function buildCard(player, isLocal, options = {}) {
     : !thisGame && recent
       ? `<div class="chips"><span class="chip muted-chip">近况平稳</span></div>`
       : '';
+
+  const bestBadge = bestTag
+    ? `<span class="best-badge detail-best ${bestTag === 'MVP' ? 'mvp' : 'svp'}">${bestTag}</span>`
+    : '';
 
   const record = thisGame
     ? `本局 · <b class="${thisGame.win ? 'win' : 'loss'}">${thisGame.win ? '胜' : '负'}</b> · ${
@@ -754,6 +768,7 @@ function buildCard(player, isLocal, options = {}) {
       </div>
       <div class="score-meta">
         <div class="meta-top">
+          ${bestBadge}
           <span class="grade">${grade ?? '?'}</span>
           <span class="record">${record}</span>
           ${riskPill}

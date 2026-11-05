@@ -695,6 +695,21 @@ body::before {
   box-shadow: 0 0 8px rgba(157, 179, 232, 0.45);
 }
 
+.best-badge.detail-best {
+  min-width: 52px;
+  padding: 4px 11px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.best-badge.detail-best.mvp {
+  box-shadow: 0 0 16px rgba(245, 199, 106, 0.7);
+}
+
+.best-badge.detail-best.svp {
+  box-shadow: 0 0 16px rgba(157, 179, 232, 0.55);
+}
+
 .match-flag {
   font-weight: 650;
 }
@@ -1239,6 +1254,28 @@ body::before {
 
 .card.is-enemy::before {
   background: linear-gradient(90deg, transparent, rgba(255, 107, 129, 0.55), transparent);
+}
+
+.card.is-mvp {
+  border-color: rgba(255, 209, 102, 0.55);
+  box-shadow: var(--shadow), 0 0 0 1px rgba(255, 209, 102, 0.14),
+    0 0 26px rgba(255, 209, 102, 0.14);
+}
+
+.card.is-mvp::before {
+  background: linear-gradient(90deg, transparent, #ffd166, transparent);
+  opacity: 1;
+}
+
+.card.is-svp {
+  border-color: rgba(157, 179, 232, 0.5);
+  box-shadow: var(--shadow), 0 0 0 1px rgba(157, 179, 232, 0.12),
+    0 0 24px rgba(157, 179, 232, 0.12);
+}
+
+.card.is-svp::before {
+  background: linear-gradient(90deg, transparent, #9db3e8, transparent);
+  opacity: 1;
 }
 
 .card-head {
