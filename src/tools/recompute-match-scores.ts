@@ -2,6 +2,7 @@ import '../env.js';
 import { closeDb, getDb } from '../stats/store.js';
 import { championRole } from '../stats/champion-roles.js';
 import { legacyPercentileScores, percentileScores } from '../stats/rating.js';
+import { mapLimit } from '../util.js';
 
 /**
  * 用“局内百分位 + 分英雄类型权重”重算历史对局评分。
@@ -51,6 +52,14 @@ function dateArg(name: string): number | undefined {
   return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
+/** 并发数：MySQL 是远程连接，用异步并发即可，不需要 worker 线程 */
+function concurrencyArg(): number {
+  const index = process.argv.indexOf('--concurrency');
+  const raw = index >= 0 ? Number(process.argv[index + 1]) : NaN;
+  const value = Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 4;
+  return Math.min(16, Math.max(1, value));
+}
+
 async function main(): Promise<void> {
   const db = await getDb();
   if (!db) {
@@ -94,10 +103,12 @@ async function main(): Promise<void> {
       `${before ? ` · before ${new Date(before).toISOString()}` : ''}`,
   );
   const scoreFn = useOld ? legacyPercentileScores : percentileScores;
+  const concurrency = concurrencyArg();
+  console.log(`并发 ${concurrency}（MySQL 异步并发，不是 worker 线程）`);
 
   let updated = 0;
-  for (let index = 0; index < gameIds.length; index += 1) {
-    const gameId = gameIds[index]!;
+  let completed = 0;
+  await mapLimit(gameIds, concurrency, async (gameId) => {
     const [rows] = await db.query(
       `SELECT participant_id, team_id, champion_id, kills, deaths, assists, damage,
               damage_taken, heal
@@ -107,53 +118,54 @@ async function main(): Promise<void> {
       [gameId],
     );
     const participants = rows as ParticipantRow[];
-    if (!participants.length) continue;
+    if (participants.length) {
+      const teamTotals = new Map<number, TeamTotals>();
+      for (const participant of participants) {
+        const teamId = Number(participant.team_id);
+        const total = teamTotals.get(teamId) ?? { kills: 0, damage: 0, taken: 0, heal: 0 };
+        total.kills += Number(participant.kills);
+        total.damage += Number(participant.damage);
+        total.taken += Number(participant.damage_taken);
+        total.heal += Number(participant.heal);
+        teamTotals.set(teamId, total);
+      }
 
-    const teamTotals = new Map<number, TeamTotals>();
-    for (const participant of participants) {
-      const teamId = Number(participant.team_id);
-      const total = teamTotals.get(teamId) ?? { kills: 0, damage: 0, taken: 0, heal: 0 };
-      total.kills += Number(participant.kills);
-      total.damage += Number(participant.damage);
-      total.taken += Number(participant.damage_taken);
-      total.heal += Number(participant.heal);
-      teamTotals.set(teamId, total);
+      const inputs = participants.map((participant) => {
+        const total = teamTotals.get(Number(participant.team_id))!;
+        const kills = Number(participant.kills);
+        const deaths = Number(participant.deaths);
+        const assists = Number(participant.assists);
+        return {
+          kda: (kills + assists) / Math.max(1, deaths),
+          killParticipation: total.kills > 0 ? (kills + assists) / total.kills : 0,
+          damageShare: total.damage > 0 ? Number(participant.damage) / total.damage : 0,
+          tankShare: total.taken > 0 ? Number(participant.damage_taken) / total.taken : 0,
+          healShare: total.heal > 0 ? Number(participant.heal) / total.heal : 0,
+          role: championRole(Number(participant.champion_id)),
+          deaths,
+        };
+      });
+      const scores = scoreFn(inputs);
+
+      const cases = participants.map(() => 'WHEN ? THEN ?').join(' ');
+      const updateParams: Array<number | string> = [];
+      participants.forEach((participant, participantIndex) => {
+        updateParams.push(Number(participant.participant_id), scores[participantIndex] ?? 0);
+      });
+      updateParams.push(gameId);
+      await db.query(
+        `UPDATE match_participants SET score = CASE participant_id ${cases} END
+         WHERE game_id = ?`,
+        updateParams,
+      );
+      updated += participants.length;
     }
 
-    const inputs = participants.map((participant) => {
-      const total = teamTotals.get(Number(participant.team_id))!;
-      const kills = Number(participant.kills);
-      const deaths = Number(participant.deaths);
-      const assists = Number(participant.assists);
-      return {
-        kda: (kills + assists) / Math.max(1, deaths),
-        killParticipation: total.kills > 0 ? (kills + assists) / total.kills : 0,
-        damageShare: total.damage > 0 ? Number(participant.damage) / total.damage : 0,
-        tankShare: total.taken > 0 ? Number(participant.damage_taken) / total.taken : 0,
-        healShare: total.heal > 0 ? Number(participant.heal) / total.heal : 0,
-        role: championRole(Number(participant.champion_id)),
-        deaths,
-      };
-    });
-    const scores = scoreFn(inputs);
-
-    const cases = participants.map(() => 'WHEN ? THEN ?').join(' ');
-    const params: Array<number | string> = [];
-    participants.forEach((participant, participantIndex) => {
-      params.push(Number(participant.participant_id), scores[participantIndex] ?? 0);
-    });
-    params.push(gameId);
-    await db.query(
-      `UPDATE match_participants SET score = CASE participant_id ${cases} END
-       WHERE game_id = ?`,
-      params,
-    );
-    updated += participants.length;
-
-    if ((index + 1) % 100 === 0 || index + 1 === gameIds.length) {
-      console.log(`进度 ${index + 1}/${gameIds.length}，已更新 ${updated} 条参与者记录`);
+    completed += 1;
+    if (completed % 100 === 0 || completed === gameIds.length) {
+      console.log(`进度 ${completed}/${gameIds.length}，已更新 ${updated} 条参与者记录`);
     }
-  }
+  });
 
   // 旧的 24 小时报告缓存里还带着旧评分，清掉让下一次读取重新计算
   await db.query('DELETE FROM reports');

@@ -257,6 +257,9 @@ npm run db:recompute-scores -- --before 2026-10-31 --old
 
 # 只重算一局
 npm run db:recompute-scores -- --game 9061816747
+
+# 限制并发（默认 4，范围 1-16；MySQL 用异步并发，不是 worker 线程）
+npm run db:recompute-scores -- --concurrency 8
 ```
 
 **只统计当前模式**：打大乱斗时只取最近的大乱斗对局，打单双排时只取单双排，打灵活/匹配/竞技场同理。为了避免同模式样本太少，会额外多取候选场次再筛选。
