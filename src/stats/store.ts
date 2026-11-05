@@ -542,10 +542,8 @@ export async function saveLiveAiAnalysis(
 
 /** 对局详情缓存版本：卡片/标签口径变化时递增，旧缓存自动失效 */
 const MATCH_DETAIL_CACHE_VERSION = 2;
-/** 对局详情缓存保留 7 天，重复打开时不再重新抓取 10 人战绩 */
-const MATCH_DETAIL_TTL_MS = 7 * 24 * 60 * 60_000;
 
-/** 读取已缓存的完整对局详情（10 人本局数据 + 近期战绩） */
+/** 读取已持久保存的完整对局详情（10 人本局数据 + 近期战绩） */
 export async function getSavedMatchDetail(
   gameId: number,
 ): Promise<MatchDetail | undefined> {
@@ -553,12 +551,11 @@ export async function getSavedMatchDetail(
   if (!db || !gameId) return undefined;
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      'SELECT at, payload FROM match_details WHERE game_id = ?',
+      'SELECT payload FROM match_details WHERE game_id = ?',
       [gameId],
     );
     const row = rows[0];
     if (!row) return undefined;
-    if (Date.now() - Number(row.at) > MATCH_DETAIL_TTL_MS) return undefined;
     const parsed = JSON.parse(String(row.payload ?? '')) as {
       version?: number;
       detail?: MatchDetail;
