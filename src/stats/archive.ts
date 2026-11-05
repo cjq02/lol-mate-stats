@@ -9,7 +9,7 @@ import type {
   RawStats,
 } from '../types.js';
 import { toNumber } from '../util.js';
-import { analyzeParticipant, computeMatchScores, detectLane } from './analyze.js';
+import { analyzeParticipant, computeMatchScores, detectLane, matchBestTags } from './analyze.js';
 import {
   badLevelLabel,
   badLevelOfScore,
@@ -84,16 +84,20 @@ function parseTagList(raw: string | null): string[] {
   return [];
 }
 
-/** 逃跑/坑标签每次读取时重新推断，避免旧数据里的误判一直保留 */
+/** 逃跑/坑/MVP 标签每次读取时重新推断，避免旧数据里的误判一直保留 */
 function stripComputedTags(tags: string[]): string[] {
   return tags.filter(
-    (tag) => !/^(?:自己|队友|对手|敌方)(?:小坑|坑|巨坑|逃跑)$/.test(tag),
+    (tag) =>
+      tag !== 'MVP' &&
+      tag !== 'SVP' &&
+      !/^(?:自己|队友|对手|敌方)(?:小坑|坑|巨坑|逃跑)$/.test(tag),
   );
 }
 
 interface ArchivedParticipant {
   puuid: string | null;
   team_id: number;
+  win: boolean;
   kills: number;
   deaths: number;
   assists: number;
@@ -116,6 +120,23 @@ function archivedGameTags(
   const tags = stripComputedTags(parseTagList(storedTags));
   const remake = isRemakeMeta(durationSeconds);
   if (remake && !tags.includes('重开')) tags.unshift('重开');
+
+  // MVP/SVP 按每队评分最高者重新推断（胜方 MVP、负方 SVP）
+  if (!remake) {
+    const bestByTeam = new Map<number, ArchivedParticipant>();
+    for (const participant of gameParticipants) {
+      const score = participant.score === null ? NaN : Number(participant.score);
+      if (!Number.isFinite(score)) continue;
+      const current = bestByTeam.get(participant.team_id);
+      if (!current || score > Number(current.score)) {
+        bestByTeam.set(participant.team_id, participant);
+      }
+    }
+    const selfBest = [...bestByTeam.values()].find(
+      (participant) => participant.puuid === puuid,
+    );
+    if (selfBest) tags.unshift(selfBest.win ? 'MVP' : 'SVP');
+  }
 
   const durationMin = durationSeconds / 60;
   const relativeStats: AfkRelativeStats[] = gameParticipants.map((participant) => ({
@@ -204,7 +225,7 @@ async function loadParticipantsByGame(
   if (!gameIds.length) return result;
   const placeholders = gameIds.map(() => '?').join(',');
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT game_id, puuid, team_id, kills, deaths, assists, cs, gold, damage, vision, position, score
+    `SELECT game_id, puuid, team_id, win, kills, deaths, assists, cs, gold, damage, vision, position, score
      FROM match_participants
      WHERE game_id IN (${placeholders})`,
     gameIds,
@@ -215,6 +236,7 @@ async function loadParticipantsByGame(
     list.push({
       puuid: (row.puuid as string | null) ?? null,
       team_id: Number(row.team_id),
+      win: Number(row.win) === 1,
       kills: Number(row.kills),
       deaths: Number(row.deaths),
       assists: Number(row.assists),
@@ -290,6 +312,7 @@ export async function archiveGames(
         const rows: unknown[][] = [];
         const participants = game.participants ?? [];
         const scoreMap = computeMatchScores(game, championMap);
+        const bestTags = matchBestTags(game, scoreMap);
         participants.forEach((participant: RawParticipant, index: number) => {
           const participantId = toNumber(participant.participantId) || index + 1;
           const identity = identities.find(
@@ -307,12 +330,16 @@ export async function archiveGames(
           const championId = toNumber(participant.championId);
           const teamId = toNumber(participant.teamId);
           const flags = gameFlags(game, participantId, championMap, scoreMap);
+          const bestTag = bestTags.get(participantId);
           const tags = [
             ...new Set([
+              ...(bestTag ? [bestTag] : []),
               ...gameFlagTags(flags),
-              ...(analyzed?.tags ?? (bot ? ['人机'] : [])),
+              ...(analyzed?.tags ?? (bot ? ['人机'] : [])).filter(
+                (tag) => tag !== 'MVP' && tag !== 'SVP',
+              ),
             ]),
-          ].slice(0, 6);
+          ].slice(0, 7);
 
           rows.push([
             gameId,

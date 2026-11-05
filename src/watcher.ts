@@ -22,7 +22,7 @@ import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { fetchEdgeMatchHistory, findEdgeUrl } from './lcu/edge.js';
 import { openEventStream } from './lcu/events.js';
 import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
-import { analyzeParticipant, computeMatchScores } from './stats/analyze.js';
+import { analyzeParticipant, computeMatchScores, matchBestTags } from './stats/analyze.js';
 import { ReportCollector } from './stats/collector.js';
 import { analyzeGame } from './stats/analyze.js';
 import {
@@ -407,6 +407,7 @@ export class LiveSource implements DataSource {
     const scoreMap = computeMatchScores(game, championMap);
     const afkIds = afkParticipantIds(game, championMap, scoreMap);
     const remake = isRemakeGame(game);
+    const bestTags = remake ? new Map<number, string>() : matchBestTags(game, scoreMap);
 
     const scoreboard = (game.participants ?? [])
       .map((participant) => {
@@ -453,6 +454,13 @@ export class LiveSource implements DataSource {
           : badLevel
             ? [badLevelLabel(badLevel), ...(analyzed?.tags ?? [])]
             : analyzed?.tags;
+        const bestTag = bestTags.get(participantId);
+        const finalTags = bestTag
+          ? [
+              bestTag,
+              ...(tags ?? []).filter((tag) => tag !== 'MVP' && tag !== 'SVP'),
+            ]
+          : tags;
 
         return {
           puuid: typeof player?.puuid === 'string' ? player.puuid : undefined,
@@ -495,7 +503,7 @@ export class LiveSource implements DataSource {
           damageTakenPerMin: perMin(toNumber(stats.totalDamageTaken)),
           visionPerMin: analyzed?.visionPerMin,
           badLevel,
-          tags,
+          tags: finalTags,
         };
       })
       .filter((player) => player.championId > 0)
@@ -599,6 +607,9 @@ export class LiveSource implements DataSource {
       if (detail) {
         await archiveGames([detail], championMap);
         const scoreMap = computeMatchScores(detail, championMap);
+        const bestTags = isRemakeGame(detail)
+          ? new Map<number, string>()
+          : matchBestTags(detail, scoreMap);
         const analyzed = analyzeGame(
           detail,
           {
@@ -611,13 +622,21 @@ export class LiveSource implements DataSource {
         );
         if (analyzed) scores.set(game.gameId, analyzed.score);
         const selfParticipant = participantOf(detail, summoner.puuid ?? '');
+        const selfParticipantId = selfParticipant
+          ? toNumber(selfParticipant.participantId)
+          : undefined;
         const flags = gameFlags(
           detail,
-          selfParticipant ? toNumber(selfParticipant.participantId) : undefined,
+          selfParticipantId,
           championMap,
           scoreMap,
         );
-        tags.set(game.gameId, gameFlagTags(flags));
+        const bestTag =
+          selfParticipantId === undefined ? undefined : bestTags.get(selfParticipantId);
+        tags.set(game.gameId, [
+          ...(bestTag ? [bestTag] : []),
+          ...gameFlagTags(flags),
+        ]);
       }
       done += 1;
       if (done === missing.length) logTag('archive', `评分计算完成：${done} 场`);

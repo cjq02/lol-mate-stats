@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { AnalyzedGame, Lane, RawGame, Snapshot } from '../types.js';
-import { analyzeGame, detectLane } from './analyze.js';
+import { analyzeGame, detectLane, matchBestTags } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
 import { buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
@@ -636,6 +636,29 @@ test('实时 AI 提示词包含装备、召唤师技能、符文、血量和事�
   assert.ok(text.includes('峡谷制造者'), text);
   assert.ok(text.includes('本局事件'), text);
   assert.ok(text.includes('我 击杀 敌人'), text);
+});
+
+test('每队最佳：胜方 MVP、负方 SVP', () => {
+  const game = {
+    participants: [
+      { participantId: 1, teamId: 100, stats: { win: true } },
+      { participantId: 2, teamId: 100, stats: { win: true } },
+      { participantId: 3, teamId: 200, stats: { win: false } },
+      { participantId: 4, teamId: 200, stats: { win: false } },
+    ],
+  } as RawGame;
+  const tags = matchBestTags(
+    game,
+    new Map([
+      [1, 60],
+      [2, 80],
+      [3, 90],
+      [4, 70],
+    ]),
+  );
+  assert.equal(tags.size, 2);
+  assert.equal(tags.get(2), 'MVP');
+  assert.equal(tags.get(3), 'SVP');
 });
 
 console.log(`\n${passed} 项测试全部通过`);

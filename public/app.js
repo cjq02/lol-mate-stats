@@ -489,7 +489,8 @@ function buildCard(player, isLocal, options = {}) {
             '逃跑',
           ].includes(label);
           const gold = label === '大腿' || label === 'MVP';
-          return `<span class="chip${gold ? ' gold' : ''}${danger ? ' danger' : ''}">${escapeHtml(label)}</span>`;
+          const svp = label === 'SVP';
+          return `<span class="chip${gold ? ' gold' : ''}${svp ? ' svp' : ''}${danger ? ' danger' : ''}">${escapeHtml(label)}</span>`;
         })
         .join('')}</div>`
     : !thisGame && recent
@@ -1535,6 +1536,12 @@ function matchFlagsHtml(tags) {
     .map((tag) => {
       if (tag === '重开') {
         return `<b class="match-flag remake">${escapeHtml(tag)}</b>`;
+      }
+      if (tag === 'MVP') {
+        return '<b class="match-flag mvp">MVP</b>';
+      }
+      if (tag === 'SVP') {
+        return '<b class="match-flag svp">SVP</b>';
       }
       if (tag === '队友逃跑' || tag === '对手逃跑') {
         return `<b class="match-flag ${tag === '队友逃跑' ? 'afk' : 'enemy-afk'}">${escapeHtml(

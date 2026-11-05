@@ -272,6 +272,37 @@ export function computeMatchScores(
   return result;
 }
 
+/**
+ * 每队评分最高的玩家：胜方记 MVP，负方记 SVP。
+ * 返回 participantId → 标签；重开对局由调用方决定是否忽略。
+ */
+export function matchBestTags(
+  game: RawGame,
+  scoreMap: Map<number, number>,
+): Map<number, string> {
+  const bestByTeam = new Map<
+    number,
+    { participantId: number; score: number; win: boolean }
+  >();
+  for (const participant of game.participants ?? []) {
+    const participantId = toNumber(participant.participantId);
+    const score = scoreMap.get(participantId);
+    if (typeof score !== 'number' || !Number.isFinite(score)) continue;
+    const teamId = toNumber(participant.teamId);
+    const win = participant.stats?.win === true || participant.stats?.win === 1;
+    const current = bestByTeam.get(teamId);
+    if (!current || score > current.score) {
+      bestByTeam.set(teamId, { participantId, score, win });
+    }
+  }
+
+  const result = new Map<number, string>();
+  for (const best of bestByTeam.values()) {
+    result.set(best.participantId, best.win ? 'MVP' : 'SVP');
+  }
+  return result;
+}
+
 export function analyzeGame(
   game: RawGame,
   identityKey: IdentityKey,

@@ -645,6 +645,14 @@ body::before {
   color: #8bb8ff;
 }
 
+.match-flag.mvp {
+  color: #ffd166;
+}
+
+.match-flag.svp {
+  color: #c4d4ff;
+}
+
 .match-flag.afk {
   color: #ffab5e;
 }
@@ -687,6 +695,14 @@ body::before {
 
 .match-flags .match-flag.remake {
   background: rgba(139, 184, 255, 0.14);
+}
+
+.match-flags .match-flag.mvp {
+  background: rgba(255, 209, 102, 0.14);
+}
+
+.match-flags .match-flag.svp {
+  background: rgba(196, 212, 255, 0.12);
 }
 
 .match-flags .match-flag.afk {
@@ -1344,6 +1360,12 @@ body::before {
   color: #ffdda0;
   border-color: rgba(245, 199, 106, 0.24);
   background: rgba(245, 199, 106, 0.08);
+}
+
+.chip.svp {
+  color: #c4d4ff;
+  border-color: rgba(157, 179, 232, 0.3);
+  background: rgba(157, 179, 232, 0.1);
 }
 
 .chip.muted-chip {

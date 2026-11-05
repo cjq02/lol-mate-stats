@@ -773,8 +773,8 @@ export function gameTags(game: {
   if ((game.pentaKills ?? 0) > 0) tags.push('五杀');
   else if ((game.quadraKills ?? 0) > 0) tags.push('四杀');
 
-  if (game.score >= 85) tags.push('MVP');
-  else if (game.win && game.score < 45) tags.push('躺赢');
+  // MVP/SVP 由本局每队评分最高者决定，需要全队数据，不能只看单人评分
+  if (game.win && game.score < 45) tags.push('躺赢');
   else if (!game.win && game.score >= 70) tags.push('尽力局');
 
   if ((game.largestKillingSpree ?? 0) >= 8) tags.push('超神');
