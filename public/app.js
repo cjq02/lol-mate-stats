@@ -214,6 +214,8 @@ const state = {
   championRankingSort: 'avg',
   championRankingData: [],
   championRankingToken: 0,
+  /** 查看玩家战绩时的分页状态 */
+  playerMatches: null,
   itemIcons: null,
   searchPlayers: [],
   matchesRefreshHandler: null,
@@ -231,6 +233,9 @@ const MY_MATCH_PAGE = 30;
 
 /** 单个英雄的战绩每页场次（后端按英雄 + 模式直接查询） */
 const CHAMPION_MATCH_PAGE = 20;
+
+/** 查看某个玩家战绩时，历史存档每页场次 */
+const PLAYER_MATCH_PAGE = 20;
 
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
 const STATIC_MODE = new URLSearchParams(window.location.search).has('static');
@@ -2149,6 +2154,27 @@ function matchesContext() {
   return snapshotContext();
 }
 
+/** 把当前对局/模式换算成存档里的统计组 */
+function queueGroupFromContext(context) {
+  if (!context) return undefined;
+  const mode = String(context.mode ?? '').toUpperCase();
+  const queueId = Number(context.queueId) || 0;
+  if (!mode && !queueId) return undefined;
+  if (mode === 'ARAM' || queueId === 450 || queueId === 720) return 'aram';
+  if (
+    mode === 'ARENA' ||
+    mode === 'CHERRY' ||
+    queueId === 1700 ||
+    queueId === 1710
+  ) {
+    return 'arena';
+  }
+  if (queueId === 420) return 'solo';
+  if (queueId === 440) return 'flex';
+  if (queueId === 400 || queueId === 430) return 'normal';
+  return 'sr';
+}
+
 async function refreshPlayerMatches(player, context) {
   if (!player.summonerId) throw new Error('缺少玩家 ID，无法更新');
   const token = state.matchRequestToken;
@@ -2184,12 +2210,20 @@ async function refreshPlayerMatches(player, context) {
   const modeContext = context ?? (state.matchDetail ? matchesContext() : undefined);
   const modeRecord = await fetchModeRecord(player.puuid, modeContext);
   if (token !== state.matchRequestToken) return;
-  renderPlayerMatches(
-    player.games ?? [],
-    playerMatchesTitle(player, modeRecord),
+  state.playerMatches = {
+    puuid: player.puuid,
     player,
     context,
-  );
+    group: queueGroupFromContext(context),
+    games: [...(player.games ?? [])],
+    title: playerMatchesTitle(player, modeRecord),
+    offset: 0,
+    total: 0,
+    archiveReady: false,
+    archiveLoading: false,
+  };
+  renderPlayerMatches();
+  void loadPlayerMatchesPage();
 }
 
 function mergeRefreshedPlayer(target, updated) {
@@ -2205,20 +2239,94 @@ function mergeRefreshedPlayer(target, updated) {
   target.loading = false;
 }
 
-function renderPlayerMatches(games, title, player, context) {
-  renderMatchesView(games, title, true);
-  state.currentView = () => renderPlayerMatches(games, title, player, context);
+function playerArchiveQuery(page, limit, offset) {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  if (page.puuid) params.set('puuid', page.puuid);
+  if (page.group) params.set('group', page.group);
+  return `/api/archive/matches?${params.toString()}`;
+}
+
+function renderPlayerMatches() {
+  const page = state.playerMatches;
+  if (!page) return;
+  const scrollTop = els.matchesList.scrollTop;
+  renderMatchesView(page.games, page.title, true);
+  els.matchesList.scrollTop = scrollTop;
+  state.currentView = renderPlayerMatches;
   setMatchesRefresh(
-    player?.summonerId ? () => refreshPlayerMatches(player, context) : null,
+    page.player?.summonerId
+      ? () => refreshPlayerMatches(page.player, page.context)
+      : null,
   );
+
+  if (!page.puuid) return;
+  if (page.archiveLoading && !page.archiveReady) {
+    els.matchesList.insertAdjacentHTML(
+      'beforeend',
+      '<div class="archive-more"><span>正在读取更早的战绩…</span></div>',
+    );
+    return;
+  }
+  const remaining = Math.max(0, page.total - page.offset);
+  if (page.archiveReady && remaining === 0) {
+    els.matchesList.insertAdjacentHTML(
+      'beforeend',
+      `<div class="archive-more"><span>已加载全部历史战绩（共 ${page.games.length} 场）</span></div>`,
+    );
+    return;
+  }
+  els.matchesList.insertAdjacentHTML(
+    'beforeend',
+    `<div class="archive-more"><button class="btn" type="button" data-action="player-more">加载更早的战绩${
+      page.archiveReady && remaining ? `（本地存档还有 ${remaining} 场）` : ''
+    }</button></div>`,
+  );
+}
+
+async function loadPlayerMatchesPage() {
+  const page = state.playerMatches;
+  if (!page || !page.puuid || page.archiveLoading) return;
+  page.archiveLoading = true;
+  const offset = page.offset;
+  renderPlayerMatches();
+  try {
+    const response = await fetch(
+      playerArchiveQuery(page, PLAYER_MATCH_PAGE, offset),
+      { cache: 'no-store' },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    if (state.playerMatches !== page) return;
+    const archived = Array.isArray(payload.games) ? payload.games : [];
+    page.total = Number(payload.total) || page.total || archived.length;
+    page.offset = archived.length
+      ? Math.max(page.offset, offset + archived.length)
+      : page.total;
+    page.games = mergeMatchLists(page.games, archived);
+    page.archiveReady = true;
+  } catch (error) {
+    if (state.playerMatches !== page) return;
+    els.notice.textContent = `读取更早战绩失败：${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    els.notice.classList.remove('hidden');
+    setTimeout(() => els.notice.classList.add('hidden'), 8000);
+  } finally {
+    if (state.playerMatches === page) {
+      page.archiveLoading = false;
+      renderPlayerMatches();
+    }
+  }
 }
 
 function openMatches(player, context) {
   state.matchRequestToken += 1;
   const token = state.matchRequestToken;
   state.modeRecord = null;
-  const games = player.games ?? [];
-  const title = playerMatchesTitle(player);
 
   // 在某一局详情里点玩家卡片时，把当前详情压栈，返回时回到原页签
   const inDetail =
@@ -2233,17 +2341,32 @@ function openMatches(player, context) {
     state.backScrollStack = [];
     state.currentView = null;
   }
-  renderPlayerMatches(games, title, player, context);
+
+  const page = {
+    puuid: player.puuid,
+    player,
+    context,
+    group: queueGroupFromContext(context),
+    games: [...(player.games ?? [])],
+    title: playerMatchesTitle(player),
+    offset: 0,
+    total: 0,
+    archiveReady: false,
+    archiveLoading: false,
+  };
+  state.playerMatches = page;
+  renderPlayerMatches();
 
   // 标题里的模式总胜率来自长期存档，异步补上，不阻塞列表显示
   const modeContext = context ?? (state.matchDetail ? matchesContext() : undefined);
   void fetchModeRecord(player.puuid, modeContext).then((record) => {
-    if (token !== state.matchRequestToken || !record) return;
-    const nextTitle = playerMatchesTitle(player, record);
-    els.matchesTitle.textContent = nextTitle;
-    state.currentView = () =>
-      renderPlayerMatches(games, nextTitle, player, context);
+    if (token !== state.matchRequestToken || !record || state.playerMatches !== page) {
+      return;
+    }
+    page.title = playerMatchesTitle(player, record);
+    els.matchesTitle.textContent = page.title;
   });
+  void loadPlayerMatchesPage();
 }
 
 function goMatchesBack() {
@@ -2476,6 +2599,7 @@ async function openMyMatches(options = {}) {
   const token = state.matchRequestToken;
   const context = matchesContext();
   state.matchDetail = null;
+  state.playerMatches = null;
   state.myGames = [];
   state.myLcuOffset = 0;
   state.lcuExhausted = false;
@@ -2759,6 +2883,7 @@ function closeMatches() {
   setMatchProgress('');
   state.matchRequestToken += 1;
   state.matchDetail = null;
+  state.playerMatches = null;
   state.backStack = [];
   state.backScrollStack = [];
   state.currentView = null;
@@ -3037,20 +3162,31 @@ els.matchesBack.addEventListener('click', () => {
   goMatchesBack();
 });
 els.matchesList.addEventListener('scroll', () => {
-  // “我的战绩”滚到接近底部时自动加载更早的对局
+  // 滚到接近底部时自动加载更早的对局
   if (state.archiveLoading) return;
-  if (state.currentView !== renderMyMatches) return;
-  const button = els.matchesList.querySelector('[data-action="archive-more"]');
-  if (!button) return;
-  const { scrollTop, clientHeight, scrollHeight } = els.matchesList;
-  if (scrollTop + clientHeight >= scrollHeight - 200) {
-    void loadMoreArchive(button);
+  const nearBottom = () => {
+    const { scrollTop, clientHeight, scrollHeight } = els.matchesList;
+    return scrollTop + clientHeight >= scrollHeight - 200;
+  };
+  if (state.currentView === renderMyMatches) {
+    const button = els.matchesList.querySelector('[data-action="archive-more"]');
+    if (button && nearBottom()) void loadMoreArchive(button);
+    return;
+  }
+  if (state.currentView === renderPlayerMatches && !state.playerMatches?.archiveLoading) {
+    const button = els.matchesList.querySelector('[data-action="player-more"]');
+    if (button && nearBottom()) void loadPlayerMatchesPage();
   }
 });
 els.matchesList.addEventListener('click', (event) => {
   const more = event.target.closest('[data-action="archive-more"]');
   if (more) {
     void loadMoreArchive(more);
+    return;
+  }
+  const playerMore = event.target.closest('[data-action="player-more"]');
+  if (playerMore) {
+    void loadPlayerMatchesPage();
     return;
   }
   const row = event.target.closest('[data-game-id]');

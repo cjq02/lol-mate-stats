@@ -16,7 +16,7 @@ import { mapLimit, round, toNumber, truncate } from '../util.js';
 import type { ChampionSummary, LcuApi } from '../lcu/api.js';
 import { LcuError } from '../lcu/http.js';
 import { liveItemIds } from '../lcu/live.js';
-import { analyzeGame, computeMatchScores } from './analyze.js';
+import { analyzeGame, computeMatchScores, matchBestTags } from './analyze.js';
 import { archiveGames } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
 import { gameFlagTags, gameFlags, isRemakeGame } from './flags.js';
@@ -50,6 +50,8 @@ const CACHE_VERSION = 6;
 const CACHE_SAVE_DELAY = 2_000;
 /** 报告缓存保留时长：只用于清理长期不用的数据，是否过期由“最新对局 ID”决定 */
 const REPORT_RETENTION_MS = 30 * DAY_MS;
+/** 缓存版本：标签口径变化时递增，让旧报告自动失效 */
+const REPORT_CACHE_VERSION = 'v2';
 /** 两次“检查有没有新对局”的最小间隔，避免对局中每轮都请求 LCU */
 const REPORT_RECHECK_MS = 5 * 60_000;
 /** 单类缓存最多落盘多少条，避免数据库无限增长 */
@@ -145,7 +147,7 @@ export class ReportCollector {
    * 下次读取该玩家时会重新拉取战绩；未过期时仍会复用其它缓存。
    */
   invalidateReport(summonerId: number): void {
-    const prefix = `${summonerId}:`;
+    const prefix = `${REPORT_CACHE_VERSION}:${summonerId}:`;
     for (const key of [...this.reportCache.keys()]) {
       if (key.startsWith(prefix)) this.reportCache.delete(key);
     }
@@ -1263,7 +1265,7 @@ function reportCacheKey(
   recent: number,
 ): string {
   const group = context ? currentQueueGroup(context.queueId, context.mode) : 'all';
-  return `${summonerId}:${group}:${recent}`;
+  return `${REPORT_CACHE_VERSION}:${summonerId}:${group}:${recent}`;
 }
 
 function contextLabel(context?: GameContext): string {
@@ -1313,10 +1315,22 @@ function withMatchFlags(
   const flagTags = gameFlagTags(
     gameFlags(rawGame, participantId, championMap, scores),
   );
-  if (!flagTags.length) return analyzed;
+  const bestTags =
+    scores && !isRemakeGame(rawGame)
+      ? matchBestTags(rawGame, scores)
+      : new Map<number, string>();
+  const bestTag = participantId === undefined ? undefined : bestTags.get(participantId);
+  const tags = [
+    ...new Set([
+      ...(analyzed.tags ?? []),
+      ...flagTags,
+      ...(bestTag ? [bestTag] : []),
+    ]),
+  ];
+  if (!tags.length) return analyzed;
   return {
     ...analyzed,
-    tags: [...new Set([...(analyzed.tags ?? []), ...flagTags])],
+    tags,
   };
 }
 

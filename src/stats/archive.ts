@@ -51,6 +51,8 @@ export interface ArchivedMatch {
 export interface PlayerMatchFilter {
   championId?: number;
   mode?: GameModeKey;
+  /** 统计组：aram / arena / solo / flex / normal / sr */
+  group?: string;
 }
 
 /** 特殊模式会把英雄 ID 加上 60000（如 60067 → 67），统计和图标都用基础 ID */
@@ -537,6 +539,8 @@ function playerMatchFilterSql(puuid: string, filter: PlayerMatchFilter = {}) {
   }
   const modeFilter = filter.mode ? CHAMPION_MODE_FILTERS[filter.mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
+  const groupFilter = filter.group ? QUEUE_GROUP_FILTERS[filter.group] : undefined;
+  if (groupFilter) conditions.push(groupFilter);
   return { conditions, params };
 }
 

@@ -425,10 +425,17 @@ async function handleRequest(
     const rawMode = url.searchParams.get('mode');
     const mode: GameModeKey | undefined =
       rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    const rawGroup = url.searchParams.get('group')?.trim();
+    const group =
+      rawGroup &&
+      ['aram', 'arena', 'solo', 'flex', 'normal', 'sr'].includes(rawGroup)
+        ? rawGroup
+        : undefined;
     try {
       const data = await source.getArchivedMatches(limit, offset, puuid, {
         championId,
         mode,
+        group,
       });
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
