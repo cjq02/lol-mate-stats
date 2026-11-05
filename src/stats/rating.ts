@@ -148,6 +148,11 @@ const ROLE_WEIGHTS: Record<ChampionRole, RoleWeights> = {
   default: { kda: 5.3987, kp: 1.2844, damage: 6.7913, taken: 3.2165, heal: 0.0214 },
 };
 
+/** 评分权重（供 AI 提示词等地方复用，避免和评分模型脱节） */
+export function roleScoreWeights(role: ChampionRole): RoleWeights {
+  return ROLE_WEIGHTS[role];
+}
+
 /** 0–1 百分位；并列时取平均名次 */
 function percentileRank(values: number[], value: number): number {
   if (!values.length) return 0.5;

@@ -5,7 +5,9 @@ import type {
   PlayerReport,
   Snapshot,
 } from './types.js';
+import { championRole, type ChampionRole } from './stats/champion-roles.js';
 import { queueName } from './stats/constants.js';
+import { roleScoreWeights } from './stats/rating.js';
 
 export interface AiConfig {
   enabled: boolean;
@@ -212,6 +214,69 @@ function rankText(report: PlayerReport | undefined): string {
   return `；段位 ${rank.tier}${division} ${fix(rank.leaguePoints)}LP`;
 }
 
+const ROLE_NAMES: Record<ChampionRole, string> = {
+  carry: '输出核心（法师/ADC/刺客）',
+  support: '软辅/治疗',
+  tank: '坦克/硬辅',
+  fighter: '战士',
+  default: '通用',
+};
+
+/** 不同英雄类型在评分里最该抢的指标 */
+const ROLE_SCORE_FOCUS: Record<ChampionRole, string> = {
+  carry:
+    '输出占比权重最高，其次 KDA；优先保证活着打满输出，补刀和经济是输出基础。',
+  support:
+    'KDA、参团和承伤权重接近，治疗也有实际占比；优先跟团、助攻、保人并少死，不要为刷伤害脱节。',
+  tank:
+    '承伤权重最高，其次 KDA 和输出；团战主动吃关键技能并活着，参团也有分。',
+  fighter:
+    '输出、承伤和 KDA 权重接近；切后排时既要打出伤害，也要保证自己能活着出来。',
+  default: '优先输出占比、KDA 和承伤，参团也别落下。',
+};
+
+/** 把评分权重换算成占比，方便提示词直接引用 */
+function scoreWeightText(role: ChampionRole): string {
+  const weights = roleScoreWeights(role);
+  const total = weights.kda + weights.kp + weights.damage + weights.taken + weights.heal;
+  const share = (value: number): string => `${Math.round((value / total) * 100)}%`;
+  return [
+    `KDA ${share(weights.kda)}`,
+    `参团 ${share(weights.kp)}`,
+    `输出占比 ${share(weights.damage)}`,
+    `承伤占比 ${share(weights.taken)}`,
+    `治疗占比 ${share(weights.heal)}`,
+  ].join(' / ');
+}
+
+function liveValue(
+  player: PlayerReport | undefined,
+  pick: (row: PlayerReport) => number | undefined,
+): number | undefined {
+  if (!player) return undefined;
+  const value = Number(pick(player));
+  return Number.isFinite(value) ? value : undefined;
+}
+
+/** “KDA 第 3/10（6.33）” */
+function rankLine(
+  players: PlayerReport[],
+  self: PlayerReport | undefined,
+  label: string,
+  pick: (row: PlayerReport) => number | undefined,
+  format: (value: number) => string,
+): string {
+  const selfValue = liveValue(self, pick);
+  if (selfValue === undefined) return '';
+  const values = players
+    .map((row) => liveValue(row, pick))
+    .filter((value): value is number => value !== undefined);
+  if (values.length < 2) return '';
+  const better = values.filter((value) => value > selfValue).length;
+  return `${label} 第 ${better + 1}/${values.length}（${format(selfValue)}）`;
+}
+
+
 /** 把进行中的对局压缩成实时出装/打法建议的提示词 */
 export function buildLiveAnalysisMessages(
   snapshot: Snapshot,
@@ -232,6 +297,19 @@ export function buildLiveAnalysisMessages(
   const champion = self?.championName ?? local?.championName ?? '未知英雄';
   const position = lane(self?.position);
   const selfLine = self ? liveText(self, itemName) : '未找到本人实时数据';
+  const role = championRole(self?.championId ?? local?.championId ?? 0);
+  const rankingText = [
+    rankLine(players, self, 'KDA', (row) => row.live?.kda, (value) => fix(value, 2)),
+    rankLine(players, self, '参团', (row) => row.live?.killParticipation, (value) =>
+      pct(value),
+    ),
+    rankLine(players, self, '装备价值', (row) => row.live?.gold, (value) => fix(value)),
+    rankLine(players, self, '补刀', (row) => row.live?.cs, (value) => fix(value)),
+    rankLine(players, self, '等级', (row) => row.live?.championLevel, (value) => fix(value)),
+    rankLine(players, self, '视野', (row) => row.live?.wardScore, (value) => fix(value)),
+  ]
+    .filter(Boolean)
+    .join('、');
 
   const teamText = (rows: PlayerReport[], mine: boolean): string => {
     let mateIndex = 0;
@@ -266,29 +344,39 @@ export function buildLiveAnalysisMessages(
     }；已进行 ${fix(gameMinutes, 1)} 分钟；我方 ${allies.length} 人 / 敌方 ${enemies.length} 人`,
     events ? `【本局事件】\n${events}` : '',
     `【我的英雄】${champion} / ${position}；${selfLine}`,
+    `【评分目标】类型：${ROLE_NAMES[role]}；权重（局内百分位）：${scoreWeightText(
+      role,
+    )}。${ROLE_SCORE_FOCUS[role]}`,
+    rankingText ? `【当前局内排名】${rankingText}` : '',
+    '【实时限制】实时接口拿不到伤害、承伤、治疗总量，只能按经济、装备、等级、KDA、参团和阵容推断；赛后结算才看真实占比。',
     recentText(self),
     '【我方】',
     teamText(allies, true),
     '【敌方】',
     teamText(enemies, false),
-    '【请分析】重点围绕我的英雄给出装、技能加点和打法建议；当前装备与推荐不一致时，说明下一步如何调整。请按系统要求输出 6 个部分。',
+    '【请分析】围绕我的评分权重和当前局内排名，告诉我这局最该补哪 2-3 项、具体差多少、怎么补；出装和打法都要服务于“赢下来 + 把评分打高”。请按系统要求输出 7 个部分。',
   ]
     .filter(Boolean)
     .join('\n\n');
 
   const system = [
     '你是一名严谨、务实的英雄联盟实时对局教练，擅长根据双方阵容、当前装备和战况给出可执行的出装、技能加点和打法建议。',
-    '只根据我提供的本局数据与英雄知识分析，不要编造未提供的敌方装备、符文、召唤师技能或具体战斗过程。',
+    '这局的首要目标是：在正常争胜的前提下，帮我把赛后单场评分打到尽可能高。评分是同一局 10 名玩家的百分位加权，不是绝对数值；权重按英雄类型不同，已在用户消息中给出。',
+    '只根据我提供的本局数据与英雄知识分析，不要编造未提供的敌方装备、符文、召唤师技能、伤害数字或具体战斗过程。',
+    '实时接口拿不到伤害、承伤、治疗总量；只能按经济、装备、等级、KDA、参团和阵容推断，并明确说明哪些是推断。',
     '大乱斗/竞技场模式不要用补刀、视野、分带等召唤师峡谷标准苛责；数据不足时直接说明。',
+    '每条建议都要说明它提升哪个评分项（KDA / 参团 / 输出占比 / 承伤占比 / 治疗占比），不能只写“多参团”。',
+    '优先在正常赢法内优化评分：不要建议卖队友保 KDA、刷无效伤害或刻意拖延比赛；如果赢法和评分冲突，先讲取舍再给方案。',
     '输出中文，分点清晰，必须引用具体英雄和数字。',
-    '不要使用 Markdown 表格；每个部分单独成段，按纵向从上到下排列。固定输出 6 个部分：',
+    '不要使用 Markdown 表格；每个部分单独成段，按纵向从上到下排列。固定输出 7 个部分：',
     '1. 局势判断（3-4 句：当前优劣势、双方阵容强势期、经济/等级/装备差、本局胜负手）',
-    '2. 我的出装路线（核心装 2-3 件、鞋子、针对敌方关键英雄的防御/功能装、当前装备如何过渡、出装顺序和替换件；至少列出 5 件）',
-    '3. 技能加点与连招（主加/副加、关键连招、对线或团战释放顺序与时机）',
-    '4. 对线与节奏（对线细节/刷野路线、推线或控线、回城时机、视野、资源目标）',
-    '5. 团战打法（站位、优先目标、开团/反打/保护，如何配合我方关键英雄，如何规避敌方关键威胁）',
-    '6. 接下来 3-5 条可执行动作（带时间/目标/资源：推线、拿龙、抱团、回家出装等）',
-    '要求：每个部分都要展开写，结合双方具体英雄和当前数据，总字数控制在 1200-1600 字。',
+    '2. 我的评分提升重点（复述我的评分权重；对照当前局内排名，指出最该补的 2-3 项指标、具体差多少、怎么补）',
+    '3. 我的出装路线（核心装 2-3 件、鞋子、针对敌方关键英雄的防御/功能装、当前装备如何过渡、出装顺序和替换件；优先能让我打出评分项的装备，至少列出 5 件）',
+    '4. 技能加点与连招（主加/副加、关键连招、对线或团战释放顺序与时机）',
+    '5. 对线与节奏（对线细节/刷野路线、推线或控线、回城时机、视野、资源目标；大乱斗则写站位、清线、送死时机和装备节点）',
+    '6. 团战打法（站位、优先目标、开团/反打/保护；明确我该抢输出、承伤、治疗还是参团，如何少死）',
+    '7. 接下来 3-5 条可执行动作（带时间/目标/资源：推线、拿龙、抱团、回家出装等，每条末尾用括号标注预计提升的评分项）',
+    '要求：每个部分都要展开写，结合双方具体英雄和当前数据，总字数控制在 1400-1800 字。',
   ].join('\n');
 
   return [

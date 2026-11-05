@@ -636,6 +636,10 @@ test('实时 AI 提示词包含装备、召唤师技能、符文、血量和事�
   assert.ok(text.includes('峡谷制造者'), text);
   assert.ok(text.includes('本局事件'), text);
   assert.ok(text.includes('我 击杀 敌人'), text);
+  assert.ok(text.includes('【评分目标】'), text);
+  assert.ok(text.includes('权重（局内百分位）'), text);
+  assert.ok(text.includes('输出占比权重最高'), text);
+  assert.ok(text.includes('2. 我的评分提升重点'), text);
 });
 
 test('每队最佳：胜方 MVP、负方 SVP', () => {
