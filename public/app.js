@@ -459,7 +459,21 @@ function buildCard(player, isLocal, options = {}) {
         ? 'SVP'
         : null
     : null;
-  const labels = rawLabels.filter((label) => label !== 'MVP' && label !== 'SVP').slice(0, 5);
+  const badTag = thisGame
+    ? options.badTag ??
+      rawLabels.find((label) => label === '巨坑' || label === '坑' || label === '小坑') ??
+      null
+    : null;
+  const labels = rawLabels
+    .filter(
+      (label) =>
+        label !== 'MVP' &&
+        label !== 'SVP' &&
+        label !== '巨坑' &&
+        label !== '坑' &&
+        label !== '小坑',
+    )
+    .slice(0, 5);
   const risk = recent?.risk;
   const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
   const cardMode = options.mode === undefined ? state.snapshot?.gameMode : options.mode;
@@ -472,6 +486,14 @@ function buildCard(player, isLocal, options = {}) {
     !thisGame && risk?.level === 'severe' ? ' is-risk' : ''
   }${player.isEnemy ? ' is-enemy' : ''}${
     bestTag === 'MVP' ? ' is-mvp' : bestTag === 'SVP' ? ' is-svp' : ''
+  }${
+    badTag === '巨坑'
+      ? ' is-bad-severe'
+      : badTag === '坑'
+        ? ' is-bad'
+        : badTag === '小坑'
+          ? ' is-bad-mild'
+          : ''
   }`;
   card.style.setProperty('--ring-color', color);
   card.style.setProperty('--ring-glow', hexToRgba(color, 0.2));
@@ -511,6 +533,11 @@ function buildCard(player, isLocal, options = {}) {
 
   const bestBadge = bestTag
     ? `<span class="best-badge detail-best ${bestTag === 'MVP' ? 'mvp' : 'svp'}">${bestTag}</span>`
+    : '';
+  const badBadge = badTag
+    ? `<span class="detail-bad-badge ${
+        badTag === '巨坑' ? 'severe' : badTag === '坑' ? 'bad' : 'mild'
+      }">${badTag}</span>`
     : '';
 
   const record = thisGame
@@ -769,6 +796,7 @@ function buildCard(player, isLocal, options = {}) {
       <div class="score-meta">
         <div class="meta-top">
           ${bestBadge}
+          ${badBadge}
           <span class="grade">${grade ?? '?'}</span>
           <span class="record">${record}</span>
           ${riskPill}
@@ -1574,23 +1602,6 @@ function matchFlagsHtml(tags) {
     .join(' / ');
 }
 
-const BAD_LEVEL_LABEL = { mild: '小坑', bad: '坑', severe: '巨坑' };
-const BAD_LEVEL_RANK = { mild: 1, bad: 2, severe: 3 };
-const BAD_LEVEL_CLASS = { mild: 'mild', bad: 'bad', severe: 'severe' };
-
-function worstBadLevel(players) {
-  return players.reduce((worst, player) => {
-    const level = BAD_LEVEL_CLASS[player.badLevel] ? player.badLevel : 'bad';
-    return !worst || BAD_LEVEL_RANK[level] > BAD_LEVEL_RANK[worst] ? level : worst;
-  }, null);
-}
-
-function badLevelFromTag(tag) {
-  if (/巨坑$/.test(tag)) return 'severe';
-  if (/小坑$/.test(tag)) return 'mild';
-  return 'bad';
-}
-
 function afkPlayerLabel(player) {
   const champion = player.championName ?? '未知英雄';
   return `${champion}（${player.name}）`;
@@ -1605,13 +1616,6 @@ function renderMatchFlags(detail) {
   }
   if (tags.includes('自己逃跑')) {
     parts.push('<span class="match-flag self-afk">自己逃跑</span>');
-  }
-  const selfBadTag = tags.find((item) => /^自己(小坑|坑|巨坑)$/.test(item));
-  if (selfBadTag) {
-    const level = badLevelFromTag(selfBadTag);
-    parts.push(
-      `<span class="match-flag self-bad ${BAD_LEVEL_CLASS[level]}">${escapeHtml(selfBadTag)}</span>`,
-    );
   }
   const allies = afk.filter((player) => !player.isEnemy);
   const enemies = afk.filter((player) => player.isEnemy);
@@ -1632,45 +1636,6 @@ function renderMatchFlags(detail) {
     );
   } else if (tags.includes('对手逃跑')) {
     parts.push('<span class="match-flag enemy-afk">对手逃跑</span>');
-  }
-  const bad = detail.badPlayers ?? [];
-  const badAllies = bad.filter((player) => !player.isEnemy);
-  const badEnemies = bad.filter((player) => player.isEnemy);
-  const teammateBadLevel = badAllies.length ? worstBadLevel(badAllies) : null;
-  const enemyBadLevel = badEnemies.length ? worstBadLevel(badEnemies) : null;
-  if (badAllies.length) {
-    parts.push(
-      `<span class="match-flag teammate-bad ${BAD_LEVEL_CLASS[teammateBadLevel]}">队友${
-        BAD_LEVEL_LABEL[teammateBadLevel]
-      }：${badAllies
-        .map((player) => escapeHtml(afkPlayerLabel(player)))
-        .join('、')}</span>`,
-    );
-  } else {
-    const tag = tags.find((item) => /^队友(小坑|坑|巨坑)$/.test(item));
-    if (tag) {
-      const level = badLevelFromTag(tag);
-      parts.push(
-        `<span class="match-flag teammate-bad ${BAD_LEVEL_CLASS[level]}">${escapeHtml(tag)}</span>`,
-      );
-    }
-  }
-  if (badEnemies.length) {
-    parts.push(
-      `<span class="match-flag enemy-bad ${BAD_LEVEL_CLASS[enemyBadLevel]}">敌方${
-        BAD_LEVEL_LABEL[enemyBadLevel]
-      }：${badEnemies
-        .map((player) => escapeHtml(afkPlayerLabel(player)))
-        .join('、')}</span>`,
-    );
-  } else {
-    const tag = tags.find((item) => /^敌方(小坑|坑|巨坑)$/.test(item));
-    if (tag) {
-      const level = badLevelFromTag(tag);
-      parts.push(
-        `<span class="match-flag enemy-bad ${BAD_LEVEL_CLASS[level]}">${escapeHtml(tag)}</span>`,
-      );
-    }
   }
   els.matchFlags.innerHTML = parts.join('');
   els.matchFlags.classList.toggle('hidden', parts.length === 0);
@@ -1946,10 +1911,14 @@ function renderScoreboard(detail) {
   const byPuuid = new Map(players.filter((player) => player.puuid).map((p) => [p.puuid, p]));
   const byName = new Map(players.map((player) => [player.displayName, player]));
   const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
+  const selfBadTag = (detail.tags ?? [])
+    .find((tag) => /^自己(小坑|坑|巨坑)$/.test(tag))
+    ?.replace(/^自己/, '');
   const radarContext = buildRadarContext(scoreboard);
 
   const nodes = scoreboard.map((row) => {
     const report = (row.puuid && byPuuid.get(row.puuid)) || byName.get(row.name);
+    const isLocal = Boolean(row.puuid && selfPuuid && row.puuid === selfPuuid);
     return buildCard(
       {
         ...(report ?? {}),
@@ -1961,11 +1930,12 @@ function renderScoreboard(detail) {
         isEnemy: row.isEnemy,
         isBot: report?.isBot,
       },
-      Boolean(row.puuid && selfPuuid && row.puuid === selfPuuid),
+      isLocal,
       {
         mode: detail.gameMode ?? null,
         modeLabel: detail.queueName ?? '本局',
         thisGame: row,
+        badTag: isLocal ? selfBadTag : undefined,
         radar: radarContext ? buildRadarSeries(row, radarContext) : undefined,
       },
     );
