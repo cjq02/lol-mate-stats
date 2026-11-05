@@ -282,9 +282,30 @@ body::before {
 
 .match-tabs {
   display: flex;
+  align-items: flex-end;
   gap: 4px;
   padding: 8px 16px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.match-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 12px;
+  margin-left: auto;
+  padding-bottom: 9px;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.match-meta b.win {
+  color: var(--win);
+}
+
+.match-meta b.loss {
+  color: var(--loss);
 }
 
 .match-tabs .tab {
@@ -730,29 +751,10 @@ body::before {
   background: rgba(255, 255, 255, 0.025);
 }
 
-.team-summary-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  margin-bottom: 9px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.team-summary-meta b.win {
-  color: var(--win);
-}
-
-.team-summary-meta b.loss {
-  color: var(--loss);
-}
-
 .team-summary-legend {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
   font-size: 10px;
   color: var(--muted-2);
 }

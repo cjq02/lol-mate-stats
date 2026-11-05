@@ -30,6 +30,7 @@ const els = {
   matchesRefresh: document.getElementById('matches-refresh'),
   matchesAi: document.getElementById('matches-ai'),
   matchTabs: document.getElementById('match-tabs'),
+  matchMeta: document.getElementById('match-meta'),
   matchSummary: document.getElementById('match-summary'),
   matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
@@ -1717,8 +1718,8 @@ function renderMatchSummary(detail) {
     })
     .join('');
 
-  els.matchSummary.innerHTML = `
-    <div class="team-summary-meta">
+  if (els.matchMeta) {
+    els.matchMeta.innerHTML = `
       <span>时间 ${escapeHtml(formatGameTime(detail.gameCreation))}</span>
       ${durationMin ? `<span>时长 ${durationMin} 分钟</span>` : ''}
       <span>结果 <b class="${win ? 'win' : 'loss'}">${win ? '胜' : '负'}</b></span>
@@ -1726,13 +1727,18 @@ function renderMatchSummary(detail) {
         <i class="ally"></i>我方
         <i class="enemy"></i>敌方
       </span>
-    </div>
-    <div class="team-summary-grid">${cells}</div>
-  `;
+    `;
+    els.matchMeta.classList.remove('hidden');
+  }
+  els.matchSummary.innerHTML = `<div class="team-summary-grid">${cells}</div>`;
   els.matchSummary.classList.remove('hidden');
 }
 
 function clearMatchSummary() {
+  if (els.matchMeta) {
+    els.matchMeta.innerHTML = '';
+    els.matchMeta.classList.add('hidden');
+  }
   if (!els.matchSummary) return;
   els.matchSummary.innerHTML = '';
   els.matchSummary.classList.add('hidden');
