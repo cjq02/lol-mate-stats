@@ -1851,18 +1851,42 @@ function buildRadarContext(scoreboard) {
   ];
 
   return metrics.map((metric) => {
-    const values = scoreboard.map((player) => metric.value(player));
-    const max = Math.max(1, ...values);
-    const avg = values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
-    return { ...metric, values, max, avg };
+    const entries = scoreboard.map((player) => ({
+      teamId: player.teamId,
+      value: metric.value(player),
+    }));
+    const values = entries.map((entry) => entry.value);
+    // 六边形按各自阵营单独归一化，排名仍然把两边放在一起算
+    const teams = new Map();
+    for (const entry of entries) {
+      const teamValues = teams.get(entry.teamId) ?? [];
+      teamValues.push(entry.value);
+      teams.set(entry.teamId, teamValues);
+    }
+    const groups = new Map(
+      [...teams].map(([teamId, teamValues]) => [
+        teamId,
+        {
+          max: Math.max(1, ...teamValues),
+          avg:
+            teamValues.reduce((sum, value) => sum + value, 0) / Math.max(1, teamValues.length),
+        },
+      ]),
+    );
+    return { ...metric, values, groups };
   });
 }
 
 function buildRadarSeries(player, context) {
   return context.map((metric) => {
     const value = metric.value(player);
-    const selfRatio = Math.max(0, Math.min(100, (value / metric.max) * 100));
-    const avgRatio = Math.max(0, Math.min(100, (metric.avg / metric.max) * 100));
+    const group = metric.groups.get(player.teamId) ?? {
+      max: Math.max(1, ...metric.values),
+      avg:
+        metric.values.reduce((sum, item) => sum + item, 0) / Math.max(1, metric.values.length),
+    };
+    const selfRatio = Math.max(0, Math.min(100, (value / group.max) * 100));
+    const avgRatio = Math.max(0, Math.min(100, (group.avg / group.max) * 100));
     const plain = (input) => String(input).replace(/<[^>]*>/g, '');
     const valueText = plain(metric.format(value));
     const share = metric.share ? pct(metric.share(player)) : '';
@@ -1874,8 +1898,8 @@ function buildRadarSeries(player, context) {
       valueText: display,
       selfRatio,
       avgRatio,
-      title: `${metric.label} 第${rank}名 · 玩家 ${display} · 平均 ${plain(
-        metric.format(metric.avg),
+      title: `${metric.label} 第${rank}名 · 玩家 ${display} · 队伍平均 ${plain(
+        metric.format(group.avg),
       )}`,
     };
   });
@@ -1938,8 +1962,8 @@ function miniRadarSvg(series) {
   const legend = `<g class="radar-legend">
     <circle cx="6" cy="7" r="2.4" class="radar-legend-dot self"/>
     <text x="11" y="9.7" class="radar-legend-label">玩家</text>
-    <circle cx="${width - 28}" cy="7" r="2.4" class="radar-legend-dot avg"/>
-    <text x="${width - 23}" y="9.7" class="radar-legend-label">平均</text>
+    <circle cx="${width - 48}" cy="7" r="2.4" class="radar-legend-dot avg"/>
+    <text x="${width - 43}" y="9.7" class="radar-legend-label">队伍平均</text>
   </g>`;
 
   return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="本局数据对比">
