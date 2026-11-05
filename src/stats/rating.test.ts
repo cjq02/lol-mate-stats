@@ -4,7 +4,7 @@ import { analyzeGame, detectLane, matchBestTags } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
 import { buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
-import { PROFILES, gameTags, isAfkLike, percentileScores, performanceScore, summarize } from './rating.js';
+import { PROFILES, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 
 let passed = 0;
@@ -659,6 +659,73 @@ test('每队最佳：胜方 MVP、负方 SVP', () => {
   assert.equal(tags.size, 2);
   assert.equal(tags.get(2), 'MVP');
   assert.equal(tags.get(3), 'SVP');
+});
+
+test('有参团和承伤的“坑”玩家不判逃跑', () => {
+  const player = {
+    durationMin: 20,
+    gold: 9790,
+    damage: 5997,
+    cs: 2,
+    kills: 1,
+    deaths: 18,
+    assists: 13,
+    visionScore: 0,
+    position: 'ARAM' as Lane,
+    killParticipation: 0.28,
+    damageTaken: 31287,
+    heal: 2638,
+  };
+  const team = [
+    player,
+    {
+      durationMin: 20,
+      gold: 15515,
+      damage: 49799,
+      cs: 43,
+      kills: 18,
+      deaths: 11,
+      assists: 13,
+      visionScore: 0,
+      position: 'ARAM' as Lane,
+      killParticipation: 0.62,
+      damageTaken: 28486,
+      heal: 6014,
+    },
+  ];
+  assert.equal(isAfkLikeRelative(player, team), false);
+});
+
+test('真正没有参与对局的玩家仍判逃跑', () => {
+  const afk = {
+    durationMin: 20,
+    gold: 3000,
+    damage: 500,
+    cs: 0,
+    kills: 0,
+    deaths: 0,
+    assists: 0,
+    visionScore: 0,
+    position: 'MID' as Lane,
+    killParticipation: 0,
+    damageTaken: 1600,
+    heal: 0,
+  };
+  const normal = {
+    durationMin: 20,
+    gold: 12000,
+    damage: 25000,
+    cs: 150,
+    kills: 8,
+    deaths: 4,
+    assists: 6,
+    visionScore: 30,
+    position: 'MID' as Lane,
+    killParticipation: 0.5,
+    damageTaken: 20000,
+    heal: 1000,
+  };
+  assert.equal(isAfkLikeRelative(afk, [afk, normal]), true);
 });
 
 console.log(`\n${passed} 项测试全部通过`);

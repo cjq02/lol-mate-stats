@@ -104,6 +104,8 @@ interface ArchivedParticipant {
   cs: number;
   gold: number;
   damage: number;
+  damage_taken: number;
+  heal: number;
   vision: number;
   position: string | null;
   score: number | null;
@@ -149,6 +151,8 @@ function archivedGameTags(
     assists: participant.assists,
     visionScore: participant.vision,
     position: (participant.position as Lane | null) ?? undefined,
+    damageTaken: participant.damage_taken,
+    heal: participant.heal,
   }));
   const statsByTeam = new Map<number, AfkRelativeStats[]>();
   gameParticipants.forEach((participant, index) => {
@@ -225,7 +229,7 @@ async function loadParticipantsByGame(
   if (!gameIds.length) return result;
   const placeholders = gameIds.map(() => '?').join(',');
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT game_id, puuid, team_id, win, kills, deaths, assists, cs, gold, damage, vision, position, score
+    `SELECT game_id, puuid, team_id, win, kills, deaths, assists, cs, gold, damage, damage_taken, heal, vision, position, score
      FROM match_participants
      WHERE game_id IN (${placeholders})`,
     gameIds,
@@ -243,6 +247,8 @@ async function loadParticipantsByGame(
       cs: Number(row.cs),
       gold: Number(row.gold),
       damage: Number(row.damage),
+      damage_taken: Number(row.damage_taken),
+      heal: Number(row.heal),
       vision: Number(row.vision),
       position: (row.position as string | null) ?? null,
       score: row.score === null ? null : Number(row.score),

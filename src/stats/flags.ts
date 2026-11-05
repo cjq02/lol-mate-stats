@@ -86,6 +86,7 @@ export function afkParticipantIds(
     (participant) => {
       const analyzed = analyzeParticipant(game, participant, championMap, scores);
       if (!analyzed) return undefined;
+      const stats = participant.stats ?? {};
       return {
         durationMin: analyzed.durationMin,
         gold: analyzed.gold,
@@ -97,6 +98,8 @@ export function afkParticipantIds(
         visionScore: analyzed.visionScore,
         position: analyzed.position,
         killParticipation: analyzed.killParticipation,
+        damageTaken: toNumber(stats.totalDamageTaken),
+        heal: analyzed.heal,
       };
     },
   );

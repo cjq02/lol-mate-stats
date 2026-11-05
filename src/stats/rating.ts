@@ -297,12 +297,16 @@ export function isAfkLike(game: AnalyzedGame): boolean {
 export interface AfkRelativeStats extends AfkLikeStats {
   /** 参团率 0-1，能拿到时优先使用 */
   killParticipation?: number;
+  /** 承受伤害，用于判断是否真的参与过战斗 */
+  damageTaken?: number;
+  /** 治疗量，用于识别有治疗行为的辅助 */
+  heal?: number;
 }
 
 /**
- * 更宽松的“长时间挂机/逃跑”推断：
- * 除了绝对阈值，还对比同队其他人的伤害/经济和参团率。
- * 适用于队友或对手已经拿到少量击杀/助攻、但长时间缺席的情况。
+ * “长时间挂机/逃跑”推断：
+ * 绝对阈值只能抓到完全没数据的局；相对阈值必须同时排除“很坑但一直在打”的玩家。
+ * 因此只要出现击杀/助攻、承伤或治疗等活跃信号，就不再判逃跑。
  */
 export function isAfkLikeRelative(
   player: AfkRelativeStats,
@@ -313,19 +317,33 @@ export function isAfkLikeRelative(
   const others = team.filter((item) => item !== player);
   if (!others.length) return false;
 
-  const avgDamage = others.reduce((sum, item) => sum + item.damage, 0) / others.length;
-  const avgGold = others.reduce((sum, item) => sum + item.gold, 0) / others.length;
+  const average = (pick: (item: AfkRelativeStats) => number): number =>
+    others.reduce((sum, item) => sum + pick(item), 0) / others.length;
+  const avgDamage = average((item) => item.damage);
+  const avgGold = average((item) => item.gold);
+  const avgTaken = average((item) => item.damageTaken ?? 0);
+  const avgHeal = average((item) => item.heal ?? 0);
   const totalKills = team.reduce((sum, item) => sum + item.kills, 0);
   const participation =
     player.killParticipation ??
     (totalKills > 0 ? (player.kills + player.assists) / totalKills : 0);
+  const actions = player.kills + player.assists;
+  const damageTaken = player.damageTaken ?? 0;
+  const heal = player.heal ?? 0;
 
   const lowDamage = avgDamage > 0 && player.damage < avgDamage * 0.35;
   const lowGold = avgGold > 0 && player.gold < avgGold * 0.55;
-  return (
-    (lowDamage && participation < 0.3) ||
-    (lowGold && lowDamage && participation < 0.45)
-  );
+  const lowParticipation = participation < 0.3;
+  const lowTaken = avgTaken > 0 && damageTaken < avgTaken * 0.35;
+
+  // 只要有明确的参战/承伤/治疗痕迹，就说明不是逃跑，最多是坑
+  const hasActivity =
+    actions >= 4 ||
+    (avgTaken > 0 && damageTaken >= avgTaken * 0.5) ||
+    (avgHeal > 0 && heal >= avgHeal * 0.5 && heal >= 500);
+  if (hasActivity) return false;
+
+  return lowDamage && lowParticipation && (lowGold || lowTaken);
 }
 
 export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): RecentSummary {
