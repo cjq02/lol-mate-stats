@@ -696,9 +696,6 @@ function buildCard(player, isLocal, options = {}) {
 
   const thisGameMetrics = thisGame
     ? `<div class="metrics">
-        <div class="metric"><span>伤害占比</span><b>${pct(thisGame.damageShare)}</b></div>
-        <div class="metric"><span>承伤占比</span><b>${pct(thisGame.tankShare)}</b></div>
-        <div class="metric"><span>参团率</span><b>${pct(thisGame.killParticipation)}</b></div>
         <div class="metric"><span>分均伤害</span><b>${Math.round(thisGame.damagePerMin ?? 0)}</b></div>
         <div class="metric"><span>分均承伤</span><b>${Math.round(thisGame.damageTakenPerMin ?? 0)}</b></div>
         <div class="metric"><span>分均补刀</span><b>${num(thisGame.csPerMin, 1)}</b></div>
@@ -1808,8 +1805,18 @@ function buildRadarContext(scoreboard) {
         (Number(player.kills) + Number(player.assists)) / Math.max(1, Number(player.deaths)),
       format: (value) => num(value, 2),
     },
-    { label: '承伤', value: (player) => Number(player.damageTaken) || 0, format: kilo },
-    { label: '伤害', value: (player) => Number(player.damage) || 0, format: kilo },
+    {
+      label: '承伤',
+      value: (player) => Number(player.damageTaken) || 0,
+      format: kilo,
+      share: (player) => player.tankShare,
+    },
+    {
+      label: '伤害',
+      value: (player) => Number(player.damage) || 0,
+      format: kilo,
+      share: (player) => player.damageShare,
+    },
     { label: '治疗', value: (player) => Number(player.heal) || 0, format: kilo },
   ];
 
@@ -1827,11 +1834,15 @@ function buildRadarSeries(player, context) {
     const selfRatio = Math.max(0, Math.min(100, (value / metric.max) * 100));
     const avgRatio = Math.max(0, Math.min(100, (metric.avg / metric.max) * 100));
     const plain = (input) => String(input).replace(/<[^>]*>/g, '');
+    const valueText = plain(metric.format(value));
+    const share = metric.share ? pct(metric.share(player)) : '';
+    const display = share ? `${valueText} (${share})` : valueText;
     return {
       label: metric.label,
+      valueText: display,
       selfRatio,
       avgRatio,
-      title: `${metric.label} 玩家 ${plain(metric.format(value))} · 平均 ${plain(
+      title: `${metric.label} 玩家 ${display} · 平均 ${plain(
         metric.format(metric.avg),
       )}`,
     };
@@ -1839,11 +1850,11 @@ function buildRadarSeries(player, context) {
 }
 
 function miniRadarSvg(series) {
-  const width = 156;
-  const height = 146;
-  const cx = 78;
-  const cy = 72;
-  const radius = 44;
+  const width = 290;
+  const height = 250;
+  const cx = 145;
+  const cy = 125;
+  const radius = 76;
   const angle = (index) => -Math.PI / 2 + (index * Math.PI) / 3;
   const at = (index, ratio) => [
     cx + Math.cos(angle(index)) * radius * (ratio / 100),
@@ -1870,12 +1881,16 @@ function miniRadarSvg(series) {
   const labels = series
     .map((metric, index) => {
       const point = angle(index);
-      const x = cx + Math.cos(point) * radius * 1.3;
-      const y = cy + Math.sin(point) * radius * 1.3;
+      const x = cx + Math.cos(point) * radius * 1.15;
+      const y = cy + Math.sin(point) * radius * 1.15;
       const anchor =
         Math.cos(point) > 0.25 ? 'start' : Math.cos(point) < -0.25 ? 'end' : 'middle';
-      const dy = Math.sin(point) > 0.6 ? '0.9em' : Math.sin(point) < -0.6 ? '-0.2em' : '0.35em';
-      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" dy="${dy}" class="radar-label">${metric.label}</text>`;
+      const firstDy =
+        Math.sin(point) < -0.6 ? '-1.05em' : Math.sin(point) > 0.6 ? '-0.15em' : '-0.35em';
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" class="radar-label">
+        <tspan x="${x.toFixed(1)}" dy="${firstDy}">${metric.label}</tspan>
+        <tspan x="${x.toFixed(1)}" dy="1.08em" class="radar-value">${metric.valueText}</tspan>
+      </text>`;
     })
     .join('');
 
@@ -1883,8 +1898,8 @@ function miniRadarSvg(series) {
   const legend = `<g class="radar-legend">
     <circle cx="6" cy="7" r="2.4" class="radar-legend-dot self"/>
     <text x="11" y="9.7" class="radar-legend-label">玩家</text>
-    <circle cx="128" cy="7" r="2.4" class="radar-legend-dot avg"/>
-    <text x="133" y="9.7" class="radar-legend-label">平均</text>
+    <circle cx="${width - 28}" cy="7" r="2.4" class="radar-legend-dot avg"/>
+    <text x="${width - 23}" y="9.7" class="radar-legend-label">平均</text>
   </g>`;
 
   return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="本局数据对比">

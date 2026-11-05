@@ -937,18 +937,19 @@ body::before {
   flex-direction: column;
   align-items: center;
   gap: 0;
-  padding: 0;
+  padding: 4px 0 2px;
 }
 
 .card-radar svg {
-  width: 200px;
-  height: 187px;
+  width: 290px;
+  max-width: 100%;
+  height: auto;
   overflow: visible;
 }
 
 .radar-legend-label {
   fill: var(--muted-2);
-  font-size: 7.5px;
+  font-size: 8px;
 }
 
 .radar-legend-dot.self {
@@ -985,7 +986,13 @@ body::before {
 
 .radar-label {
   fill: var(--muted);
-  font-size: 8px;
+  font-size: 8.5px;
+}
+
+.radar-value {
+  fill: #dbe6ff;
+  font-size: 9px;
+  font-weight: 650;
 }
 
 .match-cards::-webkit-scrollbar {
