@@ -30,6 +30,7 @@ const els = {
   matchesRefresh: document.getElementById('matches-refresh'),
   matchesAi: document.getElementById('matches-ai'),
   matchTabs: document.getElementById('match-tabs'),
+  matchSummary: document.getElementById('match-summary'),
   matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
   aiModalTitle: document.getElementById('ai-modal-title'),
@@ -578,12 +579,21 @@ function buildCard(player, isLocal, options = {}) {
   // 本人当前英雄（选人阶段的当前选择 / 对局详情里本局使用的英雄）的专属战绩
   const championId = thisGame?.championId ?? player.championId;
   const championName = thisGame?.championName ?? player.championName;
-  const championMatchesButton =
-    isLocal && championId && !player.isBot
-      ? `<button class="btn matches-btn champion-matches-btn" type="button" data-action="champion-matches">查看 ${escapeHtml(
-          championName ?? '该英雄',
-        )} 战绩</button>`
-      : '';
+  const showChampionMatches = Boolean(isLocal && championId && !player.isBot);
+  const pickedContent = `${iconHtml(
+    championId ? champPath(championId) : null,
+    championName ?? '?',
+    'champ',
+  )}<span class="champ-name">${escapeHtml(championName ?? '未选英雄')}</span>${
+    showChampionMatches ? '<span class="champ-link-hint">战绩</span>' : ''
+  }`;
+  const picked = showChampionMatches
+    ? `<button class="picked champ-link" type="button" data-action="champion-matches" title="查看 ${escapeHtml(
+        championName ?? '该英雄',
+      )} 的战绩" aria-label="查看 ${escapeHtml(
+        championName ?? '该英雄',
+      )} 的战绩">${pickedContent}</button>`
+    : `<div class="picked">${pickedContent}</div>`;
 
   const error = player.error
     ? `<div class="card-error">${escapeHtml(player.error)}</div>`
@@ -742,10 +752,7 @@ function buildCard(player, isLocal, options = {}) {
           ${streak}
         </div>
       </div>
-      <div class="picked">
-        ${iconHtml(player.championId ? champPath(player.championId) : null, player.championName ?? '?', 'champ')}
-        <span class="champ-name">${escapeHtml(player.championName ?? '未选英雄')}</span>
-      </div>
+      ${picked}
     </div>
 
     <div class="score-row">
@@ -774,16 +781,14 @@ function buildCard(player, isLocal, options = {}) {
     ${thisGame ? '' : champions}
     ${thisGame ? '' : error}
     ${detail}
-    ${championMatchesButton}
   `;
-
   const matchesButton = card.querySelector('[data-action="matches"]');
   if (matchesButton) {
     matchesButton.addEventListener('click', () => openMatches(player, options.context));
   }
-  const championMatchesButtonEl = card.querySelector('[data-action="champion-matches"]');
-  if (championMatchesButtonEl) {
-    championMatchesButtonEl.addEventListener('click', () =>
+  const championLinkEl = card.querySelector('[data-action="champion-matches"]');
+  if (championLinkEl) {
+    championLinkEl.addEventListener('click', () =>
       openChampionMatches(championId, championName),
     );
   }
@@ -1663,9 +1668,56 @@ function renderMatchFlags(detail) {
   els.matchFlags.classList.toggle('hidden', parts.length === 0);
 }
 
+function renderMatchSummary(detail) {
+  if (!els.matchSummary) return;
+  const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
+  const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
+  const self = scoreboard.find((player) => player.puuid && player.puuid === selfPuuid);
+  if (!self) {
+    clearMatchSummary();
+    return;
+  }
+
+  const int = (value) => Math.round(Number(value) || 0).toLocaleString('zh-CN');
+  const durationMin = Math.max(0, Math.round((Number(detail.gameDuration) || 0) / 60));
+  const score = Number.isFinite(Number(self.score)) ? Math.round(Number(self.score)) : null;
+  const items = [
+    [
+      '时间',
+      `${formatGameTime(detail.gameCreation)}${durationMin ? ` · ${durationMin} 分钟` : ''}`,
+    ],
+    ['结果', `<b class="${self.win ? 'win' : 'loss'}">${self.win ? '胜' : '负'}</b>`],
+    ['击杀', int(self.kills)],
+    ['死亡', `<b class="loss">${int(self.deaths)}</b>`],
+    ['助攻', int(self.assists)],
+    ['伤害', int(self.damage)],
+    ['承伤', int(self.damageTaken)],
+    ['治疗', int(self.heal)],
+    ['经济', int(self.gold)],
+  ];
+  if (score !== null) {
+    items.push(['评分', `<b style="color:${ratingColor(score)}">${score}</b>`]);
+  }
+
+  els.matchSummary.innerHTML = items
+    .map(
+      ([label, value]) =>
+        `<span class="summary-item"><em>${label}</em><span>${value}</span></span>`,
+    )
+    .join('');
+  els.matchSummary.classList.remove('hidden');
+}
+
+function clearMatchSummary() {
+  if (!els.matchSummary) return;
+  els.matchSummary.innerHTML = '';
+  els.matchSummary.classList.add('hidden');
+}
+
 function clearMatchFlags() {
   els.matchFlags.innerHTML = '';
   els.matchFlags.classList.add('hidden');
+  clearMatchSummary();
 }
 
 function matchRow(game, showScore) {
@@ -2471,6 +2523,7 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
     detail.tags?.length ? ` · ${matchFlagsHtml(detail.tags)}` : ''
   }`;
   renderMatchFlags(detail);
+  renderMatchSummary(detail);
   updateMatchesBackButton();
   renderMatchTab(tab);
 }

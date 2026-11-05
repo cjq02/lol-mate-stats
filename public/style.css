@@ -235,14 +235,6 @@ body::before {
   border-style: dashed;
 }
 
-.champion-matches-btn {
-  margin-top: 8px;
-  color: var(--text);
-  background: rgba(110, 180, 255, 0.08);
-  border-color: rgba(110, 180, 255, 0.28);
-  border-style: solid;
-}
-
 .modal {
   position: fixed;
   inset: 0;
@@ -732,6 +724,49 @@ body::before {
   font-size: 11.5px;
 }
 
+.match-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 18px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.summary-item em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--muted-2);
+}
+
+.summary-item > span {
+  color: #dbe6ff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-item b {
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-item b.win {
+  color: var(--win);
+}
+
+.summary-item b.loss {
+  color: var(--loss);
+}
+
 .match-flags .match-flag {
   padding: 3px 8px;
   border-radius: 6px;
@@ -1212,6 +1247,47 @@ body::before {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.picked.champ-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  appearance: none;
+  border-radius: 12px;
+}
+
+.picked.champ-link .icon.champ {
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.picked.champ-link:hover .icon.champ {
+  box-shadow: 0 0 0 2px rgba(110, 180, 255, 0.45), 0 0 16px rgba(110, 180, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.picked.champ-link:hover .champ-name {
+  color: #dbe6ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.picked.champ-link:focus-visible {
+  outline: 2px solid rgba(110, 180, 255, 0.6);
+  outline-offset: 2px;
+}
+
+.champ-link-hint {
+  font-size: 9px;
+  color: var(--muted-2);
+  letter-spacing: 0.06em;
+}
+
+.picked.champ-link:hover .champ-link-hint {
+  color: #8bb8ff;
 }
 
 /* 图标 */
