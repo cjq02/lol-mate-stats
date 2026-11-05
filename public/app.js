@@ -228,6 +228,9 @@ const state = {
 /** “我的战绩”每次从客户端翻页读取的场次 */
 const MY_MATCH_PAGE = 30;
 
+/** 单个英雄的战绩每页场次（后端按英雄 + 模式直接查询） */
+const CHAMPION_MATCH_PAGE = 20;
+
 /** 静态截图模式：?static=1 时只拉取一次快照，不建立 SSE（用于无头浏览器截图/调试） */
 const STATIC_MODE = new URLSearchParams(window.location.search).has('static');
 
@@ -2279,7 +2282,7 @@ function renderMyMatches() {
   renderMatchesView(
     games,
     filter
-      ? `${filter.championName || '该英雄'} · 我的战绩${count}${stats}`
+      ? `${championFilterTitle(filter)}${count}${stats}`
       : `我的战绩${count}${stats}`,
     true,
   );
@@ -2324,15 +2327,16 @@ async function loadMoreArchive(button) {
   try {
     const knownIds = new Set(state.myGames.map((game) => String(game.gameId)));
     const hasNew = (list) => list.some((game) => !knownIds.has(String(game.gameId)));
+    const championFilter = state.championFilter;
     let incoming = [];
     let added = false;
 
     // 本地存档读取快，而且通常存着更多更早的对局，优先翻存档
     if (state.archiveLoaded < state.archiveTotal) {
-      const response = await fetch(
-        `/api/archive/matches?limit=100&offset=${state.archiveOffset}`,
-        { cache: 'no-store' },
-      );
+      const archiveUrl = championFilter
+        ? championArchiveQuery(championFilter, CHAMPION_MATCH_PAGE, state.archiveOffset)
+        : `/api/archive/matches?limit=100&offset=${state.archiveOffset}`;
+      const response = await fetch(archiveUrl, { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.ok === false) {
         throw new Error(payload?.error ?? `HTTP ${response.status}`);
@@ -2346,8 +2350,8 @@ async function loadMoreArchive(button) {
       added = hasNew(archived);
     }
 
-    // 存档没有新增时，再继续往前翻客户端战绩
-    if (!added && !state.lcuExhausted) {
+    // 存档没有新增时，再继续往前翻客户端战绩（英雄专属列表只查存档）
+    if (!added && !state.lcuExhausted && !championFilter) {
       let lcuError = '';
       try {
         let pages = 0;
@@ -2403,6 +2407,22 @@ async function loadMoreArchive(button) {
 }
 
 /** 本人当前英雄的专属战绩列表（选人阶段/对局详情里的按钮） */
+function championArchiveQuery(filter, limit, offset) {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  params.set('championId', String(filter.championId));
+  if (filter.mode) params.set('mode', filter.mode);
+  return `/api/archive/matches?${params.toString()}`;
+}
+
+/** 英雄战绩弹窗标题，如「暗夜猎手 · 极地大乱斗 · 我的战绩」 */
+function championFilterTitle(filter) {
+  const name = filter?.championName || '该英雄';
+  const mode = filter?.mode ? CHAMPION_RANKING_MODE_LABELS[filter.mode] : '';
+  return `${name}${mode ? ` · ${mode}` : ''} · 我的战绩`;
+}
+
 function openChampionMatches(championId, championName, options = {}) {
   const id = Number(championId) || 0;
   if (!id) return;
@@ -2423,6 +2443,10 @@ function openChampionMatches(championId, championName, options = {}) {
   state.championFilter = {
     championId: id,
     championName: String(championName ?? ''),
+    mode:
+      options.mode === 'SR' || options.mode === 'ARAM' || options.mode === 'ARENA'
+        ? options.mode
+        : undefined,
   };
   void openMyMatches({ keepFilter: true, preserveNavigation: true });
 }
@@ -2450,9 +2474,7 @@ async function openMyMatches(options = {}) {
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   updateMatchesBackButton();
-  els.matchesTitle.textContent = filter
-    ? `${filter.championName || '该英雄'} · 我的战绩`
-    : '我的最近战绩';
+  els.matchesTitle.textContent = filter ? championFilterTitle(filter) : '我的最近战绩';
   setMatchesRefresh(null);
   beginMatchesLoading(
     filter ? '正在读取该英雄的战绩…' : '正在读取最近战绩和评分…',
@@ -2461,42 +2483,63 @@ async function openMyMatches(options = {}) {
   let games = [];
   let lcuError = '';
 
-  try {
-    // “我的战绩”只拉列表，不逐场分析；先取最近一页，往下可以继续翻页
-    const response = await fetch(
-      `/api/me/matches?recent=${MY_MATCH_PAGE}&offset=0`,
-      { cache: 'no-store' },
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.ok === false) {
-      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+  if (filter) {
+    // 英雄专属战绩：直接按英雄 + 模式查存档，每页 20 场
+    try {
+      const response = await fetch(
+        championArchiveQuery(filter, CHAMPION_MATCH_PAGE, 0),
+        { cache: 'no-store' },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error ?? `HTTP ${response.status}`);
+      }
+      games = Array.isArray(payload.games) ? payload.games : [];
+      state.archiveTotal = Number(payload.total) || games.length;
+      state.archiveOffset = games.length;
+      state.archiveLoaded = games.length;
+      state.lcuExhausted = true;
+    } catch (error) {
+      lcuError = error instanceof Error ? error.message : String(error);
     }
-    state.selfPuuid = payload.summoner?.puuid ?? state.selfPuuid;
-    games = Array.isArray(payload.games) ? payload.games : [];
-    state.myLcuOffset = games.length;
-    state.lcuExhausted = games.length < MY_MATCH_PAGE;
-  } catch (error) {
-    lcuError = error instanceof Error ? error.message : String(error);
-  }
+  } else {
+    try {
+      // “我的战绩”只拉列表，不逐场分析；先取最近一页，往下可以继续翻页
+      const response = await fetch(
+        `/api/me/matches?recent=${MY_MATCH_PAGE}&offset=0`,
+        { cache: 'no-store' },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error ?? `HTTP ${response.status}`);
+      }
+      state.selfPuuid = payload.summoner?.puuid ?? state.selfPuuid;
+      games = Array.isArray(payload.games) ? payload.games : [];
+      state.myLcuOffset = games.length;
+      state.lcuExhausted = games.length < MY_MATCH_PAGE;
+    } catch (error) {
+      lcuError = error instanceof Error ? error.message : String(error);
+    }
 
-  try {
-    // 客户端战绩读不到时，历史存档仍然可用
-    const response = await fetch('/api/archive/matches?limit=100&offset=0', {
-      cache: 'no-store',
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (response.ok && payload?.ok !== false) {
-      const archived = Array.isArray(payload.games) ? payload.games : [];
-      state.archiveTotal = Number(payload.total) || archived.length;
-      state.archiveOffset = archived.length;
-      state.archiveLoaded = archived.length;
-      games = mergeMatchLists(games, archived);
-    } else if (!games.length) {
-      lcuError ||= payload?.error ?? `历史存档 HTTP ${response.status}`;
-    }
-  } catch (error) {
-    if (!games.length) {
-      lcuError ||= error instanceof Error ? error.message : String(error);
+    try {
+      // 客户端战绩读不到时，历史存档仍然可用
+      const response = await fetch('/api/archive/matches?limit=100&offset=0', {
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && payload?.ok !== false) {
+        const archived = Array.isArray(payload.games) ? payload.games : [];
+        state.archiveTotal = Number(payload.total) || archived.length;
+        state.archiveOffset = archived.length;
+        state.archiveLoaded = archived.length;
+        games = mergeMatchLists(games, archived);
+      } else if (!games.length) {
+        lcuError ||= payload?.error ?? `历史存档 HTTP ${response.status}`;
+      }
+    } catch (error) {
+      if (!games.length) {
+        lcuError ||= error instanceof Error ? error.message : String(error);
+      }
     }
   }
 
@@ -2505,7 +2548,11 @@ async function openMyMatches(options = {}) {
   const championId = filter?.championId;
   const modeRecord = await fetchModeRecord(
     undefined,
-    championId ? undefined : recordContext,
+    championId
+      ? filter?.mode
+        ? { mode: filter.mode }
+        : undefined
+      : recordContext,
     championId,
   );
   if (token !== state.matchRequestToken) return;
@@ -2925,8 +2972,11 @@ els.championRankingList.addEventListener('click', (event) => {
   const championId = Number(row.dataset.championId) || 0;
   if (!championId) return;
   const championName = row.dataset.championName || '';
+  const mode =
+    state.championRankingMode === 'all' ? undefined : state.championRankingMode;
   closeChampionRanking();
   openChampionMatches(championId, championName, {
+    mode,
     back: () => {
       closeMatches();
       openChampionRanking({ keepMode: true });

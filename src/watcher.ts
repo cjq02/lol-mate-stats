@@ -36,6 +36,7 @@ import {
   getSavedSelfPuuid,
   saveSelfPuuid,
   type ArchivedMatch,
+  type PlayerMatchFilter,
 } from './stats/archive.js';
 import { currentQueueGroup, modeFromQueue, queueGroupName, queueName } from './stats/constants.js';
 import {
@@ -650,11 +651,16 @@ export class LiveSource implements DataSource {
     limit: number,
     offset: number,
     puuid?: string,
+    filter: PlayerMatchFilter = {},
   ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }> {
     const id = await this.resolveArchivePuuid(puuid);
     if (!id) return { puuid: '', total: 0, games: [] };
-    const total = await countPlayerMatches(id);
-    return { puuid: id, total, games: await getPlayerMatches(id, limit, offset) };
+    const total = await countPlayerMatches(id, filter);
+    return {
+      puuid: id,
+      total,
+      games: await getPlayerMatches(id, limit, offset, filter),
+    };
   }
 
   /** 长期存档：某个玩家（默认自己）各英雄的平均单场评分排名 */
@@ -684,7 +690,7 @@ export class LiveSource implements DataSource {
     record: Awaited<ReturnType<typeof getPlayerWinRecord>>;
   }> {
     const id = await this.resolveArchivePuuid(puuid);
-    const hasContext = !championId && (queueId !== undefined || mode !== undefined);
+    const hasContext = queueId !== undefined || mode !== undefined;
     const group = hasContext ? currentQueueGroup(queueId, mode) : undefined;
     const groupName = !group
       ? '全部模式'

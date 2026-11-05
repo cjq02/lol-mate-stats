@@ -7,7 +7,12 @@ import type {
   Snapshot,
   SummonerInfo,
 } from './types.js';
-import type { ArchivedMatch, ChampionScoreSummary, PlayerWinRecord } from './stats/archive.js';
+import type {
+  ArchivedMatch,
+  ChampionScoreSummary,
+  PlayerMatchFilter,
+  PlayerWinRecord,
+} from './stats/archive.js';
 
 export interface AssetResult {
   body: Buffer;
@@ -40,6 +45,7 @@ export interface DataSource {
     limit: number,
     offset: number,
     puuid?: string,
+    filter?: PlayerMatchFilter,
   ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }>;
   /** 长期存档：某个玩家（默认自己）各英雄的平均单场评分排名 */
   getArchivedChampionScores?(

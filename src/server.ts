@@ -417,8 +417,19 @@ async function handleRequest(
       : 100;
     const offset = Number.isFinite(rawOffset) ? Math.max(0, Math.trunc(rawOffset)) : 0;
     const puuid = url.searchParams.get('puuid')?.trim() || undefined;
+    const rawChampionId = Number(url.searchParams.get('championId') ?? 0);
+    const championId =
+      Number.isFinite(rawChampionId) && rawChampionId > 0
+        ? Math.trunc(rawChampionId)
+        : undefined;
+    const rawMode = url.searchParams.get('mode');
+    const mode: GameModeKey | undefined =
+      rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
     try {
-      const data = await source.getArchivedMatches(limit, offset, puuid);
+      const data = await source.getArchivedMatches(limit, offset, puuid, {
+        championId,
+        mode,
+      });
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
       sendJson(res, 502, {

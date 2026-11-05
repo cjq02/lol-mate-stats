@@ -47,6 +47,16 @@ export interface ArchivedMatch {
   tags: string[];
 }
 
+/** 历史对局查询过滤条件 */
+export interface PlayerMatchFilter {
+  championId?: number;
+  mode?: GameModeKey;
+}
+
+/** 特殊模式会把英雄 ID 加上 60000（如 60067 → 67），统计和图标都用基础 ID */
+const NORMALIZED_CHAMPION_ID =
+  'CASE WHEN p.champion_id >= 60000 THEN p.champion_id - 60000 ELSE p.champion_id END';
+
 let archivedIds: Set<number> | undefined;
 
 async function loadArchivedIds(db: Pool): Promise<Set<number>> {
@@ -465,13 +475,20 @@ export async function getPlayerMatchTags(
   return result;
 }
 
-export async function countPlayerMatches(puuid: string): Promise<number> {
+export async function countPlayerMatches(
+  puuid: string,
+  filter: PlayerMatchFilter = {},
+): Promise<number> {
   const db = await getDb();
   if (!db || !puuid) return 0;
+  const { conditions, params } = playerMatchFilterSql(puuid, filter);
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      'SELECT COUNT(*) AS n FROM match_participants WHERE puuid = ?',
-      [puuid],
+      `SELECT COUNT(*) AS n
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
     return Number(rows[0]?.n ?? 0);
   } catch {
@@ -486,8 +503,7 @@ export interface PlayerWinRecord {
   winRate: number;
 }
 
-/** 统计组 → 存档里的队列/位置过滤条件（与 currentQueueGroup 保持一致） */
-const QUEUE_GROUP_FILTERS: Record<string, string> = {
+/** 统计组 → 存档里的队列/位置过滤条件（与 currentQueueGroup 保持一致） */const QUEUE_GROUP_FILTERS: Record<string, string> = {
   aram: "(m.queue_id IN (450, 720) OR p.`position` = 'ARAM')",
   arena: "(m.queue_id IN (1700, 1710) OR p.`position` = 'ARENA')",
   solo: 'm.queue_id = 420',
@@ -508,6 +524,22 @@ const CHAMPION_MODE_FILTERS: Record<GameModeKey, string> = {
     "OR m.queue_id IN (400, 420, 430, 440, 890))",
 };
 
+/** 组装按玩家 / 英雄 / 模式过滤历史对局的 SQL 条件和参数 */
+function playerMatchFilterSql(puuid: string, filter: PlayerMatchFilter = {}) {
+  const conditions = ['p.puuid = ?'];
+  const params: Array<string | number> = [puuid];
+  if (filter.championId) {
+    conditions.push(`${NORMALIZED_CHAMPION_ID} = ?`);
+    params.push(filter.championId);
+    // 与英雄平均分排名保持一致：排除训练模式和 5 分钟内的重开局
+    conditions.push('m.duration_seconds > 300');
+    conditions.push("COALESCE(m.game_mode, '') <> 'PRACTICETOOL'");
+  }
+  const modeFilter = filter.mode ? CHAMPION_MODE_FILTERS[filter.mode] : undefined;
+  if (modeFilter) conditions.push(modeFilter);
+  return { conditions, params };
+}
+
 /**
  * 某个玩家在指定统计组 / 指定英雄的总胜负（来自长期存档）。
  * 重开对局不计入，和近期评分的统计口径一致。
@@ -525,8 +557,10 @@ export async function getPlayerWinRecord(
   const params: Array<string | number> = [puuid];
   if (filter) conditions.push(filter);
   if (championId) {
-    conditions.push('p.champion_id = ?');
+    conditions.push(`${NORMALIZED_CHAMPION_ID} = ?`);
     params.push(championId);
+    // 英雄维度同样排除训练模式，和英雄排名/英雄战绩列表保持一致
+    conditions.push("COALESCE(m.game_mode, '') <> 'PRACTICETOOL'");
   }
   try {
     const [rows] = await db.query<RowDataPacket[]>(
@@ -623,9 +657,11 @@ export async function getPlayerMatches(
   puuid: string,
   limit: number,
   offset: number,
+  filter: PlayerMatchFilter = {},
 ): Promise<ArchivedMatch[]> {
   const db = await getDb();
   if (!db || !puuid) return [];
+  const { conditions, params } = playerMatchFilterSql(puuid, filter);
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT m.game_id, m.queue_id, m.game_creation, m.duration_seconds,
@@ -634,10 +670,10 @@ export async function getPlayerMatches(
               p.damage_taken, p.heal, p.vision, p.score, p.tags
        FROM match_participants p
        JOIN matches m ON m.game_id = p.game_id
-       WHERE p.puuid = ?
+       WHERE ${conditions.join(' AND ')}
        ORDER BY m.game_creation DESC
        LIMIT ? OFFSET ?`,
-      [puuid, limit, offset],
+      [...params, limit, offset],
     );
 
     const gameIds = [...new Set(rows.map((row) => Number(row.game_id)))];
@@ -658,7 +694,10 @@ export async function getPlayerMatches(
         queueName: queueName(Number(row.queue_id)),
         gameCreation: Number(row.game_creation),
         gameDuration: Number(row.duration_seconds),
-        championId: Number(row.champion_id),
+        championId:
+          Number(row.champion_id) >= 60000
+            ? Number(row.champion_id) - 60000
+            : Number(row.champion_id),
         championName: row.champion_name ?? undefined,
         position: row.position ?? undefined,
         win: Number(row.win) === 1,
