@@ -45,6 +45,7 @@ export interface DataSource {
   getArchivedChampionScores?(
     puuid?: string,
     minGames?: number,
+    mode?: GameModeKey,
   ): Promise<{ puuid: string; champions: ChampionScoreSummary[] }>;
   /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */
   getArchivedWinRecord?(

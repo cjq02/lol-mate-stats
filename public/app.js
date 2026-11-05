@@ -44,6 +44,7 @@ const els = {
   championRanking: document.getElementById('champion-ranking'),
   championRankingModal: document.getElementById('champion-ranking-modal'),
   championRankingList: document.getElementById('champion-ranking-list'),
+  championRankingTabs: document.getElementById('champion-ranking-tabs'),
   championRankingMeta: document.getElementById('champion-ranking-meta'),
   championRankingClose: document.getElementById('champion-ranking-close'),
   latestMatch: document.getElementById('latest-match'),
@@ -147,6 +148,32 @@ const MODE_LABELS = {
   ARENA: '斗魂竞技场',
 };
 
+const CHAMPION_RANKING_MODE_LABELS = {
+  all: '全部模式',
+  SR: '召唤师峡谷',
+  ARAM: '极地大乱斗',
+  ARENA: '斗魂竞技场',
+};
+
+/** 根据当前游戏 / 选人模式，决定英雄排名默认打开哪个页签 */
+function rankingModeFromSnapshot() {
+  const snapshot = state.snapshot;
+  if (!snapshot) return state.championRankingMode || 'all';
+  const mode = String(snapshot.gameMode ?? '').toUpperCase();
+  const queueId = Number(snapshot.queueId) || 0;
+  if (mode === 'ARAM' || queueId === 450 || queueId === 720) return 'ARAM';
+  if (
+    mode === 'ARENA' ||
+    mode === 'CHERRY' ||
+    queueId === 1700 ||
+    queueId === 1710
+  ) {
+    return 'ARENA';
+  }
+  if (mode === 'CLASSIC' || mode === 'SWIFTPLAY' || queueId) return 'SR';
+  return state.championRankingMode || 'all';
+}
+
 function currentModeLabel() {
   const snapshot = state.snapshot;
   if (snapshot?.queueId && QUEUE_LABELS[snapshot.queueId]) {
@@ -191,6 +218,9 @@ const state = {
   archiveTotal: 0,
   archiveLoading: false,
   championRankingLoading: false,
+  /** 英雄评分排名当前模式：all / SR / ARAM / ARENA */
+  championRankingMode: 'all',
+  championRankingToken: 0,
   itemIcons: null,
   searchPlayers: [],
   matchesRefreshHandler: null,
@@ -255,6 +285,13 @@ function hexToRgba(hex, alpha) {
 function pct(value, digits = 0) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
   return `${(Number(value) * 100).toFixed(digits)}%`;
+}
+
+/** 胜率：有小数时保留 1 位，整数时不显示 .0（如 50%、47.6%） */
+function winRatePct(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+  const text = (Number(value) * 100).toFixed(1);
+  return `${text.endsWith('.0') ? text.slice(0, -2) : text}%`;
 }
 
 function num(value, digits = 1, fallback = '-') {
@@ -551,7 +588,7 @@ function buildCard(player, isLocal, options = {}) {
         thisGame.durationMin ?? '-'
       } 分钟`
     : recent
-      ? `${modeName} ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${pct(
+      ? `${modeName} ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${winRatePct(
           recent.winRate,
         )}`
       : '暂无战绩数据';
@@ -584,7 +621,7 @@ function buildCard(player, isLocal, options = {}) {
 
   const metrics = recent
     ? `<div class="metrics">
-        <div class="metric"><span>近期胜率</span><b>${pct(recent.winRate)}</b></div>
+        <div class="metric"><span>近期胜率</span><b>${winRatePct(recent.winRate)}</b></div>
         <div class="metric"><span>KDA</span><b>${num(recent.avgKda, 2)}</b></div>
         <div class="metric"><span>参团率</span><b>${pct(recent.avgKillParticipation)}</b></div>
         <div class="metric"><span>分均伤害</span><b>${Math.round(recent.avgDamagePerMin ?? 0)}</b></div>
@@ -615,7 +652,7 @@ function buildCard(player, isLocal, options = {}) {
               champPath(champion.championId),
               champion.name,
               'sm',
-            )}<b>${escapeHtml(champion.name)}</b><em>${champion.games}场 ${pct(champion.winRate)}</em></span>`,
+            )}<b>${escapeHtml(champion.name)}</b><em>${champion.games}场 ${winRatePct(champion.winRate)}</em></span>`,
         )
         .join('')}</div>`
     : '';
@@ -2056,7 +2093,7 @@ function winRecord(games) {
 /** “X胜Y负 · 胜率Z%”，没有有效对局时返回空串 */
 function winRecordText(record) {
   if (!record?.games) return '';
-  return `${record.wins}胜${record.losses}负 · 胜率 ${pct(record.winRate)}`;
+  return `${record.wins}胜${record.losses}负 · 胜率 ${winRatePct(record.winRate)}`;
 }
 
 /** 从长期存档读取当前模式/英雄的总胜率 */
@@ -2083,7 +2120,7 @@ function modeRecordText(record) {
     !record.groupName || record.groupName === '全部模式'
       ? '总胜率'
       : `${record.groupName}总胜率`;
-  return `${label} ${pct(record.winRate)}（${record.wins}胜${record.losses}负）`;
+  return `${label} ${winRatePct(record.winRate)}（${record.wins}胜${record.losses}负）`;
 }
 
 function playerMatchesTitle(player, modeRecord) {
@@ -2681,7 +2718,7 @@ function rankingClass(rank) {
   return 'rank-mid';
 }
 
-function renderChampionRanking(champions) {
+function renderChampionRanking(champions, mode = state.championRankingMode) {
   const list = (Array.isArray(champions) ? champions : [])
     .filter((item) => Number(item?.games) > 0)
     .sort(
@@ -2689,14 +2726,18 @@ function renderChampionRanking(champions) {
         (Number(b.avgScore) || 0) - (Number(a.avgScore) || 0) ||
         (Number(b.games) || 0) - (Number(a.games) || 0),
     );
+  const modeLabel =
+    CHAMPION_RANKING_MODE_LABELS[mode] ?? CHAMPION_RANKING_MODE_LABELS.all;
+  const totalGames = list.reduce((sum, item) => sum + (Number(item.games) || 0), 0);
 
   els.championRankingMeta.textContent = list.length
-    ? `共 ${list.length} 个英雄 · 按平均分排序`
+    ? `${modeLabel} · ${list.length} 个英雄 · ${totalGames} 场`
     : '';
 
   if (!list.length) {
-    els.championRankingList.innerHTML =
-      '<div class="search-status">还没有带评分的英雄战绩，多打几局后再来看看</div>';
+    els.championRankingList.innerHTML = `<div class="search-status">${escapeHtml(
+      modeLabel,
+    )}还没有带评分的英雄战绩，多打几局后再来看看</div>`;
     return;
   }
 
@@ -2712,7 +2753,7 @@ function renderChampionRanking(champions) {
         ${iconHtml(champPath(item.championId), name, 'sm')}
         <span class="champion-rank-main">
           <b>${escapeHtml(name)}</b>
-          <small>${Number(item.games) || 0} 场 · 胜率 ${pct(item.winRate)}</small>
+          <small>${Number(item.games) || 0} 场 · 胜率 ${winRatePct(item.winRate)}</small>
         </span>
         <span class="champion-rank-stats">
           <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(
@@ -2730,32 +2771,60 @@ function renderChampionRanking(champions) {
     .join('');
 }
 
-async function openChampionRanking() {
-  if (state.championRankingLoading) return;
+function updateChampionRankingTabs() {
+  if (!els.championRankingTabs) return;
+  for (const button of els.championRankingTabs.querySelectorAll('[data-ranking-mode]')) {
+    button.classList.toggle(
+      'active',
+      button.dataset.rankingMode === state.championRankingMode,
+    );
+  }
+}
+
+async function loadChampionRanking() {
+  const token = (state.championRankingToken ?? 0) + 1;
+  state.championRankingToken = token;
   state.championRankingLoading = true;
-  els.championRankingModal.classList.remove('hidden');
+  const mode = state.championRankingMode;
   els.championRankingMeta.textContent = '';
   els.championRankingList.innerHTML =
     '<div class="search-status"><span class="spinner"></span><span>正在统计英雄平均分…</span></div>';
   try {
-    const response = await fetch('/api/archive/champions', { cache: 'no-store' });
+    const params = new URLSearchParams();
+    if (mode !== 'all') params.set('mode', mode);
+    const query = params.toString();
+    const response = await fetch(
+      `/api/archive/champions${query ? `?${query}` : ''}`,
+      { cache: 'no-store' },
+    );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok === false) {
       throw new Error(payload?.error ?? `HTTP ${response.status}`);
     }
+    if (token !== state.championRankingToken) return;
     state.selfPuuid = payload.puuid ?? state.selfPuuid;
-    renderChampionRanking(payload.champions);
+    renderChampionRanking(payload.champions, mode);
   } catch (error) {
+    if (token !== state.championRankingToken) return;
     els.championRankingMeta.textContent = '';
     els.championRankingList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
       error instanceof Error ? error.message : String(error),
     )}</div>`;
   } finally {
-    state.championRankingLoading = false;
+    if (token === state.championRankingToken) state.championRankingLoading = false;
   }
 }
 
+function openChampionRanking() {
+  state.championRankingMode = rankingModeFromSnapshot();
+  updateChampionRankingTabs();
+  els.championRankingModal.classList.remove('hidden');
+  void loadChampionRanking();
+}
+
 function closeChampionRanking() {
+  state.championRankingToken = (state.championRankingToken ?? 0) + 1;
+  state.championRankingLoading = false;
   els.championRankingModal.classList.add('hidden');
 }
 
@@ -2817,6 +2886,17 @@ els.refresh.addEventListener('click', () => void refresh());
 els.myMatches.addEventListener('click', () => void openMyMatches());
 els.championRanking.addEventListener('click', () => void openChampionRanking());
 els.championRankingClose.addEventListener('click', closeChampionRanking);
+els.championRankingTabs.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-ranking-mode]');
+  if (!button) return;
+  const mode = button.dataset.rankingMode;
+  if (!CHAMPION_RANKING_MODE_LABELS[mode] || mode === state.championRankingMode) {
+    return;
+  }
+  state.championRankingMode = mode;
+  updateChampionRankingTabs();
+  void loadChampionRanking();
+});
 els.championRankingModal.addEventListener('click', (event) => {
   if (event.target === els.championRankingModal) closeChampionRanking();
 });

@@ -2,6 +2,7 @@ import type { Pool, RowDataPacket } from 'mysql2/promise';
 import type { ChampionSummary } from '../lcu/api.js';
 import type {
   BadLevel,
+  GameModeKey,
   Lane,
   RawGame,
   RawIdentityPlayer,
@@ -497,6 +498,16 @@ const QUEUE_GROUP_FILTERS: Record<string, string> = {
     "AND COALESCE(p.`position`, '') NOT IN ('ARAM', 'ARENA'))",
 };
 
+/** 英雄评分排名按大模式拆分：召唤师峡谷 / 极地大乱斗 / 斗魂竞技场 */
+const CHAMPION_MODE_FILTERS: Record<GameModeKey, string> = {
+  ARAM: "(m.queue_id IN (450, 720) OR p.`position` = 'ARAM')",
+  ARENA:
+    "(m.queue_id IN (1700, 1710) OR p.`position` = 'ARENA' OR m.game_mode = 'CHERRY')",
+  SR:
+    "(m.game_mode IN ('CLASSIC', 'SWIFTPLAY') " +
+    "OR m.queue_id IN (400, 420, 430, 440, 890))",
+};
+
 /**
  * 某个玩家在指定统计组 / 指定英雄的总胜负（来自长期存档）。
  * 重开对局不计入，和近期评分的统计口径一致。
@@ -552,18 +563,29 @@ export interface ChampionScoreSummary {
 
 /**
  * 某个玩家各英雄的平均单场评分（来自长期存档）。
- * 重开对局不计入，只统计有评分的场次，按平均分从高到低排序。
+ * 重开/训练模式不计入，只统计有评分的场次，按平均分从高到低排序。
+ * 特殊模式的英雄 ID（如 60067）会归一化到基础英雄 ID（67）。
  */
 export async function getPlayerChampionScores(
   puuid: string,
   minGames = 1,
+  mode?: GameModeKey,
 ): Promise<ChampionScoreSummary[]> {
   const db = await getDb();
   if (!db || !puuid) return [];
   const threshold = Math.max(1, Math.trunc(minGames));
+  const conditions = [
+    'p.puuid = ?',
+    'p.score IS NOT NULL',
+    'm.duration_seconds > 300',
+    "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
+  ];
+  const params: Array<string | number> = [puuid];
+  const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
+  if (modeFilter) conditions.push(modeFilter);
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT p.champion_id,
+      `SELECT CASE WHEN p.champion_id >= 60000 THEN p.champion_id - 60000 ELSE p.champion_id END AS champion_id,
               MAX(p.champion_name) AS champion_name,
               COUNT(*) AS games,
               COALESCE(SUM(p.win = 1), 0) AS wins,
@@ -572,11 +594,11 @@ export async function getPlayerChampionScores(
               MIN(p.score) AS worst_score
        FROM match_participants p
        JOIN matches m ON m.game_id = p.game_id
-       WHERE p.puuid = ? AND p.score IS NOT NULL AND m.duration_seconds > 300
-       GROUP BY p.champion_id
+       WHERE ${conditions.join(' AND ')}
+       GROUP BY CASE WHEN p.champion_id >= 60000 THEN p.champion_id - 60000 ELSE p.champion_id END
        HAVING games >= ?
        ORDER BY avg_score DESC, games DESC`,
-      [puuid, threshold],
+      [...params, threshold],
     );
     return rows.map((row) => {
       const games = Number(row.games) || 0;

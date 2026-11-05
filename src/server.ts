@@ -439,8 +439,11 @@ async function handleRequest(
     const minGames = Number.isFinite(rawMinGames)
       ? Math.min(100, Math.max(1, Math.trunc(rawMinGames)))
       : 1;
+    const rawMode = url.searchParams.get('mode');
+    const mode: GameModeKey | undefined =
+      rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
     try {
-      const data = await source.getArchivedChampionScores(puuid, minGames);
+      const data = await source.getArchivedChampionScores(puuid, minGames, mode);
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
       sendJson(res, 502, {

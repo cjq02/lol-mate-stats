@@ -661,13 +661,14 @@ export class LiveSource implements DataSource {
   async getArchivedChampionScores(
     puuid?: string,
     minGames = 1,
+    mode?: GameModeKey,
   ): Promise<{
     puuid: string;
     champions: Awaited<ReturnType<typeof getPlayerChampionScores>>;
   }> {
     const id = await this.resolveArchivePuuid(puuid);
     if (!id) return { puuid: '', champions: [] };
-    return { puuid: id, champions: await getPlayerChampionScores(id, minGames) };
+    return { puuid: id, champions: await getPlayerChampionScores(id, minGames, mode) };
   }
 
   /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */

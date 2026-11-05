@@ -290,6 +290,34 @@ body::before {
   white-space: nowrap;
 }
 
+.champion-ranking-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.champion-ranking-tabs .tab {
+  padding: 7px 12px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.champion-ranking-tabs .tab:hover {
+  color: #cbd6ef;
+}
+
+.champion-ranking-tabs .tab.active {
+  color: #dbe6ff;
+  border-bottom-color: #5eead4;
+}
+
 .champion-ranking-list {
   display: flex;
   flex-direction: column;
