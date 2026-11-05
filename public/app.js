@@ -163,25 +163,6 @@ const CHAMPION_RANKING_SORT_LABELS = {
   best: '最高分',
 };
 
-/** 根据当前游戏 / 选人模式，决定英雄排名默认打开哪个页签 */
-function rankingModeFromSnapshot() {
-  const snapshot = state.snapshot;
-  if (!snapshot) return state.championRankingMode || 'all';
-  const mode = String(snapshot.gameMode ?? '').toUpperCase();
-  const queueId = Number(snapshot.queueId) || 0;
-  if (mode === 'ARAM' || queueId === 450 || queueId === 720) return 'ARAM';
-  if (
-    mode === 'ARENA' ||
-    mode === 'CHERRY' ||
-    queueId === 1700 ||
-    queueId === 1710
-  ) {
-    return 'ARENA';
-  }
-  if (mode === 'CLASSIC' || mode === 'SWIFTPLAY' || queueId) return 'SR';
-  return state.championRankingMode || 'all';
-}
-
 function currentModeLabel() {
   const snapshot = state.snapshot;
   if (snapshot?.queueId && QUEUE_LABELS[snapshot.queueId]) {
@@ -227,7 +208,7 @@ const state = {
   archiveLoading: false,
   championRankingLoading: false,
   /** 英雄评分排名当前模式：all / SR / ARAM / ARENA */
-  championRankingMode: 'all',
+  championRankingMode: 'ARAM',
   /** 英雄评分排名排序：avg / games / winRate / best */
   championRankingSort: 'avg',
   championRankingData: [],
@@ -2422,14 +2403,17 @@ async function loadMoreArchive(button) {
 }
 
 /** 本人当前英雄的专属战绩列表（选人阶段/对局详情里的按钮） */
-function openChampionMatches(championId, championName) {
+function openChampionMatches(championId, championName, options = {}) {
   const id = Number(championId) || 0;
   if (!id) return;
   const inDetail =
     !els.matchesModal.classList.contains('hidden') &&
     Boolean(state.matchDetail) &&
     typeof state.currentView === 'function';
-  if (inDetail) {
+  if (options.back) {
+    state.backStack.push(options.back);
+    state.backScrollStack.push(els.matchesList.scrollTop);
+  } else if (inDetail) {
     state.backStack.push(state.currentView);
     state.backScrollStack.push(els.matchesList.scrollTop);
   } else {
@@ -2465,7 +2449,7 @@ async function openMyMatches(options = {}) {
   const filter = state.championFilter;
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
-  els.matchesBack.classList.add('hidden');
+  updateMatchesBackButton();
   els.matchesTitle.textContent = filter
     ? `${filter.championName || '该英雄'} · 我的战绩`
     : '我的最近战绩';
@@ -2843,8 +2827,8 @@ async function loadChampionRanking() {
   }
 }
 
-function openChampionRanking() {
-  state.championRankingMode = rankingModeFromSnapshot();
+function openChampionRanking(options = {}) {
+  if (!options.keepMode) state.championRankingMode = 'ARAM';
   if (els.championRankingSort) els.championRankingSort.value = state.championRankingSort;
   updateChampionRankingTabs();
   els.championRankingModal.classList.remove('hidden');
@@ -2942,7 +2926,12 @@ els.championRankingList.addEventListener('click', (event) => {
   if (!championId) return;
   const championName = row.dataset.championName || '';
   closeChampionRanking();
-  openChampionMatches(championId, championName);
+  openChampionMatches(championId, championName, {
+    back: () => {
+      closeMatches();
+      openChampionRanking({ keepMode: true });
+    },
+  });
 });
 els.latestMatch.addEventListener('click', () => void openLatestMatch());
 els.clearCache.addEventListener('click', () => void clearCache());
