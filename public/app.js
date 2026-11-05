@@ -41,6 +41,11 @@ const els = {
   aiClose: document.getElementById('ai-close'),
   aiRerun: document.getElementById('ai-rerun'),
   myMatches: document.getElementById('my-matches'),
+  championRanking: document.getElementById('champion-ranking'),
+  championRankingModal: document.getElementById('champion-ranking-modal'),
+  championRankingList: document.getElementById('champion-ranking-list'),
+  championRankingMeta: document.getElementById('champion-ranking-meta'),
+  championRankingClose: document.getElementById('champion-ranking-close'),
   latestMatch: document.getElementById('latest-match'),
   liveAi: document.getElementById('live-ai'),
   clearCache: document.getElementById('clear-cache'),
@@ -185,6 +190,7 @@ const state = {
   archiveLoaded: 0,
   archiveTotal: 0,
   archiveLoading: false,
+  championRankingLoading: false,
   itemIcons: null,
   searchPlayers: [],
   matchesRefreshHandler: null,
@@ -2668,6 +2674,91 @@ function closeMatches() {
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
 }
 
+function rankingClass(rank) {
+  if (rank === 1) return 'rank-1';
+  if (rank <= 3) return 'rank-top';
+  if (rank >= 8) return 'rank-low';
+  return 'rank-mid';
+}
+
+function renderChampionRanking(champions) {
+  const list = (Array.isArray(champions) ? champions : [])
+    .filter((item) => Number(item?.games) > 0)
+    .sort(
+      (a, b) =>
+        (Number(b.avgScore) || 0) - (Number(a.avgScore) || 0) ||
+        (Number(b.games) || 0) - (Number(a.games) || 0),
+    );
+
+  els.championRankingMeta.textContent = list.length
+    ? `共 ${list.length} 个英雄 · 按平均分排序`
+    : '';
+
+  if (!list.length) {
+    els.championRankingList.innerHTML =
+      '<div class="search-status">还没有带评分的英雄战绩，多打几局后再来看看</div>';
+    return;
+  }
+
+  els.championRankingList.innerHTML = list
+    .map((item, index) => {
+      const rank = index + 1;
+      const name = item.championName || '未知英雄';
+      const avg = Number(item.avgScore) || 0;
+      return `<button class="champion-rank-row" type="button" data-champion-id="${
+        Number(item.championId) || 0
+      }" data-champion-name="${escapeHtml(name)}">
+        <span class="champion-rank-no ${rankingClass(rank)}">${rank}</span>
+        ${iconHtml(champPath(item.championId), name, 'sm')}
+        <span class="champion-rank-main">
+          <b>${escapeHtml(name)}</b>
+          <small>${Number(item.games) || 0} 场 · 胜率 ${pct(item.winRate)}</small>
+        </span>
+        <span class="champion-rank-stats">
+          <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(
+            avg,
+            1,
+          )}</span>
+          <small>平均分</small>
+        </span>
+        <span class="champion-rank-extra">
+          <span>最高 <b>${num(item.bestScore, 0)}</b></span>
+          <span>最低 <b>${num(item.worstScore, 0)}</b></span>
+        </span>
+      </button>`;
+    })
+    .join('');
+}
+
+async function openChampionRanking() {
+  if (state.championRankingLoading) return;
+  state.championRankingLoading = true;
+  els.championRankingModal.classList.remove('hidden');
+  els.championRankingMeta.textContent = '';
+  els.championRankingList.innerHTML =
+    '<div class="search-status"><span class="spinner"></span><span>正在统计英雄平均分…</span></div>';
+  try {
+    const response = await fetch('/api/archive/champions', { cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    state.selfPuuid = payload.puuid ?? state.selfPuuid;
+    renderChampionRanking(payload.champions);
+  } catch (error) {
+    els.championRankingMeta.textContent = '';
+    els.championRankingList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
+      error instanceof Error ? error.message : String(error),
+    )}</div>`;
+  } finally {
+    state.championRankingLoading = false;
+  }
+}
+
+function closeChampionRanking() {
+  els.championRankingModal.classList.add('hidden');
+}
+
 function renderSearchPlayers(players) {
   state.searchPlayers = Array.isArray(players) ? players : [];
   els.searchBoard.replaceChildren(
@@ -2724,6 +2815,20 @@ async function submitSearch(event) {
 
 els.refresh.addEventListener('click', () => void refresh());
 els.myMatches.addEventListener('click', () => void openMyMatches());
+els.championRanking.addEventListener('click', () => void openChampionRanking());
+els.championRankingClose.addEventListener('click', closeChampionRanking);
+els.championRankingModal.addEventListener('click', (event) => {
+  if (event.target === els.championRankingModal) closeChampionRanking();
+});
+els.championRankingList.addEventListener('click', (event) => {
+  const row = event.target.closest('[data-champion-id]');
+  if (!row) return;
+  const championId = Number(row.dataset.championId) || 0;
+  if (!championId) return;
+  const championName = row.dataset.championName || '';
+  closeChampionRanking();
+  openChampionMatches(championId, championName);
+});
 els.latestMatch.addEventListener('click', () => void openLatestMatch());
 els.clearCache.addEventListener('click', () => void clearCache());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
@@ -2777,6 +2882,13 @@ els.matchTabs.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (
+    event.key === 'Escape' &&
+    !els.championRankingModal.classList.contains('hidden')
+  ) {
+    closeChampionRanking();
+    return;
+  }
   if (event.key === 'Escape' && !els.aiModal.classList.contains('hidden')) {
     hideAiView();
     return;

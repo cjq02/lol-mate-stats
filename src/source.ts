@@ -7,7 +7,7 @@ import type {
   Snapshot,
   SummonerInfo,
 } from './types.js';
-import type { ArchivedMatch, PlayerWinRecord } from './stats/archive.js';
+import type { ArchivedMatch, ChampionScoreSummary, PlayerWinRecord } from './stats/archive.js';
 
 export interface AssetResult {
   body: Buffer;
@@ -41,6 +41,11 @@ export interface DataSource {
     offset: number,
     puuid?: string,
   ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }>;
+  /** 长期存档：某个玩家（默认自己）各英雄的平均单场评分排名 */
+  getArchivedChampionScores?(
+    puuid?: string,
+    minGames?: number,
+  ): Promise<{ puuid: string; champions: ChampionScoreSummary[] }>;
   /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */
   getArchivedWinRecord?(
     puuid: string | undefined,

@@ -22,6 +22,9 @@
 
         <div class="toolbar">
           <button id="my-matches" class="btn" type="button">我的战绩</button>
+          <button id="champion-ranking" class="btn" type="button" title="查看我的英雄平均分排名">
+            英雄排名
+          </button>
           <button id="latest-match" class="btn" type="button" title="查看我最近一场对局的战绩">
             最近一局
           </button>
@@ -102,6 +105,25 @@
           <div id="match-summary" class="match-summary hidden"></div>
           <div id="match-flags" class="match-flags hidden"></div>
           <div id="matches-list" class="match-list"></div>
+        </div>
+      </div>
+
+      <div
+        id="champion-ranking-modal"
+        class="modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="champion-ranking-title"
+      >
+        <div class="modal-card champion-ranking-card">
+          <div class="modal-head">
+            <h2 id="champion-ranking-title">我的英雄平均分排名</h2>
+            <div class="modal-actions">
+              <span id="champion-ranking-meta" class="champion-ranking-meta"></span>
+              <button id="champion-ranking-close" class="btn" type="button">关闭</button>
+            </div>
+          </div>
+          <div id="champion-ranking-list" class="champion-ranking-list"></div>
         </div>
       </div>
 

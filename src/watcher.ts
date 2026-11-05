@@ -28,6 +28,7 @@ import { analyzeGame } from './stats/analyze.js';
 import {
   archiveGames,
   countPlayerMatches,
+  getPlayerChampionScores,
   getPlayerMatchTags,
   getPlayerMatches,
   getPlayerScores,
@@ -654,6 +655,19 @@ export class LiveSource implements DataSource {
     if (!id) return { puuid: '', total: 0, games: [] };
     const total = await countPlayerMatches(id);
     return { puuid: id, total, games: await getPlayerMatches(id, limit, offset) };
+  }
+
+  /** 长期存档：某个玩家（默认自己）各英雄的平均单场评分排名 */
+  async getArchivedChampionScores(
+    puuid?: string,
+    minGames = 1,
+  ): Promise<{
+    puuid: string;
+    champions: Awaited<ReturnType<typeof getPlayerChampionScores>>;
+  }> {
+    const id = await this.resolveArchivePuuid(puuid);
+    if (!id) return { puuid: '', champions: [] };
+    return { puuid: id, champions: await getPlayerChampionScores(id, minGames) };
   }
 
   /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */

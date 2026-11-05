@@ -429,6 +429,28 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/archive/champions') {
+    if (!source.getArchivedChampionScores) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持英雄评分排名' });
+      return;
+    }
+    const puuid = url.searchParams.get('puuid')?.trim() || undefined;
+    const rawMinGames = Number(url.searchParams.get('minGames') ?? 1);
+    const minGames = Number.isFinite(rawMinGames)
+      ? Math.min(100, Math.max(1, Math.trunc(rawMinGames)))
+      : 1;
+    try {
+      const data = await source.getArchivedChampionScores(puuid, minGames);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (error) {
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/archive/record') {
     if (!source.getArchivedWinRecord) {
       sendJson(res, 501, { ok: false, error: '当前模式不支持历史胜率' });

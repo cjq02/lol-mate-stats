@@ -539,6 +539,64 @@ export async function getPlayerWinRecord(
   }
 }
 
+export interface ChampionScoreSummary {
+  championId: number;
+  championName: string;
+  games: number;
+  wins: number;
+  winRate: number;
+  avgScore: number;
+  bestScore: number;
+  worstScore: number;
+}
+
+/**
+ * 某个玩家各英雄的平均单场评分（来自长期存档）。
+ * 重开对局不计入，只统计有评分的场次，按平均分从高到低排序。
+ */
+export async function getPlayerChampionScores(
+  puuid: string,
+  minGames = 1,
+): Promise<ChampionScoreSummary[]> {
+  const db = await getDb();
+  if (!db || !puuid) return [];
+  const threshold = Math.max(1, Math.trunc(minGames));
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT p.champion_id,
+              MAX(p.champion_name) AS champion_name,
+              COUNT(*) AS games,
+              COALESCE(SUM(p.win = 1), 0) AS wins,
+              AVG(p.score) AS avg_score,
+              MAX(p.score) AS best_score,
+              MIN(p.score) AS worst_score
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE p.puuid = ? AND p.score IS NOT NULL AND m.duration_seconds > 300
+       GROUP BY p.champion_id
+       HAVING games >= ?
+       ORDER BY avg_score DESC, games DESC`,
+      [puuid, threshold],
+    );
+    return rows.map((row) => {
+      const games = Number(row.games) || 0;
+      const wins = Number(row.wins) || 0;
+      return {
+        championId: Number(row.champion_id),
+        championName: String(row.champion_name ?? ''),
+        games,
+        wins,
+        winRate: games > 0 ? wins / games : 0,
+        avgScore: Number(row.avg_score) || 0,
+        bestScore: Number(row.best_score) || 0,
+        worstScore: Number(row.worst_score) || 0,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function getPlayerMatches(
   puuid: string,
   limit: number,
