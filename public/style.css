@@ -918,9 +918,9 @@ body::before {
 }
 
 .detail-bad-badge.mild {
-  color: #2a1d02;
-  background: linear-gradient(135deg, #ffe7a3, #e6c07a);
-  box-shadow: 0 0 12px rgba(245, 199, 106, 0.35);
+  color: #2b0710;
+  background: linear-gradient(135deg, #ffd0d8, #ff9aa8);
+  box-shadow: 0 0 12px rgba(255, 154, 168, 0.35);
 }
 
 .match-flag {
@@ -948,11 +948,11 @@ body::before {
 }
 
 .match-flag.teammate-bad {
-  color: #f5c76a;
+  color: #ff9aa8;
 }
 
 .match-flag.self-bad {
-  color: #ffd166;
+  color: #ff8fa0;
 }
 
 .match-flag.self-afk {
@@ -961,6 +961,24 @@ body::before {
 
 .match-flag.enemy-bad {
   color: #ff8fa0;
+}
+
+.match-flag.teammate-bad.mild,
+.match-flag.self-bad.mild,
+.match-flag.enemy-bad.mild {
+  color: #ffb3bd;
+}
+
+.match-flag.teammate-bad.bad,
+.match-flag.self-bad.bad,
+.match-flag.enemy-bad.bad {
+  color: #ff8b4d;
+}
+
+.match-flag.teammate-bad.severe,
+.match-flag.self-bad.severe,
+.match-flag.enemy-bad.severe {
+  color: #ff5c7a;
 }
 
 .match-flags {
@@ -1100,11 +1118,11 @@ body::before {
 }
 
 .match-flags .match-flag.teammate-bad {
-  background: rgba(245, 199, 106, 0.12);
+  background: rgba(255, 154, 168, 0.1);
 }
 
 .match-flags .match-flag.self-bad {
-  background: rgba(255, 209, 102, 0.14);
+  background: rgba(255, 143, 160, 0.12);
 }
 
 .match-flags .match-flag.self-afk {
@@ -1130,11 +1148,11 @@ body::before {
 }
 
 .match-flags .match-flag.mild {
-  background: rgba(245, 199, 106, 0.06);
+  background: rgba(255, 179, 189, 0.08);
 }
 
 .match-flags .match-flag.bad {
-  background: rgba(245, 199, 106, 0.15);
+  background: rgba(255, 139, 77, 0.12);
 }
 
 .match-flags .match-flag.severe {
@@ -1486,25 +1504,35 @@ body::before {
 }
 
 .card.is-mvp {
-  border-color: rgba(255, 209, 102, 0.55);
-  box-shadow: var(--shadow), 0 0 0 1px rgba(255, 209, 102, 0.14),
-    0 0 26px rgba(255, 209, 102, 0.14);
+  border-color: rgba(255, 209, 102, 0.9);
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 209, 102, 0.45),
+    0 0 0 1px rgba(255, 209, 102, 0.35), 0 0 34px rgba(255, 209, 102, 0.28);
 }
 
 .card.is-mvp::before {
-  background: linear-gradient(90deg, transparent, #ffd166, transparent);
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #ffe7a3, #ffd166, transparent);
   opacity: 1;
+}
+
+.card.is-mvp::after {
+  background: radial-gradient(closest-side, rgba(255, 209, 102, 0.18), transparent 70%);
 }
 
 .card.is-svp {
-  border-color: rgba(157, 179, 232, 0.5);
-  box-shadow: var(--shadow), 0 0 0 1px rgba(157, 179, 232, 0.12),
-    0 0 24px rgba(157, 179, 232, 0.12);
+  border-color: rgba(157, 179, 232, 0.85);
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(157, 179, 232, 0.45),
+    0 0 0 1px rgba(157, 179, 232, 0.32), 0 0 32px rgba(157, 179, 232, 0.26);
 }
 
 .card.is-svp::before {
-  background: linear-gradient(90deg, transparent, #9db3e8, transparent);
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #e2eaff, #9db3e8, transparent);
   opacity: 1;
+}
+
+.card.is-svp::after {
+  background: radial-gradient(closest-side, rgba(157, 179, 232, 0.18), transparent 70%);
 }
 
 .card.is-bad-severe {
@@ -1530,13 +1558,13 @@ body::before {
 }
 
 .card.is-bad-mild {
-  border-color: rgba(245, 199, 106, 0.42);
-  box-shadow: var(--shadow), 0 0 0 1px rgba(245, 199, 106, 0.1),
-    0 0 20px rgba(245, 199, 106, 0.1);
+  border-color: rgba(255, 154, 168, 0.42);
+  box-shadow: var(--shadow), 0 0 0 1px rgba(255, 154, 168, 0.1),
+    0 0 20px rgba(255, 154, 168, 0.1);
 }
 
 .card.is-bad-mild::before {
-  background: linear-gradient(90deg, transparent, #f5c76a, transparent);
+  background: linear-gradient(90deg, transparent, #ff9aa8, transparent);
   opacity: 0.9;
 }
 
