@@ -2056,6 +2056,48 @@ body::before {
 
 /* 近期对局条 */
 
+/* 近期评分走势 */
+
+.spark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.spark svg {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  overflow: visible;
+}
+
+.spark-line {
+  stroke: #5eead4;
+}
+
+.spark-dot {
+  fill: #5eead4;
+}
+
+.spark.down .spark-line {
+  stroke: #ff8b9a;
+}
+
+.spark.down .spark-dot {
+  fill: #ff8b9a;
+}
+
+.spark-label {
+  flex: none;
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
 .games {
   display: flex;
   gap: 6px;

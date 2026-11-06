@@ -702,6 +702,8 @@ function buildCard(player, isLocal, options = {}) {
         .join('')}</div>`
     : '';
 
+  const sparkBlock = !thisGame ? scoreSparkline(games) : '';
+
   const championUsage =
     !thisGame && championStats && championStats.games > 0
       ? `<div class="champ-usage">
@@ -953,6 +955,7 @@ function buildCard(player, isLocal, options = {}) {
     ${thisGame ? thisGameMetrics : liveMetrics}
     ${thisGame || options.liveView ? itemRow : ''}
     ${thisGame ? '' : gameChips ? `<div class="games">${gameChips}</div>` : ''}
+    ${thisGame ? '' : sparkBlock}
     ${thisGame ? '' : loading}
     ${thisGame ? '' : metrics}
     ${thisGame ? '' : riskNote}
@@ -2004,6 +2007,40 @@ function buildRadarSeries(player, context) {
       )}`,
     };
   });
+}
+
+/** 最近 N 场评分走势：左旧右新，上升/下降用颜色区分 */
+function scoreSparkline(games) {
+  const scores = (games ?? [])
+    .slice(0, 10)
+    .map((game) => Number(game.score))
+    .filter((score) => Number.isFinite(score))
+    .reverse();
+  if (scores.length < 3) return '';
+
+  const width = 120;
+  const height = 30;
+  const pad = 3;
+  const min = Math.min(...scores);
+  const max = Math.max(...scores);
+  const span = Math.max(1, max - min);
+  const points = scores.map((score, index) => [
+    pad + (index * (width - pad * 2)) / (scores.length - 1),
+    height - pad - ((score - min) / span) * (height - pad * 2),
+  ]);
+  const path = points
+    .map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
+    .join(' ');
+  const [lastX, lastY] = points[points.length - 1];
+  const trend = scores[scores.length - 1] >= scores[0] ? 'up' : 'down';
+
+  return `<div class="spark ${trend}" title="最近 ${scores.length} 场评分走势（左旧右新）">
+    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+      <path d="${path}" class="spark-line" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="2.2" class="spark-dot"/>
+    </svg>
+    <span class="spark-label">近 ${scores.length} 场走势</span>
+  </div>`;
 }
 
 function miniRadarSvg(series) {
