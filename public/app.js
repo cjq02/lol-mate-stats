@@ -2,6 +2,9 @@
 
 const els = {
   board: document.getElementById('board'),
+  aramPanel: document.getElementById('aram-panel'),
+  aramList: document.getElementById('aram-list'),
+  aramHint: document.getElementById('aram-hint'),
   empty: document.getElementById('empty'),
   emptyIcon: document.getElementById('empty-icon'),
   emptyTitle: document.getElementById('empty-title'),
@@ -458,6 +461,7 @@ function render() {
     cardCache.clear();
   }
 
+  renderAramChampions(snapshot);
   renderHeader(snapshot, players, collecting);
   renderEmpty(snapshot);
 }
@@ -503,6 +507,56 @@ function renderBoard(players) {
   nodes.forEach((node, index) => {
     if (current[index] !== node) els.board.replaceChild(node, current[index]);
   });
+}
+
+/** 大乱斗选人阶段：当前英雄 + 替补席的整体/个人胜率 */
+function renderAramChampions(snapshot) {
+  const options = Array.isArray(snapshot?.aramChampions) ? snapshot.aramChampions : [];
+  const show = Boolean(
+    snapshot?.inChampSelect && snapshot?.gameMode === 'ARAM' && options.length,
+  );
+  els.aramPanel.classList.toggle('hidden', !show);
+  if (!show) {
+    els.aramList.replaceChildren();
+    return;
+  }
+
+  els.aramHint.textContent = `当前英雄 + 替补席 ${options.length} 个 · 点击查看我的英雄战绩`;
+  const nodes = options.map((option) => {
+    const mine = option.games > 0 ? winRatePct(option.winRate) : '未使用';
+    const overall = option.globalGames > 0 ? winRatePct(option.globalWinRate) : '-';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `aram-champion${option.isCurrent ? ' current' : ''}`;
+    button.title = `${option.championName}：本地存档整体 ${overall}${
+      option.globalGames ? `（${option.globalGames} 场）` : ''
+    }；我的 ${mine}${option.games ? `（${option.games} 场）` : ''}`;
+    button.innerHTML = `
+      <span class="aram-champ-icon">${iconHtml(
+        champPath(option.championId),
+        option.championName,
+        'sm',
+      )}</span>
+      <span class="aram-champ-main">
+        <span class="aram-champ-name">${escapeHtml(option.championName)}${
+          option.isCurrent ? '<em class="aram-current">当前</em>' : ''
+        }${option.isPriority ? '<em class="aram-priority">优先</em>' : ''}</span>
+        <span class="aram-champ-stats">
+          <span class="aram-stat"><small>整体</small><b>${overall}</b>${
+            option.globalGames ? `<em>${option.globalGames}场</em>` : ''
+          }</span>
+          <span class="aram-stat mine"><small>我的</small><b>${mine}</b>${
+            option.games ? `<em>${option.games}场</em>` : ''
+          }</span>
+        </span>
+      </span>
+    `;
+    button.addEventListener('click', () =>
+      openChampionMatches(option.championId, option.championName, { mode: 'ARAM' }),
+    );
+    return button;
+  });
+  els.aramList.replaceChildren(...nodes);
 }
 
 function enterCard(node) {

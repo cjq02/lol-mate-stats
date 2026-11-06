@@ -1492,6 +1492,159 @@ body::before {
   background-clip: padding-box;
 }
 
+/* 大乱斗可选英雄 */
+.aram-panel {
+  width: 100%;
+  max-width: 1900px;
+  margin: 0 auto;
+  padding: 2px 22px 4px;
+}
+
+.aram-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.aram-head h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: #dbe6ff;
+}
+
+.aram-hint {
+  font-size: 10.5px;
+  color: var(--muted-2);
+}
+
+.aram-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 1px 1px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(126, 163, 255, 0.28) transparent;
+}
+
+.aram-list::-webkit-scrollbar {
+  height: 8px;
+}
+
+.aram-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(126, 163, 255, 0.28);
+}
+
+.aram-champion {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.aram-champion:hover {
+  border-color: rgba(94, 234, 212, 0.28);
+  background: rgba(94, 234, 212, 0.06);
+  transform: translateY(-1px);
+}
+
+.aram-champion.current {
+  border-color: rgba(245, 199, 106, 0.42);
+  background: linear-gradient(135deg, rgba(245, 199, 106, 0.12), rgba(255, 255, 255, 0.025));
+  box-shadow: inset 3px 0 0 #f5c76a;
+}
+
+.aram-champ-icon .icon {
+  width: 27px;
+  height: 27px;
+  border-radius: 6px;
+}
+
+.aram-champ-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.aram-champ-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #dbe6ff;
+  white-space: nowrap;
+}
+
+.aram-current,
+.aram-priority {
+  font-style: normal;
+  font-size: 8.5px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 999px;
+}
+
+.aram-current {
+  color: #2a1d02;
+  background: #f5c76a;
+}
+
+.aram-priority {
+  color: #9ef0c0;
+  background: rgba(80, 220, 140, 0.12);
+  border: 1px solid rgba(80, 220, 140, 0.24);
+}
+
+.aram-champ-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.aram-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 9.5px;
+  color: var(--muted-2);
+}
+
+.aram-stat small {
+  font-size: 8.5px;
+  opacity: 0.75;
+}
+
+.aram-stat b {
+  font-size: 11px;
+  font-weight: 650;
+  color: #c4d4ff;
+}
+
+.aram-stat.mine b {
+  color: #5eead4;
+}
+
+.aram-stat em {
+  font-style: normal;
+  font-size: 9px;
+  opacity: 0.65;
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
