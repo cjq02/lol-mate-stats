@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
   ArchiveCursor,
+  AramChampionOption,
   ChampSelectMember,
   ChampSelectSession,
   GameContext,
@@ -29,6 +30,7 @@ import { analyzeGame } from './stats/analyze.js';
 import {
   archiveGames,
   countPlayerMatches,
+  getChampionModeRecords,
   getPlayerChampionScores,
   getPlayerMatchTags,
   getPlayerMatches,
@@ -37,6 +39,7 @@ import {
   getSavedSelfPuuid,
   saveSelfPuuid,
   type ArchivedMatch,
+  type ChampionModeRecord,
   type PlayerMatchFilter,
 } from './stats/archive.js';
 import { currentQueueGroup, modeFromQueue, queueGroupName, queueName } from './stats/constants.js';
@@ -131,6 +134,9 @@ export class LiveSource implements DataSource {
   private lastPhase = 'None';
   /** 记录“本局之前最新一局”的重试时间，避免对局开始时阻塞界面 */
   private inGameRecordAt = 0;
+  /** 大乱斗可选英雄的缓存键，避免每轮 tick 都查数据库 */
+  private aramOptionsKey = '';
+  private aramRefreshInFlight = false;
 
   constructor(options: LiveSourceOptions = {}) {
     this.options = {
@@ -835,6 +841,7 @@ export class LiveSource implements DataSource {
 
       if (membersKey === this.lastMembersKey && !cacheExpired) {
         this.updateSessionChampions(session);
+        void this.refreshAramChampions(api, session);
         return;
       }
 
@@ -868,10 +875,12 @@ export class LiveSource implements DataSource {
         gameTime: undefined,
         liveSessionId: undefined,
         liveEvents: undefined,
+        aramChampions: undefined,
         error: undefined,
       },
       false,
     );
+    this.aramOptionsKey = '';
   }
 
   /** 读取当前队列（选人阶段也能拿到），用于只统计同模式战绩 */
@@ -1056,6 +1065,8 @@ export class LiveSource implements DataSource {
       },
       true,
     );
+    // 大乱斗替补席随时可能刷新，放到后台读取，不阻塞队友卡片
+    void this.refreshAramChampions(api, session, context);
 
     try {
       const collector = this.ensureCollector(api);
@@ -1097,6 +1108,86 @@ export class LiveSource implements DataSource {
       this.patch({ collecting: false, error: `读取队友战绩失败：${message}` });
     } finally {
       this.busy = false;
+    }
+  }
+
+  /**
+   * 大乱斗选人阶段：列出当前英雄 + 替补席英雄，并补上
+   * “本地存档整体胜率”和“我的胜率 / 场次”。
+   */
+  private async refreshAramChampions(
+    api: LcuApi,
+    session: ChampSelectSession,
+    context?: GameContext,
+  ): Promise<void> {
+    if (this.aramRefreshInFlight) return;
+    const mode = context?.mode ?? this.snapshot.gameMode;
+    if (mode !== 'ARAM' || !this.snapshot.inChampSelect) {
+      if (this.snapshot.aramChampions) this.patch({ aramChampions: undefined });
+      this.aramOptionsKey = '';
+      return;
+    }
+
+    const localMember = session.myTeam?.find(
+      (member) => member.cellId === session.localPlayerCellId,
+    );
+    const currentId = toNumber(localMember?.championId) || toNumber(localMember?.championPickIntent);
+    const bench = Array.isArray(session.benchChampions) ? session.benchChampions : [];
+    const benchIds = bench
+      .map((entry) => toNumber(entry.championId))
+      .filter((id) => id > 0);
+    const ids = [...new Set([currentId, ...benchIds].filter((id) => id > 0))];
+    if (!ids.length) {
+      if (this.snapshot.aramChampions) this.patch({ aramChampions: undefined });
+      return;
+    }
+
+    const key = `${localMember?.puuid ?? ''}:${currentId}:${[...ids]
+      .sort((a, b) => a - b)
+      .join(',')}`;
+    if (key === this.aramOptionsKey && this.snapshot.aramChampions?.length) return;
+
+    this.aramRefreshInFlight = true;
+    try {
+      const [mine, overall, championMap] = await Promise.all([
+        localMember?.puuid
+          ? getChampionModeRecords(ids, 'ARAM', localMember.puuid)
+          : Promise.resolve(new Map<number, ChampionModeRecord>()),
+        getChampionModeRecords(ids, 'ARAM'),
+        api.getChampionMap().catch(() => new Map()),
+      ]);
+
+      const priority = new Set(
+        bench
+          .filter((entry) => entry.isPriority)
+          .map((entry) => toNumber(entry.championId)),
+      );
+      const options: AramChampionOption[] = ids.map((championId) => {
+        const personal = mine.get(championId);
+        const global = overall.get(championId);
+        return {
+          championId,
+          championName: championMap.get(championId)?.name ?? `英雄 ${championId}`,
+          isCurrent: championId === currentId,
+          isPriority: priority.has(championId) || undefined,
+          games: personal?.games ?? 0,
+          wins: personal?.wins ?? 0,
+          winRate: personal?.winRate ?? 0,
+          avgScore: personal?.avgScore ?? 0,
+          globalGames: global?.games ?? 0,
+          globalWinRate: global?.winRate ?? 0,
+        };
+      });
+      // 当前英雄排最前，其余保持替补席顺序
+      options.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent));
+
+      this.aramOptionsKey = key;
+      this.patch({ aramChampions: options });
+      logTag('match', `大乱斗可选英雄已更新：${options.length} 个`);
+    } catch {
+      // 读取失败时保留上一份数据，下次 tick 重试
+    } finally {
+      this.aramRefreshInFlight = false;
     }
   }
 

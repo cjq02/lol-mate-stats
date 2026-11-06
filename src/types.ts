@@ -6,6 +6,24 @@ export interface ArchiveCursor {
   gameId: number;
 }
 
+/** 大乱斗选人阶段：当前英雄 / 替补席英雄的胜率信息 */
+export interface AramChampionOption {
+  championId: number;
+  championName: string;
+  /** 是否是当前分配到的英雄 */
+  isCurrent: boolean;
+  /** 替补席是否标记为优先 */
+  isPriority?: boolean;
+  /** 我的场次 / 胜率 / 均分（来自长期存档） */
+  games: number;
+  wins: number;
+  winRate: number;
+  avgScore: number;
+  /** 本地存档里所有玩家在该英雄上的整体数据 */
+  globalGames: number;
+  globalWinRate: number;
+}
+
 export interface LcuConnection {
   host: string;
   port: number;
@@ -41,6 +59,10 @@ export interface ChampSelectSession {
   localPlayerCellId: number;
   myTeam: ChampSelectMember[];
   theirTeam?: ChampSelectMember[];
+  /** 大乱斗替补席是否可用 */
+  benchEnabled?: boolean;
+  /** 大乱斗替补席上的可选英雄 */
+  benchChampions?: Array<{ championId: number; isPriority?: boolean }>;
   timer?: {
     phase?: string;
     adjustedTimeLeftInPhase?: number;
@@ -609,6 +631,8 @@ export interface Snapshot {
   liveSessionId?: string;
   /** 本局事件（击杀、推塔、小龙、大龙等），用于实时 AI */
   liveEvents?: LiveEvent[];
+  /** 大乱斗选人阶段的可选英雄（当前英雄 + 替补席） */
+  aramChampions?: AramChampionOption[];
   localPlayer?: {
     summonerId: number;
     displayName: string;

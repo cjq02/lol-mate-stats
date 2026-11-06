@@ -121,7 +121,7 @@ async function connect(): Promise<Pool | undefined> {
 }
 
 /** 表结构版本：每次新增迁移递增，旧库启动时按顺序补齐 */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 interface SchemaMigration {
   version: number;
@@ -205,6 +205,19 @@ const SCHEMA_MIGRATIONS: SchemaMigration[] = [
         'matches',
         'idx_matches_creation_id',
         'game_creation, game_id',
+      );
+    },
+  },
+  {
+    version: 4,
+    describe: '按英雄统计整体胜率的索引',
+    up: async (db) => {
+      // 大乱斗可选英雄会一次查多个英雄的全局胜率，需要从 champion_id 侧过滤
+      await addIndexIfMissing(
+        db,
+        'match_participants',
+        'idx_mp_champion_game',
+        'champion_id, game_id',
       );
     },
   },

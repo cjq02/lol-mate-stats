@@ -774,6 +774,75 @@ export async function getPlayerChampionUsages(
   return result;
 }
 
+/** 某个英雄在指定模式下的整体 / 个人战绩 */
+export interface ChampionModeRecord {
+  championId: number;
+  games: number;
+  wins: number;
+  winRate: number;
+  avgScore: number;
+}
+
+/**
+ * 批量统计这些英雄在指定模式下的胜率。
+ * 传 puuid 时只统计这名玩家；不传时统计本地存档里的所有玩家。
+ */
+export async function getChampionModeRecords(
+  championIds: number[],
+  mode: GameModeKey,
+  puuid?: string,
+): Promise<Map<number, ChampionModeRecord>> {
+  const result = new Map<number, ChampionModeRecord>();
+  const ids = [...new Set(championIds.filter((id) => Number.isFinite(id) && id > 0))];
+  const db = await getDb();
+  if (!db || !ids.length) return result;
+
+  const placeholders = ids.flatMap(() => ['?', '?']).join(',');
+  const params: Array<string | number> = [];
+  const conditions = [`p.champion_id IN (${placeholders})`];
+  // 特殊模式的英雄 ID 会存成 60000 + 基础 ID
+  params.push(...ids, ...ids.map((id) => id + 60000));
+  conditions.push('p.score IS NOT NULL');
+  conditions.push('m.duration_seconds > 300');
+  conditions.push("COALESCE(m.game_mode, '') <> 'PRACTICETOOL'");
+  conditions.push('p.puuid IS NOT NULL');
+  if (puuid) {
+    conditions.push('p.puuid = ?');
+    params.push(puuid);
+  }
+  conditions.push(CHAMPION_MODE_FILTERS[mode]);
+
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT ${NORMALIZED_CHAMPION_ID} AS champion_id,
+              COUNT(*) AS games,
+              COALESCE(SUM(p.win = 1), 0) AS wins,
+              AVG(p.score) AS avg_score
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE ${conditions.join(' AND ')}
+       GROUP BY ${NORMALIZED_CHAMPION_ID}`,
+      params,
+    );
+    for (const row of rows) {
+      const championId = Number(row.champion_id);
+      if (!championId) continue;
+      const games = Number(row.games) || 0;
+      const wins = Number(row.wins) || 0;
+      result.set(championId, {
+        championId,
+        games,
+        wins,
+        winRate: games > 0 ? wins / games : 0,
+        avgScore: Number(row.avg_score) || 0,
+      });
+    }
+  } catch {
+    /* 查询失败时按无数据处理 */
+  }
+  return result;
+}
+
 export async function getPlayerMatches(
   puuid: string,
   limit: number,
