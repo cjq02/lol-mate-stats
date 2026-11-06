@@ -19,6 +19,7 @@ import {
   gameFlagTags,
   gameFlags,
   isRemakeMeta,
+  MILD_BAD_GAME_SCORE,
   worseBadLevel,
 } from './flags.js';
 import { queueName } from './constants.js';
@@ -597,8 +598,9 @@ export async function getPlayerWinRecord(
 }
 
 /**
- * 某个玩家按一天内两小时时段统计的胜率和坑率（来自长期存档）。
- * 只读取每场的时间、胜负和标签，避免把上千场的全部参与者反复拉进内存。
+ * 某个玩家按一天内时段统计的胜率和坑率（来自长期存档）。
+ * 只读取每场的时间、胜负、标签、位置、英雄和双方评分，避免把上千场的
+ * 全部参与者反复拉进内存；坑线按当前阈值重新判断，不依赖旧 tags。
  */
 export async function getPlayerTimeStats(
   puuid: string,
@@ -611,15 +613,31 @@ export async function getPlayerTimeStats(
     'm.duration_seconds > 300',
     "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
   ];
-  const params: Array<string | number> = [puuid];
+  // SELECT 里有两个坑线参数，之后才是 WHERE 里的 puuid
+  const params: Array<string | number> = [
+    MILD_BAD_GAME_SCORE,
+    MILD_BAD_GAME_SCORE,
+    puuid,
+  ];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT m.game_creation, p.win, p.tags, p.position, p.champion_id
+      `SELECT m.game_creation, p.win, p.tags, p.position, p.champion_id,
+              MAX(CASE WHEN p.score IS NOT NULL AND p.score < ? THEN 1 ELSE 0 END) AS self_bad_score,
+              MAX(CASE
+                    WHEN q.puuid IS NOT NULL
+                     AND q.puuid <> p.puuid
+                     AND q.score IS NOT NULL
+                     AND q.score < ?
+                    THEN 1 ELSE 0
+                  END) AS teammate_bad_score
        FROM match_participants p
        JOIN matches m ON m.game_id = p.game_id
-       WHERE ${conditions.join(' AND ')}`,
+       LEFT JOIN match_participants q
+         ON q.game_id = p.game_id AND q.team_id = p.team_id
+       WHERE ${conditions.join(' AND ')}
+       GROUP BY m.game_creation, p.game_id, p.win, p.tags, p.position, p.champion_id, p.score`,
       params,
     );
     return summarizeTimeStats(
@@ -632,6 +650,8 @@ export async function getPlayerTimeStats(
             ? undefined
             : String(row.position),
         championId: Number(row.champion_id) || 0,
+        selfBad: Number(row.self_bad_score) === 1,
+        teammateBad: Number(row.teammate_bad_score) === 1,
       })),
     );
   } catch {

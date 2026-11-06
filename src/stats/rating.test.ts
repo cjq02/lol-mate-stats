@@ -487,12 +487,14 @@ test('队列/模式分组', () => {
 
 test('单场坑的程度分档', () => {
   assert.equal(badLevelOfScore(40), undefined);
-  assert.equal(badLevelOfScore(32), undefined);
-  assert.equal(badLevelOfScore(31), 'mild');
-  assert.equal(badLevelOfScore(25), 'mild');
-  assert.equal(badLevelOfScore(24), 'bad');
-  assert.equal(badLevelOfScore(18), 'bad');
-  assert.equal(badLevelOfScore(17), 'severe');
+  assert.equal(badLevelOfScore(39), 'mild');
+  assert.equal(badLevelOfScore(32), 'mild');
+  assert.equal(badLevelOfScore(30), 'mild');
+  assert.equal(badLevelOfScore(29.9), 'bad');
+  assert.equal(badLevelOfScore(25), 'bad');
+  assert.equal(badLevelOfScore(20), 'bad');
+  assert.equal(badLevelOfScore(19.9), 'severe');
+  assert.equal(badLevelOfScore(18), 'severe');
   assert.equal(badLevelLabel('mild'), '小坑');
   assert.equal(badLevelLabel('bad'), '坑');
   assert.equal(badLevelLabel('severe'), '巨坑');
@@ -913,6 +915,22 @@ test('时段统计按本地时间统计时段、星期、周、月、位置和�
   assert.equal(fighter.games, 1);
   assert.equal(fighter.wins, 1);
   assert.equal(fighter.selfBadGames, 1);
+});
+
+test('时段统计使用当前坑线重新判断结果', () => {
+  const summary = summarizeTimeStats([
+    {
+      gameCreation: new Date(2026, 0, 5, 1, 0).getTime(),
+      win: true,
+      tags: [],
+      teammateBad: true,
+      selfBad: true,
+    },
+  ]);
+  const early = summary.dimensions.hour[0];
+  assert.ok(early);
+  assert.equal(early.teammateBadGames, 1);
+  assert.equal(early.selfBadGames, 1);
 });
 
 test('低伤害低承伤但 KDA 好看的局判为挂机', () => {

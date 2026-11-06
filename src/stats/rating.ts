@@ -198,7 +198,7 @@ function scoreWithWeights(
     const absolute = clamp(score20 * 5, 0, 100);
     const curved = 100 * (absolute / 100) ** 0.7;
     // 伤害占比和参团都极低、死亡还多：属于整局几乎没打出作用的“巨坑”局，
-    // 不再让辅助/坦克权重把分数托到 25 分以上。
+    // 不再让辅助/坦克权重把分数托到正常范围。
     const catastrophic =
       (input.damageShare < 0.06 &&
         input.killParticipation < 0.35 &&
@@ -874,7 +874,7 @@ export function gameTags(game: {
   if (game.deaths === 0 && kills + assists >= 5) tags.push('零死');
   // 大乱斗/竞技场死亡次数天然偏高，不据此打“超鬼”标签
   if (deathTagsApply(game.position) && game.deaths >= 10) tags.push('超鬼');
-  if (game.score <= 25) tags.push('战犯');
+  if (game.score < 30) tags.push('战犯');
 
   if (game.position === 'ARAM') {
     if (game.damageShare >= 0.3 && (game.damagePerMin ?? 0) >= 1000) tags.push('乱斗炮台');

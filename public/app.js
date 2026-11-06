@@ -294,12 +294,23 @@ function hueFor(text) {
   return hash;
 }
 
-function ratingColor(rating) {
+/** 0/0/0、0/1/0 这类几乎没有参与对局的场次，用灰色表示，不按低分红色处理 */
+function isInactiveKda(stats) {
+  if (!stats) return false;
+  const kills = Number(stats.kills) || 0;
+  const assists = Number(stats.assists) || 0;
+  const deaths = Number(stats.deaths) || 0;
+  return kills === 0 && assists === 0 && deaths <= 1;
+}
+
+function ratingColor(rating, stats) {
   if (rating === null || rating === undefined) return '#5b6b8c';
-  if (rating >= 75) return '#3ddc97';
-  if (rating >= 65) return '#5eead4';
-  if (rating >= 55) return '#f5c76a';
-  if (rating >= 45) return '#ffab5e';
+  if (isInactiveKda(stats)) return '#7c8aa5';
+  if (rating >= 80) return '#a78bfa';
+  if (rating >= 70) return '#3ddc97';
+  if (rating >= 60) return '#5eead4';
+  if (rating >= 50) return '#f5c76a';
+  if (rating >= 40) return '#ffab5e';
   return '#ff6b81';
 }
 
@@ -612,7 +623,7 @@ function buildCard(player, isLocal, options = {}) {
   const thisGame = options.thisGame;
   const rating = thisGame?.score ?? player.rating;
   const grade = thisGame?.grade ?? player.grade;
-  const color = ratingColor(rating);
+  const color = ratingColor(rating, thisGame);
   const name = player.displayName ?? '未知召唤师';
   const tag = player.tagLine;
   const rawLabels = thisGame ? thisGame.tags ?? [] : player.labels ?? [];
@@ -2011,7 +2022,7 @@ function matchRow(game, showScore) {
       displayTags?.length ? ` · ${matchFlagsHtml(displayTags)}` : ''
     }</small></span>
     <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
-    <span class="pts"${score === null ? '' : ` style="color:${ratingColor(score)}"`}>${
+    <span class="pts"${score === null ? '' : ` style="color:${ratingColor(score, game)}"`}>${
       score === null ? (showScore ? '--' : '›') : score
     }</span>
   </button>`;

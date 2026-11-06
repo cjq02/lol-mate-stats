@@ -17,6 +17,9 @@ export interface TimeStatsGame {
   position?: string;
   /** 本局使用的英雄，用于按英雄类型统计 */
   championId?: number;
+  /** 重新按当前坑线判断的结果（历史 tags 可能仍是旧阈值） */
+  teammateBad?: boolean;
+  selfBad?: boolean;
 }
 
 export interface TimeStatsBucket {
@@ -240,8 +243,9 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
 
     const date = new Date(timestamp);
     const win = Boolean(game.win);
-    const teammateBad = tags.some((tag) => TEAMMATE_BAD_TAG.test(tag));
-    const selfBad = tags.some((tag) => SELF_BAD_TAG.test(tag));
+    const teammateBad =
+      Boolean(game.teammateBad) || tags.some((tag) => TEAMMATE_BAD_TAG.test(tag));
+    const selfBad = Boolean(game.selfBad) || tags.some((tag) => SELF_BAD_TAG.test(tag));
     latestTimestamp = Math.max(latestTimestamp, timestamp);
 
     const hourIndex = Math.min(
