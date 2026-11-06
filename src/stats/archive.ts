@@ -3,6 +3,7 @@ import type { ChampionSummary } from '../lcu/api.js';
 import type {
   ArchiveCursor,
   BadLevel,
+  ChampionUsage,
   GameModeKey,
   Lane,
   RawGame,
@@ -661,6 +662,116 @@ export async function getPlayerChampionScores(
   } catch {
     return [];
   }
+}
+
+/** 某个玩家的历史评分分布（用于个人基线） */
+export interface PlayerHistorySample {
+  puuid: string;
+  games: number;
+  avgScore: number;
+  stdDev: number;
+}
+
+/** 批量读取多个玩家的历史评分分布，一次查询代替 N 次 */
+export async function getPlayerBaselines(
+  puuids: string[],
+): Promise<Map<string, PlayerHistorySample>> {
+  const result = new Map<string, PlayerHistorySample>();
+  const ids = [...new Set(puuids.filter(Boolean))];
+  const db = await getDb();
+  if (!db || !ids.length) return result;
+
+  try {
+    const placeholders = ids.map(() => '?').join(',');
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT p.puuid,
+              COUNT(*) AS games,
+              AVG(p.score) AS avg_score,
+              STDDEV_POP(p.score) AS std_dev
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE p.puuid IN (${placeholders})
+         AND p.score IS NOT NULL
+         AND m.duration_seconds > 300
+       GROUP BY p.puuid`,
+      ids,
+    );
+    for (const row of rows) {
+      const puuid = String(row.puuid ?? '');
+      if (!puuid) continue;
+      result.set(puuid, {
+        puuid,
+        games: Number(row.games) || 0,
+        avgScore: Number(row.avg_score) || 0,
+        stdDev: Number(row.std_dev) || 0,
+      });
+    }
+  } catch {
+    /* 查询失败时按无基线处理 */
+  }
+  return result;
+}
+
+/**
+ * 批量读取“某个玩家在指定英雄上的历史表现”。
+ * 入参是玩家 + 英雄组合，一次查询用 OR 分组，避免 10 名玩家各查一次。
+ */
+export async function getPlayerChampionUsages(
+  entries: Array<{ puuid: string; championId: number }>,
+): Promise<Map<string, ChampionUsage>> {
+  const result = new Map<string, ChampionUsage>();
+  const unique = new Map<string, { puuid: string; championId: number }>();
+  for (const entry of entries) {
+    if (!entry.puuid || !entry.championId) continue;
+    unique.set(`${entry.puuid}:${entry.championId}`, entry);
+  }
+  const list = [...unique.values()];
+  const db = await getDb();
+  if (!db || !list.length) return result;
+
+  try {
+    const groups: string[] = [];
+    const params: Array<string | number> = [];
+    for (const entry of list) {
+      groups.push('(p.puuid = ? AND p.champion_id IN (?, ?))');
+      params.push(entry.puuid, entry.championId, entry.championId + 60000);
+    }
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT p.puuid,
+              ${NORMALIZED_CHAMPION_ID} AS champion_id,
+              MAX(p.champion_name) AS champion_name,
+              COUNT(*) AS games,
+              COALESCE(SUM(p.win = 1), 0) AS wins,
+              AVG(p.score) AS avg_score,
+              MAX(p.score) AS best_score
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE (${groups.join(' OR ')})
+         AND p.score IS NOT NULL
+         AND m.duration_seconds > 300
+         AND COALESCE(m.game_mode, '') <> 'PRACTICETOOL'
+       GROUP BY p.puuid, ${NORMALIZED_CHAMPION_ID}`,
+      params,
+    );
+    for (const row of rows) {
+      const puuid = String(row.puuid ?? '');
+      const championId = Number(row.champion_id);
+      if (!puuid || !championId) continue;
+      const games = Number(row.games) || 0;
+      const wins = Number(row.wins) || 0;
+      result.set(`${puuid}:${championId}`, {
+        championId,
+        games,
+        wins,
+        winRate: games > 0 ? wins / games : 0,
+        avgScore: Number(row.avg_score) || 0,
+        bestScore: Number(row.best_score) || 0,
+      });
+    }
+  } catch {
+    /* 查询失败时按无英雄数据处理 */
+  }
+  return result;
 }
 
 export async function getPlayerMatches(

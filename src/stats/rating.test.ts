@@ -4,7 +4,7 @@ import { analyzeGame, detectLane, matchBestTags } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
 import { buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
-import { PROFILES, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
+import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 
@@ -887,6 +887,34 @@ test('增量更新会对重复对局去重', () => {
   const game = makeGame(1, 'MID');
   const merged = mergeIncrementalGames([game], [game], 10);
   assert.equal(merged.length, 1);
+});
+
+console.log('baseline');
+test('个人基线需要至少 10 场历史', () => {
+  assert.equal(compareBaseline(70, { games: 9, avgScore: 60, stdDev: 8 }), undefined);
+  const baseline = compareBaseline(70, { games: 30, avgScore: 60, stdDev: 8 });
+  assert.equal(baseline?.games, 30);
+  assert.equal(baseline?.delta, 10);
+  assert.equal(baseline?.z, 1.25);
+});
+
+test('个人基线标准差过小时按 6 分兜底', () => {
+  const baseline = compareBaseline(70, { games: 20, avgScore: 60, stdDev: 1 });
+  assert.equal(baseline?.stdDev, 6);
+  assert.equal(baseline?.z, 1.67);
+});
+
+test('近期摘要给出主玩位置与占比', () => {
+  const games = [
+    makeGame(1, 'MID'),
+    makeGame(2, 'MID'),
+    makeGame(3, 'MID'),
+    makeGame(4, 'MID'),
+    makeGame(5, 'TOP'),
+  ];
+  const summary = summarize(games);
+  assert.equal(summary.mainPosition, 'MID');
+  assert.equal(summary.mainPositionShare, 0.8);
 });
 
 console.log(`\n${passed} 项测试全部通过`);

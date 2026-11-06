@@ -2,6 +2,7 @@ import type {
   AnalyzedGame,
   Grade,
   Lane,
+  PlayerBaseline,
   RecentSummary,
   RiskAssessment,
   Streak,
@@ -229,6 +230,38 @@ export function gradeOf(rating: number): Grade {
   if (rating >= 58) return 'B';
   if (rating >= 48) return 'C';
   return 'D';
+}
+
+/** 历史基线样本（来自长期存档） */
+export interface BaselineSample {
+  games: number;
+  avgScore: number;
+  stdDev: number;
+}
+
+/** 至少要有这么多场历史，个人基线才有参考价值 */
+export const BASELINE_MIN_GAMES = 10;
+
+/**
+ * 用历史均分和标准差衡量近期状态。
+ * 标准差下限按 6 分兜底：历史越稳定，同样的波动越值得提示，
+ * 但不至于因为一两分就给出夸张的 σ。
+ */
+export function compareBaseline(
+  recentAvgScore: number,
+  sample: BaselineSample | undefined,
+): PlayerBaseline | undefined {
+  if (!sample || sample.games < BASELINE_MIN_GAMES) return undefined;
+  if (!Number.isFinite(recentAvgScore) || !Number.isFinite(sample.avgScore)) return undefined;
+  const stdDev = Math.max(6, sample.stdDev || 0);
+  const delta = recentAvgScore - sample.avgScore;
+  return {
+    games: sample.games,
+    avgScore: round(sample.avgScore, 1),
+    stdDev: round(stdDev, 1),
+    delta: round(delta, 1),
+    z: round(delta / stdDev, 2),
+  };
 }
 
 export function gradeLabel(grade: Grade): string {
@@ -515,6 +548,8 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
     labels,
     risk,
     topChampions,
+    mainPosition,
+    mainPositionShare: round(mainPositionShare, 2),
   };
 }
 

@@ -3,6 +3,7 @@ import type {
   AnalyzedGame,
   ChampSelectMember,
   ChampSelectSession,
+  ChampionUsage,
   GameContext,
   LiveGamePlayer,
   LiveMember,
@@ -17,10 +18,15 @@ import type { ChampionSummary, LcuApi } from '../lcu/api.js';
 import { LcuError } from '../lcu/http.js';
 import { liveItemIds } from '../lcu/live.js';
 import { analyzeGame, computeMatchScores, matchBestTags } from './analyze.js';
-import { archiveGames } from './archive.js';
+import {
+  archiveGames,
+  getPlayerBaselines,
+  getPlayerChampionUsages,
+  type PlayerHistorySample,
+} from './archive.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName } from './constants.js';
 import { gameFlagTags, gameFlags, isRemakeGame } from './flags.js';
-import { summarize } from './rating.js';
+import { compareBaseline, summarize } from './rating.js';
 import { getDb, withTransaction } from './store.js';
 
 export interface CollectorOptions {
@@ -51,7 +57,7 @@ const CACHE_SAVE_DELAY = 2_000;
 /** 报告缓存保留时长：只用于清理长期不用的数据，是否过期由“最新对局 ID”决定 */
 const REPORT_RETENTION_MS = 30 * DAY_MS;
 /** 缓存版本：标签口径变化时递增，让旧报告自动失效 */
-const REPORT_CACHE_VERSION = 'v2';
+const REPORT_CACHE_VERSION = 'v3';
 /** 两次“检查有没有新对局”的最小间隔，避免对局中每轮都请求 LCU */
 const REPORT_RECHECK_MS = 5 * 60_000;
 /** 单类缓存最多落盘多少条，避免数据库无限增长 */
@@ -84,6 +90,16 @@ export class ReportCollector {
     { at: number; game: RawGame | null; ttlMs?: number }
   >();
   private readonly rankCache = new Map<string, { at: number; rank: RankInfo | null }>();
+  /** 个人历史基线（每 5 分钟最多查一次） */
+  private readonly baselineCache = new Map<
+    string,
+    { at: number; sample?: PlayerHistorySample }
+  >();
+  /** 当前英雄的历史熟练度，按 puuid + championId 缓存 */
+  private readonly championUsageCache = new Map<
+    string,
+    { at: number; usage?: ChampionUsage }
+  >();
   private championMap: Map<number, ChampionSummary> | null = null;
   private championMapAt = 0;
   private itemPrices?: Map<number, number>;
@@ -113,6 +129,8 @@ export class ReportCollector {
     this.summonerCache.clear();
     this.summonerByNameCache.clear();
     this.rankCache.clear();
+    this.baselineCache.clear();
+    this.championUsageCache.clear();
     this.gameCache.clear();
     this.championMap = null;
     this.championMapAt = 0;
@@ -532,6 +550,7 @@ export class ReportCollector {
       onProgress?.([...reports]);
     });
 
+    await this.attachHistoryInsights(reports);
     return reports;
   }
 
@@ -634,9 +653,11 @@ export class ReportCollector {
     });
 
     // 己方在前，敌方在后
-    return reports.sort(
+    const sorted = reports.sort(
       (a, b) => Number(Boolean(a.isEnemy)) - Number(Boolean(b.isEnemy)),
     );
+    await this.attachHistoryInsights(sorted);
+    return sorted;
   }
 
   /**
@@ -684,6 +705,7 @@ export class ReportCollector {
       onProgress?.([...reports]);
     });
 
+    await this.attachHistoryInsights(reports);
     return reports;
   }
 
@@ -988,6 +1010,62 @@ export class ReportCollector {
       loading: false,
       error: report.error,
     };
+  }
+
+  /**
+   * 给报告补上“跟自己比”的历史基线，以及当前英雄的熟练度。
+   * 数据来自长期存档；没有配置 MySQL 或样本不足时自动跳过。
+   */
+  private async attachHistoryInsights(reports: PlayerReport[]): Promise<void> {
+    const targets = reports.filter((report) => report.puuid && !report.isBot);
+    if (!targets.length) return;
+
+    const now = Date.now();
+    const TTL = 5 * 60_000;
+
+    const puuids = [...new Set(targets.map((report) => report.puuid as string))];
+    const missingBaselines = puuids.filter((puuid) => {
+      const cached = this.baselineCache.get(puuid);
+      return !cached || now - cached.at > TTL;
+    });
+    if (missingBaselines.length) {
+      const samples = await getPlayerBaselines(missingBaselines);
+      for (const puuid of missingBaselines) {
+        this.baselineCache.set(puuid, { at: now, sample: samples.get(puuid) });
+      }
+    }
+
+    const usageEntries = targets
+      .filter((report) => report.championId)
+      .map((report) => ({
+        puuid: report.puuid as string,
+        championId: report.championId as number,
+      }));
+    const missingUsages = usageEntries.filter((entry) => {
+      const cached = this.championUsageCache.get(`${entry.puuid}:${entry.championId}`);
+      return !cached || now - cached.at > TTL;
+    });
+    if (missingUsages.length) {
+      const usages = await getPlayerChampionUsages(missingUsages);
+      for (const entry of missingUsages) {
+        const key = `${entry.puuid}:${entry.championId}`;
+        this.championUsageCache.set(key, { at: now, usage: usages.get(key) });
+      }
+    }
+
+    for (const report of targets) {
+      if (report.recent) {
+        report.baseline = compareBaseline(
+          report.recent.avgScore,
+          this.baselineCache.get(report.puuid as string)?.sample,
+        );
+      }
+      if (report.championId) {
+        report.championStats = this.championUsageCache.get(
+          `${report.puuid}:${report.championId}`,
+        )?.usage;
+      }
+    }
   }
 
   /** 原始对局 → 评分结果，统一补上坑 / 逃跑 / MVP 标签 */

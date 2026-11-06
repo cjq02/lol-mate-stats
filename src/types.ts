@@ -173,6 +173,30 @@ export interface RiskAssessment {
   newbie: boolean;
 }
 
+/** 玩家长期历史基线：用来判断近期表现是超常还是拉胯 */
+export interface PlayerBaseline {
+  /** 参与统计的历史场次 */
+  games: number;
+  /** 历史平均单场评分 */
+  avgScore: number;
+  /** 评分标准差（下限按 6 分兜底） */
+  stdDev: number;
+  /** 近期均分 - 历史均分 */
+  delta: number;
+  /** delta / stdDev，越大说明越超出自身平时水平 */
+  z: number;
+}
+
+/** 某个英雄在长期存档里的使用情况 */
+export interface ChampionUsage {
+  championId: number;
+  games: number;
+  wins: number;
+  winRate: number;
+  avgScore: number;
+  bestScore: number;
+}
+
 export interface RecentSummary {
   games: number;
   wins: number;
@@ -200,6 +224,10 @@ export interface RecentSummary {
   labels: string[];
   risk: RiskAssessment;
   topChampions: TopChampion[];
+  /** 近期玩得最多的分路；ARAM/竞技场不参与统计 */
+  mainPosition?: Lane;
+  /** 主玩分路占比 0-1 */
+  mainPositionShare: number;
 }
 
 export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
@@ -509,6 +537,10 @@ export interface PlayerReport {
   rank?: RankInfo | null;
   recent?: RecentSummary;
   games?: AnalyzedGame[];
+  /** 与长期历史相比的状态（需要存档里至少有 10 场） */
+  baseline?: PlayerBaseline;
+  /** 当前英雄的历史熟练度（来自长期存档） */
+  championStats?: ChampionUsage;
   /** 本局实时数据（游戏进行中才有） */
   live?: LiveStats;
   /** 人机玩家（无战绩可查） */
