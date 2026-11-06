@@ -1,6 +1,7 @@
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import type { ChampionSummary } from '../lcu/api.js';
 import type {
+  ArchiveCursor,
   BadLevel,
   GameModeKey,
   Lane,
@@ -53,6 +54,8 @@ export interface PlayerMatchFilter {
   mode?: GameModeKey;
   /** 统计组：aram / arena / solo / flex / normal / sr */
   group?: string;
+  /** 游标分页：只取这批对局之前的数据，优先于 offset */
+  before?: ArchiveCursor;
 }
 
 /** 特殊模式会把英雄 ID 加上 60000（如 60067 → 67），统计和图标都用基础 ID */
@@ -531,8 +534,10 @@ function playerMatchFilterSql(puuid: string, filter: PlayerMatchFilter = {}) {
   const conditions = ['p.puuid = ?'];
   const params: Array<string | number> = [puuid];
   if (filter.championId) {
-    conditions.push(`${NORMALIZED_CHAMPION_ID} = ?`);
-    params.push(filter.championId);
+    // 特殊模式会存 60000 + 英雄 ID，用 IN 代替 CASE 表达式，才能命中
+    // (puuid, champion_id) 复合索引
+    conditions.push('p.champion_id IN (?, ?)');
+    params.push(filter.championId, filter.championId + 60000);
     // 与英雄平均分排名保持一致：排除训练模式和 5 分钟内的重开局
     conditions.push('m.duration_seconds > 300');
     conditions.push("COALESCE(m.game_mode, '') <> 'PRACTICETOOL'");
@@ -561,8 +566,9 @@ export async function getPlayerWinRecord(
   const params: Array<string | number> = [puuid];
   if (filter) conditions.push(filter);
   if (championId) {
-    conditions.push(`${NORMALIZED_CHAMPION_ID} = ?`);
-    params.push(championId);
+    // 与战绩列表保持一致：IN 写法可命中 (puuid, champion_id) 索引
+    conditions.push('p.champion_id IN (?, ?)');
+    params.push(championId, championId + 60000);
     // 英雄维度同样排除训练模式，和英雄排名/英雄战绩列表保持一致
     conditions.push("COALESCE(m.game_mode, '') <> 'PRACTICETOOL'");
   }
@@ -662,10 +668,19 @@ export async function getPlayerMatches(
   limit: number,
   offset: number,
   filter: PlayerMatchFilter = {},
-): Promise<ArchivedMatch[]> {
+): Promise<{ games: ArchivedMatch[]; nextCursor?: ArchiveCursor }> {
   const db = await getDb();
-  if (!db || !puuid) return [];
+  if (!db || !puuid) return { games: [] };
   const { conditions, params } = playerMatchFilterSql(puuid, filter);
+  let effectiveOffset = offset;
+  if (filter.before) {
+    // 用上一页最后一局做游标：同秒开局时再用 gameId 兜底排序
+    conditions.push(
+      '(m.game_creation < ? OR (m.game_creation = ? AND m.game_id < ?))',
+    );
+    params.push(filter.before.gameCreation, filter.before.gameCreation, filter.before.gameId);
+    effectiveOffset = 0;
+  }
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT m.game_id, m.queue_id, m.game_creation, m.duration_seconds,
@@ -675,15 +690,23 @@ export async function getPlayerMatches(
        FROM match_participants p
        JOIN matches m ON m.game_id = p.game_id
        WHERE ${conditions.join(' AND ')}
-       ORDER BY m.game_creation DESC
+       ORDER BY m.game_creation DESC, m.game_id DESC
        LIMIT ? OFFSET ?`,
-      [...params, limit, offset],
+      [...params, limit, effectiveOffset],
     );
 
     const gameIds = [...new Set(rows.map((row) => Number(row.game_id)))];
     const participantsByGame = await loadParticipantsByGame(db, gameIds);
+    const lastRow = rows[rows.length - 1];
+    const nextCursor =
+      rows.length >= limit && lastRow
+        ? {
+            gameCreation: Number(lastRow.game_creation),
+            gameId: Number(lastRow.game_id),
+          }
+        : undefined;
 
-    return rows.map((row) => {
+    const games = rows.map((row) => {
       const gameId = Number(row.game_id);
       const tags = archivedGameTags(
         puuid,
@@ -718,8 +741,9 @@ export async function getPlayerMatches(
         tags,
       };
     });
+    return { games, nextCursor };
   } catch {
-    return [];
+    return { games: [] };
   }
 }
 

@@ -1,4 +1,5 @@
 import type {
+  ArchiveCursor,
   GameContext,
   GameModeKey,
   MatchDetail,
@@ -46,7 +47,12 @@ export interface DataSource {
     offset: number,
     puuid?: string,
     filter?: PlayerMatchFilter,
-  ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }>;
+  ): Promise<{
+    puuid: string;
+    total: number;
+    games: ArchivedMatch[];
+    nextCursor?: ArchiveCursor;
+  }>;
   /** 长期存档：某个玩家（默认自己）各英雄的平均单场评分排名 */
   getArchivedChampionScores?(
     puuid?: string,

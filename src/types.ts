@@ -1,5 +1,11 @@
 /** 全局类型定义（LCU 原始数据 + 本项目产出的报告结构） */
 
+/** 历史战绩游标分页：按对局时间 + gameId 定位下一页 */
+export interface ArchiveCursor {
+  gameCreation: number;
+  gameId: number;
+}
+
 export interface LcuConnection {
   host: string;
   port: number;

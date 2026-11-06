@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  ArchiveCursor,
   ChampSelectMember,
   ChampSelectSession,
   GameContext,
@@ -686,15 +687,17 @@ export class LiveSource implements DataSource {
     offset: number,
     puuid?: string,
     filter: PlayerMatchFilter = {},
-  ): Promise<{ puuid: string; total: number; games: ArchivedMatch[] }> {
+  ): Promise<{
+    puuid: string;
+    total: number;
+    games: ArchivedMatch[];
+    nextCursor?: ArchiveCursor;
+  }> {
     const id = await this.resolveArchivePuuid(puuid);
     if (!id) return { puuid: '', total: 0, games: [] };
     const total = await countPlayerMatches(id, filter);
-    return {
-      puuid: id,
-      total,
-      games: await getPlayerMatches(id, limit, offset, filter),
-    };
+    const page = await getPlayerMatches(id, limit, offset, filter);
+    return { puuid: id, total, games: page.games, nextCursor: page.nextCursor };
   }
 
   /** 长期存档：某个玩家（默认自己）各英雄的平均单场评分排名 */

@@ -206,6 +206,7 @@ const state = {
   archiveOffset: 0,
   archiveLoaded: 0,
   archiveTotal: 0,
+  archiveCursor: null,
   archiveLoading: false,
   championRankingLoading: false,
   /** 英雄评分排名当前模式：all / SR / ARAM / ARENA */
@@ -2263,10 +2264,22 @@ function mergeRefreshedPlayer(target, updated) {
   target.loading = false;
 }
 
+function archiveCursorParams(cursor) {
+  if (!cursor) return null;
+  return { before: String(cursor.gameCreation), beforeId: String(cursor.gameId) };
+}
+
 function playerArchiveQuery(page, limit, offset) {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
-  params.set('offset', String(offset));
+  // 有游标时优先用 before，offset 只作为旧接口兜底
+  const cursor = archiveCursorParams(page.cursor);
+  if (cursor) {
+    params.set('before', cursor.before);
+    params.set('beforeId', cursor.beforeId);
+  } else {
+    params.set('offset', String(offset));
+  }
   if (page.puuid) params.set('puuid', page.puuid);
   if (page.group) params.set('group', page.group);
   return `/api/archive/matches?${params.toString()}`;
@@ -2327,6 +2340,7 @@ async function loadPlayerMatchesPage() {
     if (state.playerMatches !== page) return;
     const archived = Array.isArray(payload.games) ? payload.games : [];
     page.total = Number(payload.total) || page.total || archived.length;
+    page.cursor = payload.nextCursor ?? null;
     page.offset = archived.length
       ? Math.max(page.offset, offset + archived.length)
       : page.total;
@@ -2375,6 +2389,7 @@ function openMatches(player, context) {
     title: playerMatchesTitle(player),
     offset: 0,
     total: 0,
+    cursor: null,
     archiveReady: false,
     archiveLoading: false,
   };
@@ -2494,9 +2509,26 @@ async function loadMoreArchive(button) {
 
     // 本地存档读取快，而且通常存着更多更早的对局，优先翻存档
     if (state.archiveLoaded < state.archiveTotal) {
-      const archiveUrl = championFilter
-        ? championArchiveQuery(championFilter, CHAMPION_MATCH_PAGE, state.archiveOffset)
-        : `/api/archive/matches?limit=100&offset=${state.archiveOffset}`;
+      let archiveUrl;
+      if (championFilter) {
+        archiveUrl = championArchiveQuery(
+          championFilter,
+          CHAMPION_MATCH_PAGE,
+          state.archiveOffset,
+          state.archiveCursor,
+        );
+      } else {
+        const params = new URLSearchParams();
+        params.set('limit', '100');
+        const cursorParams = archiveCursorParams(state.archiveCursor);
+        if (cursorParams) {
+          params.set('before', cursorParams.before);
+          params.set('beforeId', cursorParams.beforeId);
+        } else {
+          params.set('offset', String(state.archiveOffset));
+        }
+        archiveUrl = `/api/archive/matches?${params.toString()}`;
+      }
       const response = await fetch(archiveUrl, { cache: 'no-store' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.ok === false) {
@@ -2504,6 +2536,7 @@ async function loadMoreArchive(button) {
       }
       const archived = Array.isArray(payload.games) ? payload.games : [];
       state.archiveTotal = Number(payload.total) || state.archiveTotal;
+      state.archiveCursor = payload.nextCursor ?? null;
       state.archiveOffset += archived.length;
       state.archiveLoaded += archived.length;
       if (!archived.length) state.archiveLoaded = state.archiveTotal;
@@ -2568,10 +2601,16 @@ async function loadMoreArchive(button) {
 }
 
 /** 本人当前英雄的专属战绩列表（选人阶段/对局详情里的按钮） */
-function championArchiveQuery(filter, limit, offset) {
+function championArchiveQuery(filter, limit, offset, cursor) {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
-  params.set('offset', String(offset));
+  const cursorParams = archiveCursorParams(cursor);
+  if (cursorParams) {
+    params.set('before', cursorParams.before);
+    params.set('beforeId', cursorParams.beforeId);
+  } else {
+    params.set('offset', String(offset));
+  }
   params.set('championId', String(filter.championId));
   if (filter.mode) params.set('mode', filter.mode);
   return `/api/archive/matches?${params.toString()}`;
@@ -2630,6 +2669,7 @@ async function openMyMatches(options = {}) {
   state.archiveOffset = 0;
   state.archiveLoaded = 0;
   state.archiveTotal = 0;
+  state.archiveCursor = null;
   state.modeRecord = null;
   state.matchTab = 'scoreboard';
   const filter = state.championFilter;
@@ -2649,7 +2689,7 @@ async function openMyMatches(options = {}) {
     // 英雄专属战绩：直接按英雄 + 模式查存档，每页 20 场
     try {
       const response = await fetch(
-        championArchiveQuery(filter, CHAMPION_MATCH_PAGE, 0),
+        championArchiveQuery(filter, CHAMPION_MATCH_PAGE, 0, null),
         { cache: 'no-store' },
       );
       const payload = await response.json().catch(() => ({}));
@@ -2658,6 +2698,7 @@ async function openMyMatches(options = {}) {
       }
       games = Array.isArray(payload.games) ? payload.games : [];
       state.archiveTotal = Number(payload.total) || games.length;
+      state.archiveCursor = payload.nextCursor ?? null;
       state.archiveOffset = games.length;
       state.archiveLoaded = games.length;
       state.lcuExhausted = true;
@@ -2692,6 +2733,7 @@ async function openMyMatches(options = {}) {
       if (response.ok && payload?.ok !== false) {
         const archived = Array.isArray(payload.games) ? payload.games : [];
         state.archiveTotal = Number(payload.total) || archived.length;
+        state.archiveCursor = payload.nextCursor ?? null;
         state.archiveOffset = archived.length;
         state.archiveLoaded = archived.length;
         games = mergeMatchLists(games, archived);
@@ -2919,6 +2961,7 @@ function closeMatches() {
   state.archiveOffset = 0;
   state.archiveLoaded = 0;
   state.archiveTotal = 0;
+  state.archiveCursor = null;
   resetAiView();
   els.matchesModal.classList.add('hidden');
   els.matchesList.replaceChildren();

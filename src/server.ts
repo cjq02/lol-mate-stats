@@ -431,11 +431,19 @@ async function handleRequest(
       ['aram', 'arena', 'solo', 'flex', 'normal', 'sr'].includes(rawGroup)
         ? rawGroup
         : undefined;
+    // 游标分页：用上一页最后一局的时间 + gameId 继续往前翻，避免大 offset
+    const rawBefore = Number(url.searchParams.get('before') ?? 0);
+    const rawBeforeId = Number(url.searchParams.get('beforeId') ?? 0);
+    const before =
+      Number.isFinite(rawBefore) && rawBefore > 0 && Number.isFinite(rawBeforeId) && rawBeforeId > 0
+        ? { gameCreation: Math.trunc(rawBefore), gameId: Math.trunc(rawBeforeId) }
+        : undefined;
     try {
       const data = await source.getArchivedMatches(limit, offset, puuid, {
         championId,
         mode,
         group,
+        before,
       });
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
