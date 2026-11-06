@@ -1889,21 +1889,36 @@ function matchRow(game, showScore) {
   const tags = game.tags ?? [];
   const remake = tags.includes('重开');
   const bestTag = remake ? null : tags.includes('MVP') ? 'MVP' : tags.includes('SVP') ? 'SVP' : null;
+  const selfBadTag = remake
+    ? null
+    : tags.find((tag) => /^自己(小坑|坑|巨坑)$/.test(tag)) ?? null;
+  const selfBadLevel = selfBadTag
+    ? selfBadTag.includes('巨坑')
+      ? 'severe'
+      : selfBadTag.includes('小坑')
+        ? 'mild'
+        : 'bad'
+    : null;
   const displayTags = (remake ? tags.filter((tag) => tag !== '重开') : tags).filter(
-    (tag) => tag !== 'MVP' && tag !== 'SVP',
+    (tag) => tag !== 'MVP' && tag !== 'SVP' && tag !== selfBadTag,
   );
   const bestBadge = bestTag
     ? `<span class="best-badge ${bestTag === 'MVP' ? 'mvp' : 'svp'}">${bestTag}</span>`
     : '';
+  const selfBadBadge = selfBadTag
+    ? `<span class="self-bad-badge ${selfBadLevel}">${selfBadTag}</span>`
+    : '';
   return `<button class="game-row match-item ${
     remake ? 'remake' : game.win ? '' : 'loss'
-  }${bestTag ? ` has-${bestTag.toLowerCase()}` : ''}" type="button" data-game-id="${game.gameId}">
+  }${bestTag ? ` has-${bestTag.toLowerCase()}` : ''}${
+    selfBadTag ? ` has-self-bad self-bad-${selfBadLevel}` : ''
+  }" type="button" data-game-id="${game.gameId}">
     <span class="result">${remake ? '重开' : game.win ? '胜' : '负'}</span>
     <span class="who">${iconHtml(
       champPath(game.championId),
       game.championName,
       'sm',
-    )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b>${bestBadge}<small>${escapeHtml(
+    )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b>${bestBadge}${selfBadBadge}<small>${escapeHtml(
       game.queueName ?? '',
     )} · ${durationMin} 分钟 · ${formatGameTime(game.gameCreation)}${
       displayTags?.length ? ` · ${matchFlagsHtml(displayTags)}` : ''

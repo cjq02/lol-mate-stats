@@ -870,6 +870,22 @@ body::before {
   background: linear-gradient(90deg, rgba(196, 212, 255, 0.2), rgba(255, 255, 255, 0.04) 60%);
 }
 
+/* 自己的“坑”局：整行红色高亮，优先级高于 MVP/SVP */
+.match-item.has-self-bad {
+  background: linear-gradient(90deg, rgba(255, 92, 122, 0.18), rgba(255, 255, 255, 0.022) 62%);
+  box-shadow: inset 4px 0 0 #ff5c7a;
+}
+
+.match-item.has-self-bad:hover {
+  background: linear-gradient(90deg, rgba(255, 92, 122, 0.28), rgba(255, 255, 255, 0.04) 66%);
+}
+
+.match-item.has-self-bad .result {
+  color: #2b0308;
+  background: #ff6b81;
+  box-shadow: 0 0 10px rgba(255, 107, 129, 0.45);
+}
+
 .best-badge {
   flex: none;
   display: inline-flex;
@@ -928,6 +944,40 @@ body::before {
   color: #2b0308;
   background: linear-gradient(135deg, #ffb3bd, #ff5c7a);
   box-shadow: 0 0 16px rgba(255, 92, 122, 0.55);
+}
+
+/* 战绩列表里自己的“坑”徽章 */
+.self-bad-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.self-bad-badge.mild {
+  color: #2b0710;
+  background: linear-gradient(135deg, #ffd0d8, #ff9aa8);
+  box-shadow: 0 0 10px rgba(255, 154, 168, 0.4);
+}
+
+.self-bad-badge.bad {
+  color: #2b1202;
+  background: linear-gradient(135deg, #ffd0a1, #ff8b4d);
+  box-shadow: 0 0 12px rgba(255, 139, 77, 0.5);
+}
+
+.self-bad-badge.severe {
+  color: #2b0308;
+  background: linear-gradient(135deg, #ffb3bd, #ff5c7a);
+  box-shadow: 0 0 14px rgba(255, 92, 122, 0.6);
 }
 
 .detail-bad-badge.bad {
