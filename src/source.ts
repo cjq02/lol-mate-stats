@@ -14,6 +14,7 @@ import type {
   PlayerMatchFilter,
   PlayerWinRecord,
 } from './stats/archive.js';
+import type { TimeStatsSummary } from './stats/time-stats.js';
 
 export interface AssetResult {
   body: Buffer;
@@ -70,6 +71,15 @@ export interface DataSource {
     group: string;
     groupName: string;
     record: PlayerWinRecord;
+  }>;
+  /** 长期存档：某个玩家（默认自己）按一天内时段统计的胜率与坑率 */
+  getArchivedTimeStats?(
+    puuid?: string,
+    mode?: GameModeKey,
+  ): Promise<{
+    puuid: string;
+    source: 'archive' | 'recent' | 'none';
+    stats: TimeStatsSummary;
   }>;
   /** 某场对局里 10 名玩家的近期战绩卡片 */
   getMatchDetail?(

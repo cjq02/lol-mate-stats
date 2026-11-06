@@ -24,6 +24,7 @@ import {
 import { queueName } from './constants.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 import { getDb, readMeta, withTransaction, writeMeta } from './store.js';
+import { summarizeTimeStats, type TimeStatsSummary } from './time-stats.js';
 
 /** 长期保存的单场战绩（按玩家维度查询） */
 export interface ArchivedMatch {
@@ -592,6 +593,44 @@ export async function getPlayerWinRecord(
     };
   } catch {
     return { games: 0, wins: 0, losses: 0, winRate: 0 };
+  }
+}
+
+/**
+ * 某个玩家按一天内两小时时段统计的胜率和坑率（来自长期存档）。
+ * 只读取每场的时间、胜负和标签，避免把上千场的全部参与者反复拉进内存。
+ */
+export async function getPlayerTimeStats(
+  puuid: string,
+  mode?: GameModeKey,
+): Promise<TimeStatsSummary> {
+  const db = await getDb();
+  if (!db || !puuid) return summarizeTimeStats([]);
+  const conditions = [
+    'p.puuid = ?',
+    'm.duration_seconds > 300',
+    "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
+  ];
+  const params: Array<string | number> = [puuid];
+  const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
+  if (modeFilter) conditions.push(modeFilter);
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT m.game_creation, p.win, p.tags
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
+    return summarizeTimeStats(
+      rows.map((row) => ({
+        gameCreation: Number(row.game_creation),
+        win: Number(row.win) === 1,
+        tags: parseTagList(row.tags as string | null),
+      })),
+    );
+  } catch {
+    return summarizeTimeStats([]);
   }
 }
 

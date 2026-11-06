@@ -35,6 +35,7 @@ import {
   getPlayerMatchTags,
   getPlayerMatches,
   getPlayerScores,
+  getPlayerTimeStats,
   getPlayerWinRecord,
   getSavedSelfPuuid,
   saveSelfPuuid,
@@ -52,6 +53,7 @@ import {
   isRemakeGame,
 } from './stats/flags.js';
 import { gradeOf } from './stats/rating.js';
+import { summarizeMatchSummaries, type TimeStatsSummary } from './stats/time-stats.js';
 import { linkLiveAnalysisToGameByTime, getSavedMatchDetail, saveMatchDetail } from './stats/store.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
@@ -745,6 +747,38 @@ export class LiveSource implements DataSource {
       ? await getPlayerWinRecord(id, group, championId)
       : { games: 0, wins: 0, losses: 0, winRate: 0 };
     return { puuid: id, group: group ?? 'all', groupName, record };
+  }
+
+  /** 长期存档：某个玩家（默认自己）按一天内时段统计的胜率与坑率 */
+  async getArchivedTimeStats(
+    puuid?: string,
+    mode?: GameModeKey,
+  ): Promise<{
+    puuid: string;
+    source: 'archive' | 'recent' | 'none';
+    stats: TimeStatsSummary;
+  }> {
+    const id = await this.resolveArchivePuuid(puuid);
+    if (id) {
+      const stats = await getPlayerTimeStats(id, mode);
+      if (stats.totalGames > 0) return { puuid: id, source: 'archive', stats };
+    }
+
+    // 没有历史存档时退回客户端最近 100 场，保证新环境也能看到时段分布
+    if (!puuid) {
+      try {
+        const recent = await this.getMyMatches(100, 0);
+        const stats = summarizeMatchSummaries(recent.games, mode);
+        return {
+          puuid: recent.summoner.puuid ?? id,
+          source: stats.totalGames ? 'recent' : 'none',
+          stats,
+        };
+      } catch {
+        /* 客户端不可用时保持空结果 */
+      }
+    }
+    return { puuid: id, source: 'none', stats: await getPlayerTimeStats('', mode) };
   }
 
   private async resolveArchivePuuid(puuid?: string): Promise<string> {

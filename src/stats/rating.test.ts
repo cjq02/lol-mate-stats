@@ -7,6 +7,7 @@ import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './f
 import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
+import { summarizeTimeStats } from './time-stats.js';
 
 let passed = 0;
 
@@ -758,6 +759,43 @@ test('极端低输出且高死亡的对局按巨坑封顶', () => {
   ]);
   assert.ok(scores[0]! < 18, `score=${scores[0]}`);
   assert.equal(badLevelOfScore(scores[0]), 'severe');
+});
+
+test('时段统计按本地两小时分组并统计坑率', () => {
+  const at = (hour: number, minute = 0) => new Date(2026, 0, 5, hour, minute).getTime();
+  const summary = summarizeTimeStats([
+    { gameCreation: at(0, 30), win: true, tags: [] },
+    { gameCreation: at(1, 59), win: false, tags: ['队友坑'] },
+    { gameCreation: at(2, 10), win: true, tags: ['队友巨坑', '自己小坑'] },
+    { gameCreation: at(23, 10), win: false, tags: ['队友逃跑'] },
+    { gameCreation: at(23, 50), win: true, tags: ['重开'] },
+  ]);
+  assert.equal(summary.totalGames, 4);
+  assert.equal(summary.wins, 2);
+  assert.equal(summary.winRate, 0.5);
+  assert.equal(summary.periods.length, 12);
+
+  const early = summary.periods[0];
+  assert.ok(early);
+  assert.equal(early.games, 2);
+  assert.equal(early.wins, 1);
+  assert.equal(early.losses, 1);
+  assert.equal(early.teammateBadGames, 1);
+  assert.equal(early.selfBadGames, 0);
+
+  const morning = summary.periods[1];
+  assert.ok(morning);
+  assert.equal(morning.games, 1);
+  assert.equal(morning.wins, 1);
+  assert.equal(morning.teammateBadGames, 1);
+  assert.equal(morning.selfBadGames, 1);
+
+  const late = summary.periods[11];
+  assert.ok(late);
+  assert.equal(late.games, 1);
+  assert.equal(late.wins, 0);
+  assert.equal(late.teammateBadGames, 1);
+  assert.equal(late.teammateBadRate, 1);
 });
 
 test('低伤害低承伤但 KDA 好看的局判为挂机', () => {

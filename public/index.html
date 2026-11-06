@@ -25,6 +25,9 @@
           <button id="champion-ranking" class="btn" type="button" title="查看我的英雄平均分排名">
             英雄排名
           </button>
+          <button id="time-stats" class="btn" type="button" title="查看我在不同时间段的胜率和队友坑率">
+            时段胜率
+          </button>
           <button id="latest-match" class="btn" type="button" title="查看我最近一场对局的战绩">
             最近一局
           </button>
@@ -141,6 +144,32 @@
             </select>
           </div>
           <div id="champion-ranking-list" class="champion-ranking-list"></div>
+        </div>
+      </div>
+
+      <div
+        id="time-stats-modal"
+        class="modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="time-stats-title"
+      >
+        <div class="modal-card time-stats-card">
+          <div class="modal-head">
+            <h2 id="time-stats-title">我的时段胜率</h2>
+            <div class="modal-actions">
+              <span id="time-stats-meta" class="champion-ranking-meta"></span>
+              <button id="time-stats-close" class="btn" type="button">关闭</button>
+            </div>
+          </div>
+          <div id="time-stats-tabs" class="champion-ranking-tabs" role="tablist">
+            <button class="tab" type="button" data-time-mode="all">全部</button>
+            <button class="tab" type="button" data-time-mode="SR">召唤师峡谷</button>
+            <button class="tab active" type="button" data-time-mode="ARAM">极地大乱斗</button>
+            <button class="tab" type="button" data-time-mode="ARENA">斗魂竞技场</button>
+          </div>
+          <div id="time-stats-summary" class="time-stats-summary"></div>
+          <div id="time-stats-list" class="time-stats-list"></div>
         </div>
       </div>
 

@@ -507,6 +507,27 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/archive/time-stats') {
+    if (!source.getArchivedTimeStats) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持时段统计' });
+      return;
+    }
+    const puuid = url.searchParams.get('puuid')?.trim() || undefined;
+    const rawMode = url.searchParams.get('mode');
+    const mode: GameModeKey | undefined =
+      rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    try {
+      const data = await source.getArchivedTimeStats(puuid, mode);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (error) {
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   const matchStreamRoute = /^\/api\/match\/(\d+)\/stream$/.exec(url.pathname);
   if (method === 'GET' && matchStreamRoute) {
     if (!source.getMatchDetail) {
