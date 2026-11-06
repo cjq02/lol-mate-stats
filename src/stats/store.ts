@@ -9,6 +9,7 @@ import mysql, {
   type RowDataPacket,
 } from 'mysql2/promise';
 import type { MatchDetail } from '../types.js';
+import { logTag } from '../util.js';
 
 /** Windows 的“文档”目录（可能被重定向到 E 盘） */
 function resolveDocumentsDir(): string {
@@ -116,6 +117,130 @@ async function connect(): Promise<Pool | undefined> {
     retryAt = Date.now() + RETRY_AFTER_MS;
     if (created) await created.end().catch(() => undefined);
     return undefined;
+  }
+}
+
+/** 表结构版本：每次新增迁移递增，旧库启动时按顺序补齐 */
+const SCHEMA_VERSION = 3;
+
+interface SchemaMigration {
+  version: number;
+  describe: string;
+  up: (db: Pool) => Promise<void>;
+}
+
+async function hasColumn(db: Pool, table: string, column: string): Promise<boolean> {
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT 1 FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+      LIMIT 1`,
+    [table, column],
+  );
+  return rows.length > 0;
+}
+
+async function hasIndex(db: Pool, table: string, index: string): Promise<boolean> {
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT 1 FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+      LIMIT 1`,
+    [table, index],
+  );
+  return rows.length > 0;
+}
+
+async function addIndexIfMissing(
+  db: Pool,
+  table: string,
+  index: string,
+  columns: string,
+): Promise<void> {
+  if (await hasIndex(db, table, index)) return;
+  await db.query(`ALTER TABLE ${table} ADD INDEX ${index} (${columns})`);
+}
+
+/**
+ * 版本化迁移：旧库没有 schemaVersion 时从 0 开始，
+ * 每一步都写成幂等的（先查 information_schema），失败则停在当前版本，下次启动重试。
+ */
+const SCHEMA_MIGRATIONS: SchemaMigration[] = [
+  {
+    version: 1,
+    describe: '对局参与者增加治疗量',
+    up: async (db) => {
+      if (!(await hasColumn(db, 'match_participants', 'heal'))) {
+        await db.query('ALTER TABLE match_participants ADD COLUMN heal INT NOT NULL DEFAULT 0');
+      }
+    },
+  },
+  {
+    version: 2,
+    describe: '实时 AI 分析关联对局',
+    up: async (db) => {
+      if (!(await hasColumn(db, 'ai_live_analyses', 'game_id'))) {
+        await db.query('ALTER TABLE ai_live_analyses ADD COLUMN game_id BIGINT NULL');
+      }
+      await addIndexIfMissing(
+        db,
+        'ai_live_analyses',
+        'idx_ai_live_analyses_game',
+        'game_id',
+      );
+    },
+  },
+  {
+    version: 3,
+    describe: '历史战绩查询索引',
+    up: async (db) => {
+      // 英雄战绩按 puuid + champion_id 过滤，复合索引避免回表扫全部对局
+      await addIndexIfMissing(
+        db,
+        'match_participants',
+        'idx_mp_puuid_champion',
+        'puuid, champion_id',
+      );
+      // 游标分页按 game_creation + game_id 倒序翻页
+      await addIndexIfMissing(
+        db,
+        'matches',
+        'idx_matches_creation_id',
+        'game_creation, game_id',
+      );
+    },
+  },
+];
+
+async function runSchemaMigrations(db: Pool): Promise<void> {
+  let current = 0;
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      "SELECT v FROM meta WHERE k = 'schemaVersion'",
+    );
+    current = Number(rows[0]?.v ?? 0) || 0;
+  } catch {
+    // meta 表刚建好时读取失败不影响后续迁移
+  }
+
+  for (const migration of SCHEMA_MIGRATIONS) {
+    if (migration.version <= current) continue;
+    try {
+      await migration.up(db);
+      await db.query(
+        `INSERT INTO meta (k, v) VALUES ('schemaVersion', ?) AS new
+         ON DUPLICATE KEY UPDATE v = new.v`,
+        [String(migration.version)],
+      );
+      current = migration.version;
+      logTag('db', `数据库结构已升级到 v${migration.version}（${migration.describe}）`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logTag('db', `数据库迁移 v${migration.version} 失败，本次跳过：${message}`);
+      break;
+    }
+  }
+
+  if (current > 0 && current < SCHEMA_VERSION) {
+    logTag('db', `数据库结构版本 v${current}，目标 v${SCHEMA_VERSION}`);
   }
 }
 
@@ -236,40 +361,7 @@ async function ensureSchema(db: Pool): Promise<void> {
 
   for (const statement of statements) await db.query(statement);
 
-  // 旧版本数据库没有 heal 列，启动时补上
-  try {
-    const [columns] = await db.query<RowDataPacket[]>(
-      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = 'match_participants'
-          AND COLUMN_NAME = 'heal'`,
-    );
-    if (!columns.length) {
-      await db.query(
-        'ALTER TABLE match_participants ADD COLUMN heal INT NOT NULL DEFAULT 0',
-      );
-    }
-  } catch {
-    /* 补列失败时按 0 处理 */
-  }
-
-  // 旧版本数据库的实时 AI 分析没有 game_id，赛后需要用它关联到具体对局
-  try {
-    const [columns] = await db.query<RowDataPacket[]>(
-      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = 'ai_live_analyses'
-          AND COLUMN_NAME = 'game_id'`,
-    );
-    if (!columns.length) {
-      await db.query('ALTER TABLE ai_live_analyses ADD COLUMN game_id BIGINT NULL');
-      await db.query(
-        'ALTER TABLE ai_live_analyses ADD KEY idx_ai_live_analyses_game (game_id)',
-      );
-    }
-  } catch {
-    /* 补列失败时不影响其它功能 */
-  }
+  await runSchemaMigrations(db);
 }
 
 /** 启动时显式初始化数据库；返回是否可用 */
