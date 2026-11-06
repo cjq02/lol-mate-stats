@@ -306,11 +306,11 @@ function isInactiveKda(stats) {
 function ratingColor(rating, stats) {
   if (rating === null || rating === undefined) return '#5b6b8c';
   if (isInactiveKda(stats)) return '#7c8aa5';
-  if (rating >= 80) return '#a78bfa';
-  if (rating >= 70) return '#3ddc97';
-  if (rating >= 60) return '#5eead4';
-  if (rating >= 50) return '#f5c76a';
-  if (rating >= 40) return '#ffab5e';
+  if (rating >= 80) return '#3ddc97';
+  if (rating >= 70) return '#5eead4';
+  if (rating >= 60) return '#f5c76a';
+  if (rating >= 50) return '#ffab5e';
+  if (rating >= 40) return '#d46a8f';
   return '#ff6b81';
 }
 
