@@ -55,6 +55,7 @@ const els = {
   timeStats: document.getElementById('time-stats'),
   timeStatsModal: document.getElementById('time-stats-modal'),
   timeStatsTabs: document.getElementById('time-stats-tabs'),
+  timeStatsDimension: document.getElementById('time-stats-dimension'),
   timeStatsSummary: document.getElementById('time-stats-summary'),
   timeStatsList: document.getElementById('time-stats-list'),
   timeStatsMeta: document.getElementById('time-stats-meta'),
@@ -174,6 +175,13 @@ const CHAMPION_RANKING_SORT_LABELS = {
   best: '最高分',
 };
 
+const TIME_STATS_DIMENSION_LABELS = {
+  hour: '按时段',
+  weekday: '按星期',
+  week: '按周',
+  month: '按月',
+};
+
 function currentModeLabel() {
   const snapshot = state.snapshot;
   if (snapshot?.queueId && QUEUE_LABELS[snapshot.queueId]) {
@@ -227,6 +235,8 @@ const state = {
   championRankingToken: 0,
   /** 时段胜率当前模式：all / SR / ARAM / ARENA */
   timeStatsMode: 'ARAM',
+  /** 时段胜率统计维度：hour / weekday / week / month */
+  timeStatsDimension: 'hour',
   timeStatsData: null,
   timeStatsSource: '',
   timeStatsToken: 0,
@@ -3339,11 +3349,6 @@ function closeChampionRanking() {
 /* 时段胜率                                                            */
 /* ------------------------------------------------------------------ */
 
-function timePeriodRange(startHour, endHour) {
-  const pad = (hour) => `${String(hour).padStart(2, '0')}:00`;
-  return `${pad(startHour)}-${pad(endHour)}`;
-}
-
 function timeStatsTone(period) {
   if (!period?.games) return 'empty';
   const rate = Number(period.winRate) || 0;
@@ -3358,13 +3363,25 @@ function updateTimeStatsTabs() {
   for (const button of els.timeStatsTabs.querySelectorAll('[data-time-mode]')) {
     button.classList.toggle('active', button.dataset.timeMode === state.timeStatsMode);
   }
+  if (els.timeStatsDimension) {
+    els.timeStatsDimension.value = TIME_STATS_DIMENSION_LABELS[state.timeStatsDimension]
+      ? state.timeStatsDimension
+      : 'hour';
+  }
 }
 
 function renderTimeStats(data, mode = state.timeStatsMode) {
   const modeLabel =
     CHAMPION_RANKING_MODE_LABELS[mode] ?? CHAMPION_RANKING_MODE_LABELS.all;
-  if (!data || !Array.isArray(data.periods) || !data.totalGames) {
-    els.timeStatsMeta.textContent = modeLabel;
+  const dimension = TIME_STATS_DIMENSION_LABELS[state.timeStatsDimension]
+    ? state.timeStatsDimension
+    : 'hour';
+  const dimensionLabel = TIME_STATS_DIMENSION_LABELS[dimension];
+  const buckets = Array.isArray(data?.dimensions?.[dimension])
+    ? data.dimensions[dimension]
+    : [];
+  if (!data || !data.totalGames || !buckets.length) {
+    els.timeStatsMeta.textContent = `${modeLabel} · ${dimensionLabel}`;
     els.timeStatsSummary.innerHTML = '';
     const hint =
       state.timeStatsSource === 'none'
@@ -3376,11 +3393,11 @@ function renderTimeStats(data, mode = state.timeStatsMode) {
 
   const sourceNote =
     state.timeStatsSource === 'recent' ? ' · 最近 100 场（该模式暂无历史存档）' : '';
-  els.timeStatsMeta.textContent = `${modeLabel} · ${data.totalGames} 场 · 总胜率 ${winRatePct(
-    data.winRate,
-  )}${sourceNote}`;
+  els.timeStatsMeta.textContent = `${modeLabel} · ${dimensionLabel} · ${
+    data.totalGames
+  } 场 · 总胜率 ${winRatePct(data.winRate)}${sourceNote}`;
 
-  const periods = data.periods.filter((period) => Number(period.games) > 0);
+  const periods = buckets.filter((period) => Number(period.games) > 0);
   const qualified = periods.filter((period) => Number(period.games) >= 3);
   const worst = qualified.length
     ? qualified.reduce((current, period) =>
@@ -3398,7 +3415,7 @@ function renderTimeStats(data, mode = state.timeStatsMode) {
     period
       ? `<div class="time-stat-highlight">
           <span>${label}</span>
-          <b>${timePeriodRange(period.startHour, period.endHour)}</b>
+          <b>${escapeHtml(period.label)}</b>
           <small>${detail}</small>
         </div>`
       : '';
@@ -3425,7 +3442,7 @@ function renderTimeStats(data, mode = state.timeStatsMode) {
       const noisy = period.games >= 3 && badRate >= 0.5;
       const width = Math.max(0, Math.min(100, (Number(period.winRate) || 0) * 100));
       return `<div class="time-stat-row ${tone}${noisy ? ' noisy' : ''}">
-        <span class="time-stat-range">${timePeriodRange(period.startHour, period.endHour)}</span>
+        <span class="time-stat-range">${escapeHtml(period.label)}</span>
         <div class="time-stat-main">
           <div class="time-stat-bar"><span style="width:${width.toFixed(1)}%"></span></div>
           <div class="time-stat-sub">
@@ -3453,7 +3470,7 @@ async function loadTimeStats() {
   els.timeStatsMeta.textContent = '';
   els.timeStatsSummary.innerHTML = '';
   els.timeStatsList.innerHTML =
-    '<div class="search-status"><span class="spinner"></span><span>正在统计各时段胜率…</span></div>';
+    '<div class="search-status"><span class="spinner"></span><span>正在统计各维度胜率…</span></div>';
   try {
     const params = new URLSearchParams();
     if (mode !== 'all') params.set('mode', mode);
@@ -3576,6 +3593,14 @@ els.timeStatsTabs.addEventListener('click', (event) => {
 });
 els.timeStatsModal.addEventListener('click', (event) => {
   if (event.target === els.timeStatsModal) closeTimeStats();
+});
+els.timeStatsDimension.addEventListener('change', () => {
+  const dimension = els.timeStatsDimension.value;
+  if (!TIME_STATS_DIMENSION_LABELS[dimension]) return;
+  state.timeStatsDimension = dimension;
+  if (state.timeStatsData) {
+    renderTimeStats(state.timeStatsData, state.timeStatsMode);
+  }
 });
 els.championRankingTabs.addEventListener('click', (event) => {
   const button = event.target.closest('[data-ranking-mode]');

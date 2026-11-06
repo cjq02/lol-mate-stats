@@ -761,41 +761,84 @@ test('极端低输出且高死亡的对局按巨坑封顶', () => {
   assert.equal(badLevelOfScore(scores[0]), 'severe');
 });
 
-test('时段统计按本地两小时分组并统计坑率', () => {
-  const at = (hour: number, minute = 0) => new Date(2026, 0, 5, hour, minute).getTime();
+test('时段统计按本地时间统计时段、星期、周和月', () => {
+  const at = (month: number, day: number, hour: number, minute = 0) =>
+    new Date(2026, month - 1, day, hour, minute).getTime();
   const summary = summarizeTimeStats([
-    { gameCreation: at(0, 30), win: true, tags: [] },
-    { gameCreation: at(1, 59), win: false, tags: ['队友坑'] },
-    { gameCreation: at(2, 10), win: true, tags: ['队友巨坑', '自己小坑'] },
-    { gameCreation: at(23, 10), win: false, tags: ['队友逃跑'] },
-    { gameCreation: at(23, 50), win: true, tags: ['重开'] },
+    { gameCreation: at(1, 5, 0, 30), win: true, tags: [] },
+    { gameCreation: at(1, 5, 1, 59), win: false, tags: ['队友坑'] },
+    { gameCreation: at(1, 5, 2, 10), win: true, tags: ['队友巨坑', '自己小坑'] },
+    { gameCreation: at(1, 11, 23, 10), win: false, tags: ['队友逃跑'] },
+    { gameCreation: at(1, 12, 23, 50), win: true, tags: ['重开'] },
+    { gameCreation: at(2, 2, 20, 0), win: true, tags: [] },
   ]);
-  assert.equal(summary.totalGames, 4);
-  assert.equal(summary.wins, 2);
-  assert.equal(summary.winRate, 0.5);
-  assert.equal(summary.periods.length, 12);
+  assert.equal(summary.totalGames, 5);
+  assert.equal(summary.wins, 3);
+  assert.equal(summary.winRate, 0.6);
+  assert.equal(summary.dimensions.hour.length, 12);
+  assert.equal(summary.dimensions.weekday.length, 7);
 
-  const early = summary.periods[0];
+  const early = summary.dimensions.hour[0];
   assert.ok(early);
+  assert.equal(early.label, '00:00-02:00');
   assert.equal(early.games, 2);
   assert.equal(early.wins, 1);
   assert.equal(early.losses, 1);
   assert.equal(early.teammateBadGames, 1);
   assert.equal(early.selfBadGames, 0);
 
-  const morning = summary.periods[1];
+  const morning = summary.dimensions.hour[1];
   assert.ok(morning);
   assert.equal(morning.games, 1);
   assert.equal(morning.wins, 1);
   assert.equal(morning.teammateBadGames, 1);
   assert.equal(morning.selfBadGames, 1);
 
-  const late = summary.periods[11];
+  const late = summary.dimensions.hour[11];
   assert.ok(late);
   assert.equal(late.games, 1);
   assert.equal(late.wins, 0);
   assert.equal(late.teammateBadGames, 1);
   assert.equal(late.teammateBadRate, 1);
+
+  const monday = summary.dimensions.weekday[0];
+  assert.ok(monday);
+  assert.equal(monday.label, '周一');
+  assert.equal(monday.games, 4);
+  assert.equal(monday.wins, 3);
+  assert.equal(monday.teammateBadGames, 2);
+  assert.equal(monday.selfBadGames, 1);
+
+  const sunday = summary.dimensions.weekday[6];
+  assert.ok(sunday);
+  assert.equal(sunday.label, '周日');
+  assert.equal(sunday.games, 1);
+  assert.equal(sunday.wins, 0);
+
+  const firstWeek = summary.dimensions.week.find((bucket) => bucket.key === '2026-01-05');
+  assert.ok(firstWeek);
+  assert.equal(firstWeek.label, '01/05-01/11');
+  assert.equal(firstWeek.games, 4);
+  assert.equal(firstWeek.wins, 2);
+  assert.equal(firstWeek.teammateBadGames, 3);
+  assert.equal(firstWeek.selfBadGames, 1);
+
+  const secondWeek = summary.dimensions.week.find((bucket) => bucket.key === '2026-02-02');
+  assert.ok(secondWeek);
+  assert.equal(secondWeek.games, 1);
+  assert.equal(secondWeek.wins, 1);
+
+  const january = summary.dimensions.month.find((bucket) => bucket.key === '2026-01');
+  assert.ok(january);
+  assert.equal(january.games, 4);
+  assert.equal(january.wins, 2);
+  assert.equal(january.teammateBadGames, 3);
+  assert.equal(january.selfBadGames, 1);
+
+  const february = summary.dimensions.month.find((bucket) => bucket.key === '2026-02');
+  assert.ok(february);
+  assert.equal(february.games, 1);
+  assert.equal(february.wins, 1);
 });
 
 test('低伤害低承伤但 KDA 好看的局判为挂机', () => {
