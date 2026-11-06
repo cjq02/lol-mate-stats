@@ -449,7 +449,15 @@ function render() {
 
   document.title = players.length ? `(${players.length}) 队友战绩 · LoL` : '队友战绩 · LoL';
 
-  els.empty.classList.toggle('hidden', players.length > 0 || showSkeleton);
+  const hasAramChampions = Boolean(
+    snapshot?.inChampSelect &&
+      snapshot?.gameMode === 'ARAM' &&
+      snapshot?.aramChampions?.length,
+  );
+  els.empty.classList.toggle(
+    'hidden',
+    players.length > 0 || showSkeleton || hasAramChampions,
+  );
   els.board.classList.toggle('hidden', players.length === 0 && !showSkeleton);
 
   if (showSkeleton) {
