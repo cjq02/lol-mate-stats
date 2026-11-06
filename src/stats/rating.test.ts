@@ -761,16 +761,52 @@ test('极端低输出且高死亡的对局按巨坑封顶', () => {
   assert.equal(badLevelOfScore(scores[0]), 'severe');
 });
 
-test('时段统计按本地时间统计时段、星期、周和月', () => {
+test('时段统计按本地时间统计时段、星期、周、月、位置和类型', () => {
   const at = (month: number, day: number, hour: number, minute = 0) =>
     new Date(2026, month - 1, day, hour, minute).getTime();
   const summary = summarizeTimeStats([
-    { gameCreation: at(1, 5, 0, 30), win: true, tags: [] },
-    { gameCreation: at(1, 5, 1, 59), win: false, tags: ['队友坑'] },
-    { gameCreation: at(1, 5, 2, 10), win: true, tags: ['队友巨坑', '自己小坑'] },
-    { gameCreation: at(1, 11, 23, 10), win: false, tags: ['队友逃跑'] },
-    { gameCreation: at(1, 12, 23, 50), win: true, tags: ['重开'] },
-    { gameCreation: at(2, 2, 20, 0), win: true, tags: [] },
+    {
+      gameCreation: at(1, 5, 0, 30),
+      win: true,
+      tags: [],
+      position: 'TOP',
+      championId: 103,
+    },
+    {
+      gameCreation: at(1, 5, 1, 59),
+      win: false,
+      tags: ['队友坑'],
+      position: 'TOP',
+      championId: 89,
+    },
+    {
+      gameCreation: at(1, 5, 2, 10),
+      win: true,
+      tags: ['队友巨坑', '自己小坑'],
+      position: 'JUNGLE',
+      championId: 64,
+    },
+    {
+      gameCreation: at(1, 11, 23, 10),
+      win: false,
+      tags: ['队友逃跑'],
+      position: 'UTILITY',
+      championId: 16,
+    },
+    {
+      gameCreation: at(1, 12, 23, 50),
+      win: true,
+      tags: ['重开'],
+      position: 'MID',
+      championId: 103,
+    },
+    {
+      gameCreation: at(2, 2, 20, 0),
+      win: true,
+      tags: [],
+      position: 'MID',
+      championId: 103,
+    },
   ]);
   assert.equal(summary.totalGames, 5);
   assert.equal(summary.wins, 3);
@@ -839,6 +875,44 @@ test('时段统计按本地时间统计时段、星期、周和月', () => {
   assert.ok(february);
   assert.equal(february.games, 1);
   assert.equal(february.wins, 1);
+
+  const top = summary.dimensions.position.find((bucket) => bucket.key === 'pos-top');
+  assert.ok(top);
+  assert.equal(top.label, '上单');
+  assert.equal(top.games, 2);
+  assert.equal(top.wins, 1);
+  assert.equal(top.teammateBadGames, 1);
+
+  const jungle = summary.dimensions.position.find((bucket) => bucket.key === 'pos-jungle');
+  assert.ok(jungle);
+  assert.equal(jungle.label, '打野');
+  assert.equal(jungle.games, 1);
+  assert.equal(jungle.wins, 1);
+  assert.equal(jungle.selfBadGames, 1);
+
+  const support = summary.dimensions.position.find((bucket) => bucket.key === 'pos-support');
+  assert.ok(support);
+  assert.equal(support.label, '辅助');
+  assert.equal(support.games, 1);
+  assert.equal(support.wins, 0);
+  assert.equal(support.teammateBadGames, 1);
+
+  const carry = summary.dimensions.type.find((bucket) => bucket.key === 'type-carry');
+  assert.ok(carry);
+  assert.equal(carry.label, '输出');
+  assert.equal(carry.games, 2);
+  assert.equal(carry.wins, 2);
+
+  const tank = summary.dimensions.type.find((bucket) => bucket.key === 'type-tank');
+  assert.ok(tank);
+  assert.equal(tank.games, 1);
+  assert.equal(tank.wins, 0);
+
+  const fighter = summary.dimensions.type.find((bucket) => bucket.key === 'type-fighter');
+  assert.ok(fighter);
+  assert.equal(fighter.games, 1);
+  assert.equal(fighter.wins, 1);
+  assert.equal(fighter.selfBadGames, 1);
 });
 
 test('低伤害低承伤但 KDA 好看的局判为挂机', () => {

@@ -180,6 +180,8 @@ const TIME_STATS_DIMENSION_LABELS = {
   weekday: '按星期',
   week: '按周',
   month: '按月',
+  position: '按位置',
+  type: '按类型',
 };
 
 function currentModeLabel() {

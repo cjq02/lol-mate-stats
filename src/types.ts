@@ -476,6 +476,8 @@ export interface MatchSummary {
   gameDuration: number;
   championId: number;
   championName?: string;
+  /** 本局位置（TOP / JUNGLE / MID / ADC / SUPPORT / ARAM / ARENA / UNKNOWN） */
+  position?: string;
   win: boolean;
   kills: number;
   deaths: number;

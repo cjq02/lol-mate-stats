@@ -616,7 +616,7 @@ export async function getPlayerTimeStats(
   if (modeFilter) conditions.push(modeFilter);
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT m.game_creation, p.win, p.tags
+      `SELECT m.game_creation, p.win, p.tags, p.position, p.champion_id
        FROM match_participants p
        JOIN matches m ON m.game_id = p.game_id
        WHERE ${conditions.join(' AND ')}`,
@@ -627,6 +627,11 @@ export async function getPlayerTimeStats(
         gameCreation: Number(row.game_creation),
         win: Number(row.win) === 1,
         tags: parseTagList(row.tags as string | null),
+        position:
+          row.position === null || row.position === undefined
+            ? undefined
+            : String(row.position),
+        championId: Number(row.champion_id) || 0,
       })),
     );
   } catch {

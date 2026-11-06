@@ -1,4 +1,5 @@
 import type { GameModeKey, MatchSummary } from '../types.js';
+import { championRole } from './champion-roles.js';
 import { modeFromQueue } from './constants.js';
 
 /** 时段维度的 bucket 长度（小时） */
@@ -12,6 +13,10 @@ export interface TimeStatsGame {
   gameCreation: number;
   win: boolean;
   tags?: string[];
+  /** 本局位置（TOP / JUNGLE / MID / ADC / SUPPORT / ARAM / ARENA / UNKNOWN） */
+  position?: string;
+  /** 本局使用的英雄，用于按英雄类型统计 */
+  championId?: number;
 }
 
 export interface TimeStatsBucket {
@@ -29,7 +34,13 @@ export interface TimeStatsBucket {
   selfBadRate: number;
 }
 
-export type TimeStatsDimension = 'hour' | 'weekday' | 'week' | 'month';
+export type TimeStatsDimension =
+  | 'hour'
+  | 'weekday'
+  | 'week'
+  | 'month'
+  | 'position'
+  | 'type';
 
 export interface TimeStatsDimensions {
   /** 一天内每两小时一段 */
@@ -40,6 +51,10 @@ export interface TimeStatsDimensions {
   week: TimeStatsBucket[];
   /** 最近 12 个月 */
   month: TimeStatsBucket[];
+  /** 上单 / 打野 / 中单 / ADC / 辅助等位置 */
+  position: TimeStatsBucket[];
+  /** 坦克 / 战士 / 输出 / 辅助等英雄类型 */
+  type: TimeStatsBucket[];
 }
 
 export interface TimeStatsSummary {
@@ -50,8 +65,55 @@ export interface TimeStatsSummary {
 }
 
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const POSITION_DEFINITIONS: Array<[string, string]> = [
+  ['pos-top', '上单'],
+  ['pos-jungle', '打野'],
+  ['pos-mid', '中单'],
+  ['pos-adc', 'ADC'],
+  ['pos-support', '辅助'],
+  ['pos-aram', '大乱斗'],
+  ['pos-arena', '竞技场'],
+  ['pos-unknown', '未知'],
+];
+const TYPE_DEFINITIONS: Array<[string, string]> = [
+  ['type-tank', '坦克'],
+  ['type-fighter', '战士'],
+  ['type-carry', '输出'],
+  ['type-support', '辅助'],
+  ['type-default', '其他'],
+];
 const TEAMMATE_BAD_TAG = /^队友(?:小坑|坑|巨坑|逃跑)$/;
 const SELF_BAD_TAG = /^自己(?:小坑|坑|巨坑|逃跑)$/;
+
+function typeBucketKey(championId?: number): string {
+  const id = Number(championId) || 0;
+  const normalized = id >= 60000 ? id - 60000 : id;
+  return `type-${championRole(normalized)}`;
+}
+
+function positionBucketKey(position?: string): string {
+  switch (String(position ?? '').trim().toUpperCase()) {
+    case 'TOP':
+      return 'pos-top';
+    case 'JUNGLE':
+      return 'pos-jungle';
+    case 'MIDDLE':
+    case 'MID':
+      return 'pos-mid';
+    case 'BOTTOM':
+    case 'ADC':
+      return 'pos-adc';
+    case 'UTILITY':
+    case 'SUPPORT':
+      return 'pos-support';
+    case 'ARAM':
+      return 'pos-aram';
+    case 'ARENA':
+      return 'pos-arena';
+    default:
+      return 'pos-unknown';
+  }
+}
 
 function pad(value: number): string {
   return String(value).padStart(2, '0');
@@ -158,6 +220,10 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
   const weekdayBuckets = WEEKDAY_LABELS.map((label, index) =>
     emptyBucket(`d${index + 1}`, label),
   );
+  const positionBuckets = POSITION_DEFINITIONS.map(([key, label]) => emptyBucket(key, label));
+  const positionByKey = new Map(positionBuckets.map((bucket) => [bucket.key, bucket]));
+  const typeBuckets = TYPE_DEFINITIONS.map(([key, label]) => emptyBucket(key, label));
+  const typeByKey = new Map(typeBuckets.map((bucket) => [bucket.key, bucket]));
   const weekBuckets = new Map<string, TimeStatsBucket>();
   const monthBuckets = new Map<string, TimeStatsBucket>();
 
@@ -189,6 +255,12 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
     const weekdayBucket = weekdayBuckets[weekdayIndex];
     if (weekdayBucket) addGame(weekdayBucket, win, teammateBad, selfBad);
 
+    const positionBucket = positionByKey.get(positionBucketKey(game.position));
+    if (positionBucket) addGame(positionBucket, win, teammateBad, selfBad);
+
+    const typeBucket = typeByKey.get(typeBucketKey(game.championId));
+    if (typeBucket) addGame(typeBucket, win, teammateBad, selfBad);
+
     const weekStart = startOfWeek(date);
     const weekKey = dateKey(weekStart);
     const weekBucket = weekBuckets.get(weekKey) ?? emptyBucket(weekKey, weekLabel(weekStart));
@@ -213,6 +285,8 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
       weekday: weekdayBuckets.map(finalizeBucket),
       week: buildRecentWeeks(latestTimestamp, weekBuckets).map(finalizeBucket),
       month: buildRecentMonths(latestTimestamp, monthBuckets).map(finalizeBucket),
+      position: positionBuckets.map(finalizeBucket),
+      type: typeBuckets.map(finalizeBucket),
     },
   };
 }
@@ -230,6 +304,8 @@ export function summarizeMatchSummaries(
       gameCreation: Number(game.gameCreation) || 0,
       win: Boolean(game.win),
       tags: game.tags,
+      position: game.position,
+      championId: game.championId,
     })),
   );
 }

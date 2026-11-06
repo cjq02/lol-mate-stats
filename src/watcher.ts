@@ -24,7 +24,7 @@ import { ClientNotFoundError, discoverConnection } from './lcu/discover.js';
 import { fetchEdgeMatchHistory, findEdgeUrl } from './lcu/edge.js';
 import { openEventStream } from './lcu/events.js';
 import { fetchLiveGame, liveMembersOf, sameLiveName } from './lcu/live.js';
-import { analyzeParticipant, computeMatchScores, matchBestTags } from './stats/analyze.js';
+import { analyzeParticipant, computeMatchScores, detectLane, matchBestTags } from './stats/analyze.js';
 import { ReportCollector } from './stats/collector.js';
 import { analyzeGame } from './stats/analyze.js';
 import {
@@ -325,6 +325,7 @@ export class LiveSource implements DataSource {
           gameDuration: rawDuration > 100_000 ? Math.round(rawDuration / 1000) : rawDuration,
           championId,
           championName: championMap.get(championId)?.name,
+          position: participant ? detectLane(game, participant) : undefined,
           win: stats.win === true || stats.win === 1,
           kills: toNumber(stats.kills),
           deaths: toNumber(stats.deaths),
