@@ -6,6 +6,7 @@ import { buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
 import { PROFILES, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
+import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 
 let passed = 0;
 
@@ -857,6 +858,35 @@ test('低伤害低承伤低死亡的保 KDA 局评分也封顶', () => {
   ]);
   assert.ok(scores[0]! < 18, `score=${scores[0]}`);
   assert.equal(badLevelOfScore(scores[0]), 'severe');
+});
+
+console.log('incremental');
+test('增量更新只接收当前模式的新对局', () => {
+  assert.equal(matchesGameContext({ queueId: 450 }, { queueId: 420, mode: 'SR' }), false);
+  assert.equal(matchesGameContext({ queueId: 420 }, { queueId: 420, mode: 'SR' }), true);
+  assert.equal(matchesGameContext({ queueId: 440 }, { queueId: 420, mode: 'SR' }), false);
+  assert.equal(matchesGameContext({ queueId: 1700 }, { queueId: 450, mode: 'ARAM' }), false);
+  assert.equal(matchesGameContext({ queueId: 450 }, undefined), true);
+});
+
+test('增量更新只补新对局并保持最近 N 场', () => {
+  const previous = [
+    makeGame(1, 'MID', { gameCreation: 2_000 }),
+    makeGame(2, 'MID', { gameCreation: 1_000 }),
+  ];
+  const added = [makeGame(3, 'MID', { gameCreation: 3_000 })];
+  const merged = mergeIncrementalGames(added, previous, 2);
+  assert.deepEqual(
+    merged.map((game) => game.gameId),
+    [1003, 1001],
+  );
+  assert.equal(merged.length, 2);
+});
+
+test('增量更新会对重复对局去重', () => {
+  const game = makeGame(1, 'MID');
+  const merged = mergeIncrementalGames([game], [game], 10);
+  assert.equal(merged.length, 1);
 });
 
 console.log(`\n${passed} 项测试全部通过`);

@@ -18,7 +18,7 @@ import { LcuError } from '../lcu/http.js';
 import { liveItemIds } from '../lcu/live.js';
 import { analyzeGame, computeMatchScores, matchBestTags } from './analyze.js';
 import { archiveGames } from './archive.js';
-import { currentQueueGroup, gameQueueGroup, queueGroupName } from './constants.js';
+import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName } from './constants.js';
 import { gameFlagTags, gameFlags, isRemakeGame } from './flags.js';
 import { summarize } from './rating.js';
 import { getDb, withTransaction } from './store.js';
@@ -79,7 +79,10 @@ export class ReportCollector {
     { at: number; info: SummonerInfo | null }
   >();
   private readonly reportCache = new Map<string, CachedReport>();
-  private readonly gameCache = new Map<number, { at: number; game: RawGame | null }>();
+  private readonly gameCache = new Map<
+    number,
+    { at: number; game: RawGame | null; ttlMs?: number }
+  >();
   private readonly rankCache = new Map<string, { at: number; rank: RankInfo | null }>();
   private championMap: Map<number, ChampionSummary> | null = null;
   private championMapAt = 0;
@@ -549,6 +552,9 @@ export class ReportCollector {
 
     const championMap = await this.getChampionMap(options.force);
     await archiveGames([game], championMap);
+    // 本局详情已经拿到，赛后增量更新可直接复用，避免 10 名玩家各拉一次
+    const matchGameId = toNumber(game.gameId);
+    if (matchGameId) this.gameCache.set(matchGameId, { at: Date.now(), game });
     const entries = participants
       .map((participant, index) => {
         const identity = identities.find(
@@ -702,16 +708,22 @@ export class ReportCollector {
         cached.at = Date.now();
         return this.withLiveData(cached.report, base);
       }
+
+      // 只多了一局时增量补进去，避免为了新对局重拉最近 N 场
+      const incremental = await this.tryIncrementalReport(
+        cached,
+        summonerFromBase(base),
+        context,
+        championMap,
+      );
+      if (incremental) {
+        this.reportCache.set(cacheKey, incremental);
+        this.scheduleSave();
+        return this.withLiveData(incremental.report, base);
+      }
     }
 
-    const summoner: SummonerInfo = {
-      summonerId: base.summonerId,
-      puuid: base.puuid,
-      accountId: base.accountId,
-      gameName: base.displayName,
-      tagLine: base.tagLine,
-      summonerLevel: base.level,
-    };
+    const summoner = summonerFromBase(base);
 
     try {
       const [rank, loaded] = await Promise.all([
@@ -720,21 +732,7 @@ export class ReportCollector {
       ]);
       const games = loaded.games;
 
-      const analyzed = games
-        .map((game) => {
-          const scoreMap = computeMatchScores(game, championMap);
-          const result = analyzeGame(
-            game,
-            { puuid: summoner.puuid, summonerId: summoner.summonerId, accountId: summoner.accountId },
-            championMap,
-            scoreMap,
-          );
-          return result
-            ? withMatchFlags(game, result, championMap, summoner.puuid ?? '', scoreMap)
-            : null;
-        })
-        .filter((game): game is NonNullable<typeof game> => game !== null)
-        .sort((a, b) => b.gameCreation - a.gameCreation);
+      const analyzed = this.analyzeGames(games, summoner, championMap);
       const filtered = filterByContext(analyzed, context);
 
       if (!filtered.length) {
@@ -886,6 +884,19 @@ export class ReportCollector {
         cached.at = Date.now();
         return this.withSessionData(cached.report, member, base, championMap);
       }
+
+      // 只多了一局时增量补进去，避免为了新对局重拉最近 N 场
+      const incremental = await this.tryIncrementalReport(
+        cached,
+        summonerFromBase(base),
+        context,
+        championMap,
+      );
+      if (incremental) {
+        this.reportCache.set(cacheKey, incremental);
+        this.scheduleSave();
+        return this.withSessionData(incremental.report, member, base, championMap);
+      }
     }
 
     if (!base.summonerId || base.error) return base;
@@ -902,25 +913,7 @@ export class ReportCollector {
       ]);
       const games = loaded.games;
 
-      const analyzed = games
-        .map((game) => {
-          const scoreMap = computeMatchScores(game, championMap);
-          const result = analyzeGame(
-            game,
-            {
-              puuid: summoner.puuid,
-              summonerId: summoner.summonerId,
-              accountId: summoner.accountId,
-            },
-            championMap,
-            scoreMap,
-          );
-          return result
-            ? withMatchFlags(game, result, championMap, summoner.puuid ?? '', scoreMap)
-            : null;
-        })
-        .filter((game): game is NonNullable<typeof game> => game !== null)
-        .sort((a, b) => b.gameCreation - a.gameCreation);
+      const analyzed = this.analyzeGames(games, summoner, championMap);
       const filtered = filterByContext(analyzed, context);
 
       if (!filtered.length) {
@@ -994,6 +987,102 @@ export class ReportCollector {
       isBot: base.isBot,
       loading: false,
       error: report.error,
+    };
+  }
+
+  /** 原始对局 → 评分结果，统一补上坑 / 逃跑 / MVP 标签 */
+  private analyzeGames(
+    games: RawGame[],
+    summoner: SummonerInfo,
+    championMap: Map<number, ChampionSummary>,
+  ): AnalyzedGame[] {
+    return games
+      .map((game) => {
+        const scoreMap = computeMatchScores(game, championMap);
+        const result = analyzeGame(
+          game,
+          {
+            puuid: summoner.puuid,
+            summonerId: summoner.summonerId,
+            accountId: summoner.accountId,
+          },
+          championMap,
+          scoreMap,
+        );
+        return result
+          ? withMatchFlags(game, result, championMap, summoner.puuid ?? '', scoreMap)
+          : null;
+      })
+      .filter((game): game is AnalyzedGame => game !== null)
+      .sort((a, b) => b.gameCreation - a.gameCreation);
+  }
+
+  /**
+   * 只把新出现的对局补进旧报告，避免为了新的一局重拉最近 N 场。
+   * 返回 undefined 表示无法安全增量（新对局太多、详情缺失、接口失败），调用方走完整加载。
+   */
+  private async tryIncrementalReport(
+    cached: CachedReport,
+    summoner: SummonerInfo,
+    context: GameContext | undefined,
+    championMap: Map<number, ChampionSummary>,
+  ): Promise<CachedReport | undefined> {
+    if (!summoner.puuid) return undefined;
+
+    let list: RawGame[];
+    try {
+      // 多取一场用来定位缓存里的“最新一局”
+      list = await this.api.getMatchListByPuuid(summoner.puuid, this.options.recent + 1);
+    } catch {
+      return undefined;
+    }
+
+    const newestGameId = toNumber(list[0]?.gameId) || 0;
+    if (!newestGameId || newestGameId === cached.latestGameId) return undefined;
+
+    const anchor = list.findIndex(
+      (game) => toNumber(game.gameId) === cached.latestGameId,
+    );
+    // 缓存的“最新一局”已经滑出窗口，说明期间打了太多局，完整重拉更稳
+    if (anchor < 0) return undefined;
+
+    const details: RawGame[] = [];
+    for (const game of list.slice(0, anchor)) {
+      if (isRemakeGame(game)) continue;
+      if (!matchesGameContext(game, context)) continue;
+      const gameId = toNumber(game.gameId);
+      if (!gameId) continue;
+      const detail = hasGameDetail(game) ? game : await this.getGameDetail(gameId);
+      if (!detail) return undefined;
+      details.push(detail);
+    }
+    if (details.length) await archiveGames(details, championMap);
+
+    const added = this.analyzeGames(details, summoner, championMap);
+    // 新对局可能是别的模式或重开，不进入当前模式的报告，只更新“最新一局”标记
+    if (!added.length) {
+      return { at: Date.now(), latestGameId: newestGameId, report: cached.report };
+    }
+
+    const merged = mergeIncrementalGames(
+      added,
+      cached.report.games ?? [],
+      this.options.recent,
+    );
+    const summary = summarize(merged, { level: summoner.summonerLevel });
+    return {
+      at: Date.now(),
+      latestGameId: newestGameId,
+      report: {
+        ...cached.report,
+        recent: summary,
+        games: merged,
+        rating: summary.rating,
+        grade: summary.grade,
+        labels: summary.labels,
+        loading: false,
+        error: undefined,
+      },
     };
   }
 
@@ -1207,7 +1296,8 @@ export class ReportCollector {
 
   private async getGameDetail(gameId: number): Promise<RawGame | null> {
     const cached = this.gameCache.get(gameId);
-    if (cached && Date.now() - cached.at < this.options.gameTtlMs) return cached.game;
+    const ttl = cached?.ttlMs ?? this.options.gameTtlMs;
+    if (cached && Date.now() - cached.at < ttl) return cached.game;
 
     let game: RawGame | null = null;
     try {
@@ -1215,7 +1305,12 @@ export class ReportCollector {
     } catch {
       game = null;
     }
-    this.gameCache.set(gameId, { at: Date.now(), game });
+    this.gameCache.set(gameId, {
+      at: Date.now(),
+      game,
+      // 刚结束的对局可能还查不到详情，失败只短暂缓存，稍后重试
+      ttlMs: game ? undefined : 30_000,
+    });
     if (this.gameCache.size > 1200) {
       const oldest = [...this.gameCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
       if (oldest) this.gameCache.delete(oldest[0]);
@@ -1257,6 +1352,42 @@ export class ReportCollector {
 
 function effectiveChampionId(member: ChampSelectMember): number {
   return member.championId || member.championPickIntent || 0;
+}
+
+/** 增量更新时用报告里的基础字段还原召唤师信息（不需要再查 LCU） */
+function summonerFromBase(base: PlayerReport): SummonerInfo {
+  return {
+    summonerId: base.summonerId,
+    puuid: base.puuid,
+    accountId: base.accountId,
+    gameName: base.displayName,
+    tagLine: base.tagLine,
+    summonerLevel: base.level,
+  };
+}
+
+/** 原始对局是否属于当前统计组（增量更新时过滤掉别的模式） */
+export function matchesGameContext(game: RawGame, context?: GameContext): boolean {
+  if (!context || (context.queueId === undefined && !context.mode)) return true;
+  const queueId = toNumber(game.queueId);
+  const mode = modeFromQueue(queueId, game.gameMode);
+  const group = currentQueueGroup(queueId, mode);
+  return group === currentQueueGroup(context.queueId, context.mode);
+}
+
+/** 把新对局合进旧列表：去重、按时间倒序、只保留最近 N 场 */
+export function mergeIncrementalGames(
+  added: AnalyzedGame[],
+  previous: AnalyzedGame[],
+  recent: number,
+): AnalyzedGame[] {
+  return [...added, ...previous]
+    .filter(
+      (game, index, all) =>
+        all.findIndex((item) => item.gameId === game.gameId) === index,
+    )
+    .sort((a, b) => b.gameCreation - a.gameCreation)
+    .slice(0, recent);
 }
 
 function reportCacheKey(
