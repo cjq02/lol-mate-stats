@@ -533,6 +533,7 @@ export class LiveSource implements DataSource {
           visionPerMin: analyzed?.visionPerMin,
           badLevel,
           tags: finalTags,
+          timeline: analyzed?.timeline,
         };
       })
       .filter((player) => player.championId > 0)

@@ -314,10 +314,15 @@ export interface AfkLikeStats {
   assists: number;
   visionScore: number;
   position?: Lane;
+  /** 连续没有经济/经验增长的最长分钟数（结算 timeline 提供时才有） */
+  idleMinutes?: number;
 }
 
 export function isAfkLikeStats(input: AfkLikeStats): boolean {
   if (input.durationMin < 8) return false;
+  // 有分段数据时优先看“中段是否长时间没有成长”：
+  // 整局总数据可能被前 10 分钟掩盖，但连续 5 分钟无经济/经验通常就是挂机。
+  if ((input.idleMinutes ?? 0) >= 5) return true;
   const minutes = Math.max(1, input.durationMin);
   const checks = [
     input.damage / minutes < 150,
@@ -346,6 +351,7 @@ export function isAfkLike(game: AnalyzedGame): boolean {
     assists: game.assists,
     visionScore: game.visionScore,
     position: game.position,
+    idleMinutes: game.timeline?.idleMinutes,
   });
 }
 

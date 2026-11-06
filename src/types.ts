@@ -117,6 +117,35 @@ export type Lane =
   | 'ARENA'
   | 'UNKNOWN';
 
+/** 对局时间线里的一个分段（通常每 10 分钟） */
+export interface TimelineSegment {
+  startMin: number;
+  endMin: number;
+  /** 该分段的分均经济 */
+  goldPerMin?: number;
+  /** 该分段的分均经验 */
+  xpPerMin?: number;
+  /** 该分段相对对位的补刀差（负数表示落后） */
+  csDiffPerMin?: number;
+  /** 该分段相对对位的经验差 */
+  xpDiffPerMin?: number;
+}
+
+/** 从结算接口的 timeline 字段解析出的节奏数据 */
+export interface GameTimeline {
+  segments: TimelineSegment[];
+  /** 连续没有经济/经验增长的最长分钟数，用于识别中段挂机 */
+  idleMinutes: number;
+  /** 第一段的补刀差（前期对线） */
+  csDiffEarly?: number;
+  /** 最后一段的补刀差（中后期） */
+  csDiffLate?: number;
+  /** 第一段的经验差 */
+  xpDiffEarly?: number;
+  /** 最后一段的经验差 */
+  xpDiffLate?: number;
+}
+
 export interface AnalyzedGame {
   gameId: number;
   queueId: number;
@@ -144,6 +173,8 @@ export interface AnalyzedGame {
   position: Lane;
   score: number;
   tags: string[];
+  /** 结算接口提供 timeline 时才有 */
+  timeline?: GameTimeline;
 }
 
 export interface Streak {
@@ -468,6 +499,8 @@ export interface MatchScoreboardPlayer {
   /** 本局“坑”的程度 */
   badLevel?: BadLevel;
   tags?: string[];
+  /** 本局节奏（结算接口有 timeline 时） */
+  timeline?: GameTimeline;
 }
 
 export interface MatchAfkPlayer {

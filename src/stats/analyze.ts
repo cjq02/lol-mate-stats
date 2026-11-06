@@ -1,9 +1,11 @@
 import type {
   AnalyzedGame,
+  GameTimeline,
   Lane,
   RawGame,
   RawParticipant,
   RawStats,
+  TimelineSegment,
 } from '../types.js';
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
@@ -33,6 +35,92 @@ export function detectLane(game: RawGame, participant: RawParticipant): Lane {
   if (role === 'DUO_SUPPORT') return 'SUPPORT';
   if (role === 'DUO_CARRY') return 'ADC';
   return 'UNKNOWN';
+}
+
+/** 结算接口可能给出的分段时间序列字段 */
+const TIMELINE_DELTA_KEYS = {
+  gold: 'goldPerMinDeltas',
+  xp: 'xpPerMinDeltas',
+  csDiff: 'csDiffPerMinDeltas',
+  xpDiff: 'xpDiffPerMinDeltas',
+} as const;
+
+function readDeltaMap(source: Record<string, unknown>, key: string): Map<string, number> {
+  const raw = source[key];
+  const result = new Map<string, number>();
+  if (!raw || typeof raw !== 'object') return result;
+  for (const [range, value] of Object.entries(raw as Record<string, unknown>)) {
+    const number = typeof value === 'number' ? value : Number(value);
+    if (Number.isFinite(number)) result.set(range, number);
+  }
+  return result;
+}
+
+function segmentBounds(range: string, durationMin: number): [number, number] | undefined {
+  const match = /^(\d+)-(\d+|end)$/i.exec(range.trim());
+  if (!match) return undefined;
+  const start = Number(match[1]);
+  const end = /^end$/i.test(match[2] as string) ? durationMin : Number(match[2]);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
+  if (end <= start) return undefined;
+  return [start, end];
+}
+
+/**
+ * 解析结算接口的 timeline（每 10 分钟的分均经济/经验、对位补刀差）。
+ * LCU 不同版本字段可能缺失，缺失时返回 undefined，不影响其它统计。
+ */
+export function parseGameTimeline(
+  raw: unknown,
+  durationMin: number,
+): GameTimeline | undefined {
+  if (!raw || typeof raw !== 'object' || durationMin <= 0) return undefined;
+  const source = raw as Record<string, unknown>;
+  const gold = readDeltaMap(source, TIMELINE_DELTA_KEYS.gold);
+  const xp = readDeltaMap(source, TIMELINE_DELTA_KEYS.xp);
+  const csDiff = readDeltaMap(source, TIMELINE_DELTA_KEYS.csDiff);
+  const xpDiff = readDeltaMap(source, TIMELINE_DELTA_KEYS.xpDiff);
+  if (!gold.size && !xp.size) return undefined;
+
+  const ranges = new Set([...gold.keys(), ...xp.keys(), ...csDiff.keys(), ...xpDiff.keys()]);
+  const segments: TimelineSegment[] = [];
+  for (const range of ranges) {
+    const bounds = segmentBounds(range, durationMin);
+    if (!bounds) continue;
+    const [startMin, endMin] = bounds;
+    if (startMin >= durationMin) continue;
+    segments.push({
+      startMin,
+      endMin: Math.min(endMin, durationMin),
+      goldPerMin: gold.get(range),
+      xpPerMin: xp.get(range),
+      csDiffPerMin: csDiff.get(range),
+      xpDiffPerMin: xpDiff.get(range),
+    });
+  }
+  if (!segments.length) return undefined;
+  segments.sort((a, b) => a.startMin - b.startMin);
+
+  // 连续 5 分钟以上几乎没有经济/经验增长，通常是挂机或掉线
+  let idleMinutes = 0;
+  for (const segment of segments) {
+    const length = Math.max(0, segment.endMin - segment.startMin);
+    if (length <= 0 || segment.goldPerMin === undefined) continue;
+    const lowGold = segment.goldPerMin < 50;
+    const lowXp = segment.xpPerMin === undefined || segment.xpPerMin < 100;
+    if (lowGold && lowXp) idleMinutes += length;
+  }
+
+  const withCsDiff = segments.filter((segment) => segment.csDiffPerMin !== undefined);
+  const withXpDiff = segments.filter((segment) => segment.xpDiffPerMin !== undefined);
+  return {
+    segments,
+    idleMinutes,
+    csDiffEarly: withCsDiff[0]?.csDiffPerMin,
+    csDiffLate: withCsDiff[withCsDiff.length - 1]?.csDiffPerMin,
+    xpDiffEarly: withXpDiff[0]?.xpDiffPerMin,
+    xpDiffLate: withXpDiff[withXpDiff.length - 1]?.xpDiffPerMin,
+  };
 }
 
 function sameId(a: unknown, b: unknown): boolean {
@@ -142,6 +230,7 @@ interface BaseAnalysis {
   quadraKills: number;
   turretKills: number;
   firstBloodKill: boolean;
+  timeline?: GameTimeline;
 }
 
 function analyzeBase(
@@ -193,6 +282,7 @@ function analyzeBase(
   const durationSeconds = rawDuration > 100_000 ? rawDuration / 1000 : rawDuration;
   const durationMin = Math.max(1, durationSeconds / 60);
   const displayDurationMin = durationSeconds > 0 ? durationSeconds / 60 : 0;
+  const timeline = parseGameTimeline(participant.timeline, durationMin);
 
   const kda = (kills + assists) / Math.max(1, deaths);
   const damageShare = teamDamage > 0 ? damage / teamDamage : 0;
@@ -244,6 +334,7 @@ function analyzeBase(
     quadraKills,
     turretKills,
     firstBloodKill,
+    timeline,
   };
 }
 

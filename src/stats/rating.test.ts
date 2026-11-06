@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import type { AnalyzedGame, Lane, RawGame, Snapshot } from '../types.js';
-import { analyzeGame, detectLane, matchBestTags } from './analyze.js';
+import type { AnalyzedGame, GameTimeline, Lane, RawGame, Snapshot } from '../types.js';
+import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
 import { buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
@@ -38,6 +38,7 @@ interface GameOverrides {
   championId?: number;
   gameCreation?: number;
   heal?: number;
+  timeline?: GameTimeline;
 }
 
 function makeGame(index: number, lane: Lane, overrides: GameOverrides = {}): AnalyzedGame {
@@ -95,6 +96,7 @@ function makeGame(index: number, lane: Lane, overrides: GameOverrides = {}): Ana
       overrides.position ?? lane,
     ),
     tags: [],
+    timeline: overrides.timeline,
   };
 }
 
@@ -915,6 +917,37 @@ test('近期摘要给出主玩位置与占比', () => {
   const summary = summarize(games);
   assert.equal(summary.mainPosition, 'MID');
   assert.equal(summary.mainPositionShare, 0.8);
+});
+
+console.log('timeline');
+test('解析结算时间线：分均经济、对位补刀差与掉线段', () => {
+  const timeline = parseGameTimeline(
+    {
+      goldPerMinDeltas: { '0-10': 320, '10-20': 40, '20-30': 500 },
+      xpPerMinDeltas: { '0-10': 500, '10-20': 50, '20-30': 600 },
+      csDiffPerMinDeltas: { '0-10': -4, '10-20': 1, '20-30': 3 },
+    },
+    30,
+  );
+  assert.equal(timeline?.segments.length, 3);
+  assert.equal(timeline?.idleMinutes, 10);
+  assert.equal(timeline?.csDiffEarly, -4);
+  assert.equal(timeline?.csDiffLate, 3);
+});
+
+test('时间线字段缺失时不影响对局解析', () => {
+  assert.equal(parseGameTimeline(undefined, 30), undefined);
+  assert.equal(parseGameTimeline({ lane: 'MID' }, 30), undefined);
+});
+
+test('中段长时间没有成长会判为疑似挂机', () => {
+  const game = makeGame(1, 'MID', {
+    timeline: {
+      segments: [],
+      idleMinutes: 6,
+    },
+  });
+  assert.equal(isAfkLike(game), true);
 });
 
 console.log(`\n${passed} 项测试全部通过`);

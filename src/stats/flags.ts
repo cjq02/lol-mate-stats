@@ -100,6 +100,7 @@ export function afkParticipantIds(
         killParticipation: analyzed.killParticipation,
         damageTaken: toNumber(stats.totalDamageTaken),
         heal: analyzed.heal,
+        idleMinutes: analyzed.timeline?.idleMinutes,
       };
     },
   );

@@ -1,4 +1,5 @@
 import type {
+  GameTimeline,
   LiveEvent,
   MatchDetail,
   MatchScoreboardPlayer,
@@ -94,6 +95,26 @@ function fix(value: unknown, digits = 0): string {
 function pct(value: unknown): string {
   const n = Number(value);
   return `${Math.round((Number.isFinite(n) ? n : 0) * 100)}%`;
+}
+
+/** 把结算 timeline 压缩成一行，供 AI 判断对线期/中后期节奏 */
+function timelineText(timeline?: GameTimeline): string {
+  if (!timeline?.segments?.length) return '';
+  const parts = timeline.segments.map((segment) => {
+    const diff =
+      segment.csDiffPerMin === undefined
+        ? ''
+        : `（对位补刀差 ${segment.csDiffPerMin > 0 ? '+' : ''}${fix(
+            segment.csDiffPerMin,
+            1,
+          )}）`;
+    return `${segment.startMin}-${segment.endMin} 分 ${fix(segment.goldPerMin)}/分${diff}`;
+  });
+  const idle =
+    timeline.idleMinutes >= 5
+      ? `；中段连续 ${fix(timeline.idleMinutes)} 分钟几乎没有经济/经验增长`
+      : '';
+  return `时间线：${parts.join('，')}${idle}`;
 }
 
 function kdaText(row: MatchScoreboardPlayer): string {
@@ -443,7 +464,10 @@ export function buildAnalysisMessages(
           self,
           itemName,
         )}`,
-      ].join('\n')
+        timelineText(self.timeline),
+      ]
+        .filter(Boolean)
+        .join('\n')
     : '【我的表现】未找到本人数据';
 
   const myTeam = rows.filter((row) => row.teamId === myTeamId);
