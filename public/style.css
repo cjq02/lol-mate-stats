@@ -2150,6 +2150,66 @@ body::before {
   border-radius: 6px;
 }
 
+/* 本局节奏（结算 timeline） */
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(157, 179, 232, 0.16);
+  background: rgba(157, 179, 232, 0.045);
+  font-size: 10.5px;
+}
+
+.timeline-seg {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.timeline-seg em {
+  font-style: normal;
+  opacity: 0.6;
+}
+
+.timeline-seg b {
+  color: #c4d4ff;
+  font-weight: 650;
+}
+
+.timeline-seg i {
+  font-style: normal;
+  opacity: 0.75;
+}
+
+.timeline-seg i.up {
+  color: #9ef0c0;
+}
+
+.timeline-seg i.down {
+  color: #ffb3bd;
+}
+
+.timeline-idle {
+  padding: 3px 7px;
+  border-radius: 8px;
+  color: #ffb3bd;
+  background: rgba(255, 107, 129, 0.1);
+}
+
+.timeline-phase {
+  padding: 3px 7px;
+  border-radius: 8px;
+  color: #ffdda0;
+  background: rgba(245, 199, 106, 0.1);
+}
+
 /* 本局实时数据 */
 
 .live-row {

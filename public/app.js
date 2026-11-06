@@ -815,6 +815,45 @@ function buildCard(player, isLocal, options = {}) {
         )}">${miniRadarSvg(options.radar)}</div>`
       : '';
 
+  // 结算接口有 timeline 时，展示每 10 分钟的经济/对位补刀差
+  const timeline = thisGame?.timeline;
+  let timelinePhase = '';
+  if (timeline && timeline.csDiffEarly !== undefined && timeline.csDiffLate !== undefined) {
+    if (timeline.csDiffEarly <= -3 && timeline.csDiffLate >= 0) {
+      timelinePhase = '对线落后，中后期追回';
+    } else if (timeline.csDiffEarly >= 3 && timeline.csDiffLate <= 0) {
+      timelinePhase = '前期领先，中后期被追';
+    }
+  }
+  const timelineBlock =
+    timeline && Array.isArray(timeline.segments) && timeline.segments.length
+      ? `<div class="timeline-row">
+          ${timeline.segments
+            .slice(0, 4)
+            .map(
+              (segment) =>
+                `<span class="timeline-seg"><em>${segment.startMin}-${segment.endMin}分</em><b>${kilo(
+                  segment.goldPerMin,
+                )}</b>${
+                  segment.csDiffPerMin === undefined
+                    ? ''
+                    : `<i class="${segment.csDiffPerMin >= 0 ? 'up' : 'down'}">补刀差 ${
+                        segment.csDiffPerMin >= 0 ? '+' : ''
+                      }${num(segment.csDiffPerMin, 1)}</i>`
+                }</span>`,
+            )
+            .join('')}
+          ${
+            timeline.idleMinutes >= 5
+              ? `<span class="timeline-idle">中段 ${Math.round(
+                  timeline.idleMinutes,
+                )} 分钟几乎没有成长</span>`
+              : ''
+          }
+          ${timelinePhase ? `<span class="timeline-phase">${timelinePhase}</span>` : ''}
+        </div>`
+      : '';
+
   const itemIds = thisGame
     ? thisGame.items
     : options.liveView
@@ -910,6 +949,7 @@ function buildCard(player, isLocal, options = {}) {
 
     ${thisGame ? gameRow : liveRow}
     ${thisGame ? radarBlock : ''}
+    ${thisGame ? timelineBlock : ''}
     ${thisGame ? thisGameMetrics : liveMetrics}
     ${thisGame || options.liveView ? itemRow : ''}
     ${thisGame ? '' : gameChips ? `<div class="games">${gameChips}</div>` : ''}
