@@ -112,6 +112,24 @@ export class LiveSource implements DataSource {
   private busy = false;
   private stopped = false;
   private tickRunning = false;
+  /** 本局开始时记录的最新一局，用于赛后识别刚结束的对局 */
+  private inGameSession?: {
+    sessionId: string;
+    puuid: string;
+    previousLatestGameId: number;
+  };
+  /** 离开对局后等待预热的对局（战绩列表可能有延迟，需要重试） */
+  private postGame?: {
+    puuid: string;
+    previousLatestGameId: number;
+    createdAt: number;
+    nextAttemptAt: number;
+  };
+  private prewarmInFlight = false;
+  private prewarmedGameId = 0;
+  private lastPhase = 'None';
+  /** 记录“本局之前最新一局”的重试时间，避免对局开始时阻塞界面 */
+  private inGameRecordAt = 0;
 
   constructor(options: LiveSourceOptions = {}) {
     this.options = {
@@ -762,6 +780,7 @@ export class LiveSource implements DataSource {
       } catch {
         // 客户端关闭或端口失效，下次重新发现
         this.disconnect();
+        this.lastPhase = 'None';
         this.patch({
           phase: 'None',
           inChampSelect: false,
@@ -772,6 +791,14 @@ export class LiveSource implements DataSource {
         });
         return;
       }
+
+      const previousPhase = this.lastPhase;
+      this.lastPhase = phase;
+      if (previousPhase === 'InProgress' && phase !== 'InProgress') {
+        this.schedulePostGamePrewarm();
+      }
+      // 赛后预热不阻塞阶段切换，战绩列表没更新时下一轮继续重试
+      if (this.postGame) void this.maybePrewarmFinishedGame(api);
 
       if (phase === 'InProgress') {
         await this.collectInGame(api);
@@ -910,6 +937,15 @@ export class LiveSource implements DataSource {
     const context: GameContext | undefined =
       queueId !== undefined || gameMode !== undefined ? { queueId, mode: gameMode } : undefined;
     const initialCollection = this.snapshot.players.length === 0;
+    if (initialCollection) this.postGame = undefined;
+    // 记录“这局之前的最新一局”，赛后用它识别刚结束的对局；
+    // 放到后台执行，读不到时 10 秒后重试，不阻塞本局数据
+    if (!this.inGameSession || this.inGameSession.sessionId !== liveSessionId) {
+      if (Date.now() >= this.inGameRecordAt) {
+        this.inGameRecordAt = Date.now() + 10_000;
+        void this.recordInGameSession(api, liveSessionId);
+      }
+    }
     let loggedLoaded = 0;
 
     this.busy = true;
@@ -1165,6 +1201,102 @@ export class LiveSource implements DataSource {
     }, 400);
   }
 
+  /**
+   * 对局开始时记录“这局之前的最新一局”。
+   * 赛后战绩列表出现新 ID 时，就能准确识别刚结束的对局，而不是盲目预热第一场。
+   */
+  private async recordInGameSession(api: LcuApi, sessionId: string): Promise<void> {
+    if (this.inGameSession?.sessionId === sessionId) return;
+    try {
+      const summoner = await api.getCurrentSummoner();
+      if (!summoner.puuid) return;
+      let previousLatestGameId = 0;
+      try {
+        const games = await api.getMatchListByPuuid(summoner.puuid, 1);
+        previousLatestGameId = toNumber(games[0]?.gameId) || 0;
+      } catch {
+        // 记不到旧 ID 时记为 0，赛后仍可按对局时间兜底
+      }
+      // 读取期间可能已经离开对局，避免把上一局的信息写到下一局
+      if (this.snapshot.liveSessionId !== sessionId) return;
+      if (this.inGameSession?.sessionId !== sessionId) {
+        this.inGameSession = {
+          sessionId,
+          puuid: summoner.puuid,
+          previousLatestGameId,
+        };
+      }
+    } catch {
+      // 读不到当前账号时跳过赛后预热，不影响对局中数据
+    }
+  }
+
+  private schedulePostGamePrewarm(): void {
+    const session = this.inGameSession;
+    this.inGameSession = undefined;
+    if (!session) return;
+    this.postGame = {
+      puuid: session.puuid,
+      previousLatestGameId: session.previousLatestGameId,
+      createdAt: Date.now(),
+      nextAttemptAt: Date.now(),
+    };
+  }
+
+  /**
+   * 赛后预热：等战绩列表出现刚结束的对局后，主动生成并保存对局详情。
+   * 用户回到大厅再点开这局时会直接命中 match_details 缓存。
+   */
+  private async maybePrewarmFinishedGame(api: LcuApi): Promise<void> {
+    const pending = this.postGame;
+    if (!pending || this.prewarmInFlight) return;
+    if (Date.now() - pending.createdAt > 3 * 60_000) {
+      this.postGame = undefined;
+      return;
+    }
+    if (Date.now() < pending.nextAttemptAt) return;
+
+    this.prewarmInFlight = true;
+    try {
+      const games = await api.getMatchListByPuuid(pending.puuid, 1).catch(() => []);
+      const newest = games[0];
+      const gameId = toNumber(newest?.gameId) || 0;
+      if (!gameId) {
+        // 战绩列表还没更新，过几秒再试
+        pending.nextAttemptAt = Date.now() + 5_000;
+        return;
+      }
+
+      const created = toNumber(newest?.gameCreation) || 0;
+      const isNewGame =
+        pending.previousLatestGameId > 0
+          ? gameId > pending.previousLatestGameId
+          : created > pending.createdAt - 3 * 60 * 60_000;
+      if (!isNewGame) {
+        pending.nextAttemptAt = Date.now() + 5_000;
+        return;
+      }
+
+      if (gameId === this.prewarmedGameId || (await getSavedMatchDetail(gameId))) {
+        this.prewarmedGameId = gameId;
+        this.postGame = undefined;
+        return;
+      }
+
+      logTag('match', `[${gameId}] 赛后自动预热对局详情…`);
+      await this.getMatchDetail(gameId, this.options.recent);
+      this.prewarmedGameId = gameId;
+      this.postGame = undefined;
+      logTag('match', `[${gameId}] 赛后预热完成`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logTag('match', `赛后预热失败，稍后重试：${message}`);
+      pending.nextAttemptAt = Date.now() + 10_000;
+    } finally {
+      this.prewarmInFlight = false;
+    }
+  }
+
   private disconnect(): void {
     this.eventStream?.close();
     this.eventStream = undefined;
@@ -1176,6 +1308,10 @@ export class LiveSource implements DataSource {
     this.edgeUrl = undefined;
     this.lastMembersKey = '';
     this.nextDiscoveryAt = 0;
+    this.lastPhase = 'None';
+    this.inGameSession = undefined;
+    this.postGame = undefined;
+    this.inGameRecordAt = 0;
   }
 
   /** 按场次复用同一个 collector，让 24 小时缓存真正跨请求生效 */
