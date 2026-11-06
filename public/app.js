@@ -322,6 +322,38 @@ function positionLabel(player, mode) {
   return lane ? (LANE_NAMES[lane] ?? '补位') : '补位';
 }
 
+const POSITION_LANES = {
+  top: 'TOP',
+  jungle: 'JUNGLE',
+  middle: 'MID',
+  mid: 'MID',
+  bottom: 'ADC',
+  adc: 'ADC',
+  utility: 'SUPPORT',
+  support: 'SUPPORT',
+};
+
+function currentLaneOf(player) {
+  const raw = String(player.position ?? '').toUpperCase();
+  if (LANE_NAMES[raw]) return raw;
+  const fromPosition = POSITION_LANES[String(player.position ?? '').toLowerCase()];
+  if (fromPosition) return fromPosition;
+  return player.games?.[0]?.position;
+}
+
+/** 当前分配位置与近期主玩位置不一致时给出提示 */
+function mainPositionHint(player, mode) {
+  if (mode === 'ARAM' || mode === 'ARENA') return '';
+  const main = player.recent?.mainPosition;
+  const share = player.recent?.mainPositionShare ?? 0;
+  if (!main || share < 0.5) return '';
+  const current = currentLaneOf(player);
+  if (!current || current === main || current === 'UNKNOWN') return '';
+  return `<span class="pos-main" title="近期 ${Math.round(
+    share * 100,
+  )}% 的对局走${LANE_NAMES[main] ?? main}">主玩${LANE_NAMES[main] ?? main}</span>`;
+}
+
 function rankLabel(rank) {
   if (!rank) return '未定级';
   const tier = TIER_NAMES[String(rank.tier).toUpperCase()] ?? rank.tier;
@@ -521,6 +553,8 @@ function buildCard(player, isLocal, options = {}) {
     .slice(0, 5);
   const risk = recent?.risk;
   const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
+  const baseline = player.baseline;
+  const championStats = player.championStats;
   const cardMode = options.mode === undefined ? state.snapshot?.gameMode : options.mode;
   const modeName = options.modeLabel ?? currentModeLabel();
   // 大乱斗/竞技场没有常规眼位，不展示视野相关指标
@@ -552,7 +586,16 @@ function buildCard(player, isLocal, options = {}) {
       ? `<span class="dot-sep">·</span><span>${recent.streak.count}${recent.streak.type === 'win' ? '连胜' : '连败'}</span>`
       : '';
 
-  const chips = labels.length
+  // 与个人长期基线比较：只看明显偏离，接近均值时轻描淡写
+  const baselineChip = baseline
+    ? baseline.z >= 1
+      ? `<span class="chip baseline up" title="历史 ${baseline.games} 场均分 ${baseline.avgScore}">高于自身 +${baseline.z.toFixed(1)}σ</span>`
+      : baseline.z <= -1
+        ? `<span class="chip baseline down" title="历史 ${baseline.games} 场均分 ${baseline.avgScore}">低于自身 ${baseline.z.toFixed(1)}σ</span>`
+        : `<span class="chip muted-chip" title="历史 ${baseline.games} 场均分 ${baseline.avgScore}">接近自身水平</span>`
+    : '';
+
+  const chips = labels.length || baselineChip
     ? `<div class="chips">${labels
         .map((label) => {
           const danger = [
@@ -571,7 +614,7 @@ function buildCard(player, isLocal, options = {}) {
           const svp = label === 'SVP';
           return `<span class="chip${gold ? ' gold' : ''}${svp ? ' svp' : ''}${danger ? ' danger' : ''}">${escapeHtml(label)}</span>`;
         })
-        .join('')}</div>`
+        .join('')}${baselineChip}</div>`
     : !thisGame && recent
       ? `<div class="chips"><span class="chip muted-chip">近况平稳</span></div>`
       : '';
@@ -658,6 +701,21 @@ function buildCard(player, isLocal, options = {}) {
         )
         .join('')}</div>`
     : '';
+
+  const championUsage =
+    !thisGame && championStats && championStats.games > 0
+      ? `<div class="champ-usage">
+          <span class="champ-usage-label">本英雄</span>
+          <b>${championStats.games} 场</b>
+          <span>胜率 ${winRatePct(championStats.winRate)}</span>
+          <span>均分 ${num(championStats.avgScore, 1)}</span>
+          ${
+            championStats.bestScore
+              ? `<span class="muted">最高 ${num(championStats.bestScore, 0)}</span>`
+              : ''
+          }
+        </div>`
+      : '';
 
   const detail = games.length && !thisGame
     ? `<button class="btn matches-btn" type="button" data-action="matches">查看最近 ${games.length} 场战绩</button>`
@@ -826,6 +884,7 @@ function buildCard(player, isLocal, options = {}) {
         </div>
         <div class="sub">
           <span class="pos-pill">${escapeHtml(positionLabel(player, cardMode))}</span>
+          ${!thisGame ? mainPositionHint(player, cardMode) : ''}
           ${player.isEnemy ? '<span class="side-badge enemy">敌方</span>' : ''}
           <span>${escapeHtml(rankLabel(player.rank))}</span>
           ${streak}
@@ -858,6 +917,7 @@ function buildCard(player, isLocal, options = {}) {
     ${thisGame ? '' : metrics}
     ${thisGame ? '' : riskNote}
     ${thisGame ? '' : afkNote}
+    ${thisGame ? '' : championUsage}
     ${thisGame ? '' : champions}
     ${thisGame ? '' : error}
     ${detail}

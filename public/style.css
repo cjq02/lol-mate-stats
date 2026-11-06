@@ -1943,6 +1943,58 @@ body::before {
   background: rgba(255, 107, 129, 0.08);
 }
 
+/* 与个人长期基线对比 */
+.chip.baseline.up {
+  color: #9ef0c0;
+  border-color: rgba(80, 220, 140, 0.28);
+  background: rgba(80, 220, 140, 0.08);
+}
+
+.chip.baseline.down {
+  color: #ffc08a;
+  border-color: rgba(255, 170, 90, 0.28);
+  background: rgba(255, 170, 90, 0.08);
+}
+
+/* 近期主玩位置与当前分配不一致 */
+.pos-main {
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: #ffd29a;
+  border: 1px solid rgba(245, 199, 106, 0.28);
+  background: rgba(245, 199, 106, 0.08);
+}
+
+/* 当前英雄的历史熟练度 */
+.champ-usage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 199, 106, 0.16);
+  background: rgba(245, 199, 106, 0.04);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.champ-usage b {
+  color: #ffdda0;
+  font-weight: 650;
+}
+
+.champ-usage .champ-usage-label {
+  color: #ffdda0;
+  opacity: 0.85;
+}
+
+.champ-usage .muted {
+  opacity: 0.65;
+}
+
 .risk-pill {
   font-size: 10px;
   font-weight: 650;
