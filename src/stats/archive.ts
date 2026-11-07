@@ -1,6 +1,7 @@
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import type { ChampionSummary } from '../lcu/api.js';
 import type {
+  AnalyzedGame,
   ArchiveCursor,
   BadLevel,
   ChampionUsage,
@@ -995,6 +996,143 @@ export async function getPlayerMatches(
     return { games, nextCursor };
   } catch {
     return { games: [] };
+  }
+}
+
+/** 存档里的位置字段统一成 AnalyzedGame 使用的 Lane */
+function archiveLane(position: unknown): Lane {
+  switch (String(position ?? '').toUpperCase()) {
+    case 'TOP':
+      return 'TOP';
+    case 'JUNGLE':
+      return 'JUNGLE';
+    case 'MIDDLE':
+    case 'MID':
+      return 'MID';
+    case 'BOTTOM':
+    case 'ADC':
+      return 'ADC';
+    case 'UTILITY':
+    case 'SUPPORT':
+      return 'SUPPORT';
+    case 'ARAM':
+      return 'ARAM';
+    case 'ARENA':
+      return 'ARENA';
+    default:
+      return 'UNKNOWN';
+  }
+}
+
+/**
+ * 从长期存档补出最近战绩，供实时接口失败或样本不足时回退。
+ * 用窗口函数一次算出队伍总伤害/总承伤/总击杀，避免额外查询。
+ */
+export async function getPlayerRecentAnalyzedGames(
+  puuid: string,
+  limit: number,
+  filter: PlayerMatchFilter = {},
+): Promise<AnalyzedGame[]> {
+  const db = await getDb();
+  if (!db || !puuid) return [];
+  const { conditions, params } = playerMatchFilterSql(puuid, filter);
+  conditions.push('p.score IS NOT NULL');
+  conditions.push('m.duration_seconds > 300');
+  conditions.push("COALESCE(m.game_mode, '') <> 'PRACTICETOOL'");
+  const safeLimit = Math.min(100, Math.max(1, Math.trunc(limit) || 10));
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT m.game_id, m.queue_id, m.game_creation, m.duration_seconds,
+              p.team_id, p.champion_id, p.champion_name, p.position, p.win,
+              p.kills, p.deaths, p.assists, p.cs, p.gold, p.damage,
+              p.damage_taken, p.heal, p.vision, p.score, p.tags
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY m.game_creation DESC, m.game_id DESC
+       LIMIT ?`,
+      [...params, safeLimit],
+    );
+    if (!rows.length) return [];
+
+    // 只针对这几场查队伍汇总，避免窗口函数把整张表都算一遍
+    const gameIds = [...new Set(rows.map((row) => Number(row.game_id)))];
+    const placeholders = gameIds.map(() => '?').join(',');
+    const [teamRows] = await db.query<RowDataPacket[]>(
+      `SELECT game_id, team_id,
+              SUM(damage) AS team_damage,
+              SUM(damage_taken) AS team_damage_taken,
+              SUM(kills) AS team_kills
+       FROM match_participants
+       WHERE game_id IN (${placeholders})
+       GROUP BY game_id, team_id`,
+      gameIds,
+    );
+    const teamTotals = new Map<
+      string,
+      { damage: number; damageTaken: number; kills: number }
+    >();
+    for (const row of teamRows) {
+      teamTotals.set(`${Number(row.game_id)}:${Number(row.team_id)}`, {
+        damage: Number(row.team_damage) || 0,
+        damageTaken: Number(row.team_damage_taken) || 0,
+        kills: Number(row.team_kills) || 0,
+      });
+    }
+
+    return rows.flatMap((row): AnalyzedGame[] => {
+      const score = Number(row.score);
+      if (!Number.isFinite(score)) return [];
+      const durationMin = (Number(row.duration_seconds) || 0) / 60;
+      const kills = Number(row.kills) || 0;
+      const deaths = Number(row.deaths) || 0;
+      const assists = Number(row.assists) || 0;
+      const cs = Number(row.cs) || 0;
+      const gold = Number(row.gold) || 0;
+      const damage = Number(row.damage) || 0;
+      const damageTaken = Number(row.damage_taken) || 0;
+      const heal = Number(row.heal) || 0;
+      const vision = Number(row.vision) || 0;
+      const team =
+        teamTotals.get(`${Number(row.game_id)}:${Number(row.team_id)}`) ?? {
+          damage: 0,
+          damageTaken: 0,
+          kills: 0,
+        };
+      const championId = Number(row.champion_id) || 0;
+      return [
+        {
+          gameId: Number(row.game_id),
+          queueId: Number(row.queue_id),
+          queueName: queueName(Number(row.queue_id)),
+          gameCreation: Number(row.game_creation),
+          durationMin,
+          championId: championId >= 60000 ? championId - 60000 : championId,
+          championName: String(row.champion_name ?? ''),
+          win: Number(row.win) === 1,
+          kills,
+          deaths,
+          assists,
+          kda: (kills + assists) / Math.max(1, deaths),
+          cs,
+          csPerMin: durationMin > 0 ? cs / durationMin : 0,
+          gold,
+          damage,
+          heal,
+          damageShare: team.damage > 0 ? damage / team.damage : 0,
+          damagePerMin: durationMin > 0 ? damage / durationMin : 0,
+          tankShare: team.damageTaken > 0 ? damageTaken / team.damageTaken : 0,
+          killParticipation: team.kills > 0 ? (kills + assists) / team.kills : 0,
+          visionScore: vision,
+          visionPerMin: durationMin > 0 ? vision / durationMin : 0,
+          position: archiveLane(row.position),
+          score,
+          tags: parseTagList(row.tags as string | null),
+        },
+      ];
+    });
+  } catch {
+    return [];
   }
 }
 

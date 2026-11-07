@@ -22,6 +22,7 @@ import {
   archiveGames,
   getPlayerBaselines,
   getPlayerChampionUsages,
+  getPlayerRecentAnalyzedGames,
   type PlayerHistorySample,
 } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName } from './constants.js';
@@ -746,16 +747,36 @@ export class ReportCollector {
     }
 
     const summoner = summonerFromBase(base);
+    const self = await this.isSelf(base.puuid);
+    const target = this.options.recent;
 
     try {
-      const [rank, loaded] = await Promise.all([
-        this.getRank(base.puuid),
-        this.loadRecentGames(summoner, context),
-      ]);
-      const games = loaded.games;
+      const rank = await this.getRank(base.puuid);
+      let loaded: { games: RawGame[]; latestGameId: number } | undefined;
+      let historyError: unknown;
+      try {
+        loaded = await this.loadRecentGames(summoner, context);
+      } catch (error) {
+        historyError = error;
+        if (!self) throw error;
+      }
 
-      const analyzed = this.analyzeGames(games, summoner, championMap);
-      const filtered = filterByContext(analyzed, context);
+      const analyzed = loaded ? this.analyzeGames(loaded.games, summoner, championMap) : [];
+      let filtered = filterByContext(analyzed, context);
+      let latestGameId = loaded?.latestGameId ?? 0;
+
+      // 对局中客户端战绩服务可能只返回很少几场；自己的样本不足时用历史存档补齐
+      if (self && filtered.length < target) {
+        const archived = await this.loadArchivedRecentGames(
+          base.puuid,
+          context,
+          target + 5,
+        );
+        if (archived.length) {
+          filtered = mergeIncrementalGames(filtered, archived, target);
+          latestGameId = Math.max(latestGameId, archived[0]?.gameId ?? 0);
+        }
+      }
 
       if (!filtered.length) {
         const label = contextLabel(context);
@@ -767,25 +788,27 @@ export class ReportCollector {
           rating: null,
           labels: [],
           loading: false,
-          error: analyzed.length
-            ? `最近 ${games.length} 场没有${label}记录`
-            : '近期的对局无法解析（可能隐藏了战绩）',
+          error: historyError
+            ? historyErrorMessage(historyError)
+            : analyzed.length
+              ? `最近 ${analyzed.length} 场没有${label}记录`
+              : '近期的对局无法解析（可能隐藏了战绩）',
         };
         this.reportCache.set(cacheKey, {
           at: Date.now(),
-          latestGameId: loaded.latestGameId,
+          latestGameId,
           report,
         });
         this.scheduleSave();
         return report;
       }
 
-      const summary = summarize(filtered.slice(0, this.options.recent), { level: base.level });
+      const summary = summarize(filtered.slice(0, target), { level: base.level });
       const report: PlayerReport = {
         ...base,
         rank,
         recent: summary,
-        games: filtered.slice(0, this.options.recent),
+        games: filtered.slice(0, target),
         rating: summary.rating,
         grade: summary.grade,
         labels: summary.labels,
@@ -794,7 +817,7 @@ export class ReportCollector {
       };
       this.reportCache.set(cacheKey, {
         at: Date.now(),
-        latestGameId: loaded.latestGameId,
+        latestGameId,
         report,
       });
       this.scheduleSave();
@@ -1252,6 +1275,17 @@ export class ReportCollector {
     this.rankCache.set(puuid, { at: Date.now(), rank });
     this.scheduleSave();
     return rank;
+  }
+
+  private async loadArchivedRecentGames(
+    puuid: string | undefined,
+    context: GameContext | undefined,
+    limit: number,
+  ): Promise<AnalyzedGame[]> {
+    if (!puuid) return [];
+    const hasContext = Boolean(context && (context.queueId !== undefined || context.mode));
+    const group = hasContext ? currentQueueGroup(context?.queueId, context?.mode) : undefined;
+    return getPlayerRecentAnalyzedGames(puuid, limit, { group });
   }
 
   private async loadRecentGames(
