@@ -779,6 +779,15 @@ function buildCard(player, isLocal, options = {}) {
         <div class="metric"><span>场均伤害</span><b>${kilo(recent.avgDamage)}</b></div>
         <div class="metric"><span>场均治疗</span><b>${kilo(recent.avgHeal ?? 0)}</b></div>
         ${
+          risk
+            ? `<div class="metric bad-metric${
+                risk.badGames / Math.max(1, recent.games) >= 0.5 ? ' is-high' : ''
+              }" title="近 ${recent.games} 场中 ${risk.badGames} 场多项数据低于同位置参考值，其中 ${
+                risk.severeGames
+              } 场严重偏低"><span>坑场次</span><b>${risk.badGames} / ${recent.games}</b></div>`
+            : ''
+        }
+        ${
           recent.afkGames
             ? `<div class="metric afk-metric"><span>疑似挂机</span><b>${recent.afkGames} 场</b></div>`
             : ''

@@ -2420,6 +2420,16 @@ body::before {
   color: #ffb86b;
 }
 
+.metric.bad-metric,
+.metric.bad-metric b {
+  color: #ff8ccb;
+}
+
+.metric.bad-metric.is-high,
+.metric.bad-metric.is-high b {
+  color: #ff4d6d;
+}
+
 /* 近期对局条 */
 
 /* 近期评分走势 */
