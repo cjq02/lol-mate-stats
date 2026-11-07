@@ -8,6 +8,7 @@ import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, perc
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
+import { championProficiency } from './proficiency.js';
 
 let passed = 0;
 
@@ -931,6 +932,36 @@ test('时段统计使用当前坑线重新判断结果', () => {
   assert.ok(early);
   assert.equal(early.teammateBadGames, 1);
   assert.equal(early.selfBadGames, 1);
+});
+
+test('英雄熟练度综合场次和表现并随样本增长', () => {
+  const oneGame = championProficiency({
+    games: 1,
+    winRate: 1,
+    avgScore: 80,
+    bestScore: 80,
+  });
+  const tenGames = championProficiency({
+    games: 10,
+    winRate: 0.6,
+    avgScore: 65,
+    bestScore: 80,
+  });
+  const hundredGames = championProficiency({
+    games: 100,
+    winRate: 0.55,
+    avgScore: 70,
+    bestScore: 90,
+  });
+
+  assert.ok(oneGame > 0 && oneGame < 20, `oneGame=${oneGame}`);
+  assert.ok(tenGames > 30 && tenGames < 55, `tenGames=${tenGames}`);
+  assert.ok(hundredGames > 70 && hundredGames < 90, `hundredGames=${hundredGames}`);
+  assert.ok(oneGame < tenGames && tenGames < hundredGames);
+  assert.equal(
+    championProficiency({ games: 0, winRate: 1, avgScore: 100, bestScore: 100 }),
+    0,
+  );
 });
 
 test('低伤害低承伤但 KDA 好看的局判为挂机', () => {

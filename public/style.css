@@ -429,6 +429,11 @@ body::before {
   color: var(--muted);
 }
 
+.champion-rank-prof {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .champion-rank-stats {
   display: flex;
   flex-direction: column;

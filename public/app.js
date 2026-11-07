@@ -173,6 +173,7 @@ const CHAMPION_RANKING_SORT_LABELS = {
   games: '场次',
   winRate: '胜率',
   best: '最高分',
+  proficiency: '熟练度',
 };
 
 const TIME_STATS_DIMENSION_LABELS = {
@@ -3260,6 +3261,13 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       if (sort === 'best') {
         return number(b.bestScore) - number(a.bestScore) || number(b.avgScore) - number(a.avgScore);
       }
+      if (sort === 'proficiency') {
+        return (
+          number(b.proficiency) - number(a.proficiency) ||
+          number(b.avgScore) - number(a.avgScore) ||
+          number(b.games) - number(a.games)
+        );
+      }
       return number(b.avgScore) - number(a.avgScore) || number(b.games) - number(a.games);
     });
   const modeLabel =
@@ -3283,6 +3291,7 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const rank = index + 1;
       const name = item.championName || '未知英雄';
       const avg = Number(item.avgScore) || 0;
+      const prof = Number(item.proficiency) || 0;
       return `<button class="champion-rank-row" type="button" data-champion-id="${
         Number(item.championId) || 0
       }" data-champion-name="${escapeHtml(name)}">
@@ -3290,7 +3299,12 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
         ${iconHtml(champPath(item.championId), name, 'sm')}
         <span class="champion-rank-main">
           <b>${escapeHtml(name)}</b>
-          <small>${Number(item.games) || 0} 场 · 胜率 ${winRatePct(item.winRate)}</small>
+          <small>${Number(item.games) || 0} 场 · 胜率 ${winRatePct(
+            item.winRate,
+          )} · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${num(
+            prof,
+            0,
+          )}</span></small>
         </span>
         <span class="champion-rank-stats">
           <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(

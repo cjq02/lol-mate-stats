@@ -24,6 +24,7 @@ import {
 } from './flags.js';
 import { queueName } from './constants.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
+import { championProficiency } from './proficiency.js';
 import { getDb, readMeta, withTransaction, writeMeta } from './store.js';
 import { summarizeTimeStats, type TimeStatsSummary } from './time-stats.js';
 
@@ -668,6 +669,8 @@ export interface ChampionScoreSummary {
   avgScore: number;
   bestScore: number;
   worstScore: number;
+  /** 综合熟练度 0-100（场次经验 + 表现分 × 样本置信度） */
+  proficiency: number;
 }
 
 /**
@@ -712,15 +715,19 @@ export async function getPlayerChampionScores(
     return rows.map((row) => {
       const games = Number(row.games) || 0;
       const wins = Number(row.wins) || 0;
+      const winRate = games > 0 ? wins / games : 0;
+      const avgScore = Number(row.avg_score) || 0;
+      const bestScore = Number(row.best_score) || 0;
       return {
         championId: Number(row.champion_id),
         championName: String(row.champion_name ?? ''),
         games,
         wins,
-        winRate: games > 0 ? wins / games : 0,
-        avgScore: Number(row.avg_score) || 0,
-        bestScore: Number(row.best_score) || 0,
+        winRate,
+        avgScore,
+        bestScore,
         worstScore: Number(row.worst_score) || 0,
+        proficiency: championProficiency({ games, winRate, avgScore, bestScore }),
       };
     });
   } catch {
