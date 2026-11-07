@@ -310,7 +310,7 @@ function ratingColor(rating, stats) {
   if (rating >= 70) return '#5eead4';
   if (rating >= 60) return '#f5c76a';
   if (rating >= 50) return '#ffab5e';
-  if (rating >= 40) return '#ff8ccb';
+  if (rating >= 40) return '#ff9b9b';
   return '#ff4d6d';
 }
 

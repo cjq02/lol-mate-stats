@@ -2422,7 +2422,7 @@ body::before {
 
 .metric.bad-metric,
 .metric.bad-metric b {
-  color: #ff8ccb;
+  color: #ff9b9b;
 }
 
 .metric.bad-metric.is-high,
