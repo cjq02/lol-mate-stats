@@ -13,7 +13,7 @@ import type {
   RawGame,
   SummonerInfo,
 } from '../types.js';
-import { mapLimit, round, toNumber, truncate } from '../util.js';
+import { logTag, mapLimit, round, toNumber, truncate } from '../util.js';
 import type { ChampionSummary, LcuApi } from '../lcu/api.js';
 import { LcuError } from '../lcu/http.js';
 import { liveItemIds } from '../lcu/live.js';
@@ -58,7 +58,7 @@ const CACHE_SAVE_DELAY = 2_000;
 /** 报告缓存保留时长：只用于清理长期不用的数据，是否过期由“最新对局 ID”决定 */
 const REPORT_RETENTION_MS = 30 * DAY_MS;
 /** 缓存版本：标签口径变化时递增，让旧报告自动失效 */
-const REPORT_CACHE_VERSION = 'v3';
+const REPORT_CACHE_VERSION = 'v4';
 /** 两次“检查有没有新对局”的最小间隔，避免对局中每轮都请求 LCU */
 const REPORT_RECHECK_MS = 5 * 60_000;
 /** 单类缓存最多落盘多少条，避免数据库无限增长 */
@@ -720,8 +720,14 @@ export class ReportCollector {
     if (!base.summonerId || !base.puuid) return { ...base, loading: false };
 
     const cacheKey = reportCacheKey(base.summonerId, context, this.options.recent);
+    const self = await this.isSelf(base.puuid);
+    const target = this.options.recent;
     const cached = this.reportCache.get(cacheKey);
-    if (cached) {
+    // 自己的缓存样本不足时不要直接复用，重新走客户端 + 存档补齐
+    const cachedSampleShort = Boolean(
+      self && cached && (cached.report.games?.length ?? 0) < target,
+    );
+    if (cached && !cachedSampleShort) {
       // 刚检查过就直接用；超过间隔才去客户端确认有没有新对局
       if (Date.now() - cached.at < REPORT_RECHECK_MS) {
         return this.withLiveData(cached.report, base);
@@ -747,8 +753,6 @@ export class ReportCollector {
     }
 
     const summoner = summonerFromBase(base);
-    const self = await this.isSelf(base.puuid);
-    const target = this.options.recent;
 
     try {
       const rank = await this.getRank(base.puuid);
@@ -775,6 +779,10 @@ export class ReportCollector {
         if (archived.length) {
           filtered = mergeIncrementalGames(filtered, archived, target);
           latestGameId = Math.max(latestGameId, archived[0]?.gameId ?? 0);
+          logTag(
+            'match',
+            `对局中自己的样本不足，已用历史存档补齐到 ${filtered.length}/${target} 场`,
+          );
         }
       }
 
