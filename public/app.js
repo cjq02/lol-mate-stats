@@ -1446,34 +1446,88 @@ function startAiTimer(ai) {
   }, 1000);
 }
 
+/** 判断纯文本编号行是不是 AI 输出的一级章节标题 */
+function isAiSectionLine(index, text) {
+  const number = Number(index);
+  const title = String(text ?? '').trim();
+  if (!Number.isInteger(number) || number < 1 || number > 12 || !title) return false;
+  const beforeColon = title.split(/[：:]/)[0].trim();
+  if (beforeColon && beforeColon.length <= 18 && beforeColon.length < title.length) {
+    return true;
+  }
+  return title.length <= 18 && !/[。；;]/.test(title);
+}
+
 function aiMarkdown(text) {
   const lines = escapeHtml(text).split(/\r?\n/);
   let html = '';
+  let blockOpen = false;
+
+  const closeBlock = () => {
+    if (!blockOpen) return;
+    html += '</section>';
+    blockOpen = false;
+  };
+  const openBlock = (index, title) => {
+    closeBlock();
+    html += `<section class="ai-block"><h3 class="ai-block-title">${
+      index ? `<span class="ai-block-no">${index}</span>` : ''
+    }<span>${title}</span></h3>`;
+    blockOpen = true;
+  };
+
   for (const raw of lines) {
     let line = raw.trimEnd();
     if (!line.trim()) {
-      html += '<div class="ai-gap"></div>';
+      if (!blockOpen) html += '<div class="ai-gap"></div>';
       continue;
     }
     line = line
       .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
       .replace(/`([^`]+)`/g, '<code>$1</code>');
-    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+
+    const heading = /^\s*(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
-      html += `<h4>${heading[1]}</h4>`;
+      const level = heading[1].length;
+      const content = heading[2].trim();
+      const numbered = /^(\d+)[.、)]\s*(.*)$/.exec(content);
+      if (level <= 2) {
+        openBlock(numbered ? numbered[1] : '', numbered ? numbered[2] : content);
+      } else {
+        html += `<h4 class="ai-subtitle">${content}</h4>`;
+      }
       continue;
     }
-    const numbered = /^(\d+)[.、)]\s+(.*)$/.exec(line);
+
+    const numbered = /^\s*(\d+)[.、)]\s*(.*)$/.exec(line);
+    if (numbered && isAiSectionLine(numbered[1], numbered[2])) {
+      const content = numbered[2].trim();
+      const colon = content.search(/[：:]/);
+      if (colon > 0 && colon <= 18) {
+        openBlock(numbered[1], content.slice(0, colon).trim());
+        const rest = content.slice(colon + 1).trim();
+        if (rest) html += `<p>${rest}</p>`;
+      } else {
+        openBlock(numbered[1], content);
+      }
+      continue;
+    }
     if (numbered) {
       html += `<p class="ai-num"><span>${numbered[1]}</span>${numbered[2]}</p>`;
       continue;
     }
-    if (/^[-*•]\s*/.test(line)) {
-      html += `<p class="ai-bullet">${line.replace(/^[-*•]\s*/, '')}</p>`;
+
+    const bullet = /^(\s*)[-*•]\s+(.*)$/.exec(line);
+    if (bullet) {
+      const nested = bullet[1].length >= 2 ? ' nested' : '';
+      html += `<p class="ai-bullet${nested}">${bullet[2]}</p>`;
       continue;
     }
-    html += `<p>${line}</p>`;
+
+    html += `<p>${line.trim()}</p>`;
   }
+
+  closeBlock();
   return html;
 }
 

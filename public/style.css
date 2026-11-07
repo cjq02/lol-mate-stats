@@ -787,6 +787,51 @@ body::before {
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-block {
+  padding: 12px 14px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ai-block-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #eaf4ff;
+}
+
+.ai-block-no {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.14);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ai-block p {
+  margin: 0 0 6px;
+}
+
+.ai-block p:last-child {
+  margin-bottom: 0;
+}
+
+.ai-bullet.nested {
+  margin-left: 14px;
 }
 
 .ai-status {
@@ -802,10 +847,10 @@ body::before {
 }
 
 .ai-content h4 {
-  margin: 11px 0 5px;
-  font-size: 14px;
-  font-weight: 650;
-  color: var(--accent);
+  margin: 10px 0 5px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #bcd2ff;
 }
 
 .ai-content b {
