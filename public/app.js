@@ -2077,7 +2077,7 @@ function matchRow(game, showScore) {
     ? `<span class="self-bad-badge ${selfBadLevel}">${selfBadTag}</span>`
     : '';
   return `<button class="game-row match-item ${
-    remake ? 'remake' : game.win ? '' : 'loss'
+    remake ? 'remake' : game.win ? 'win' : 'loss'
   }${bestTag ? ` has-${bestTag.toLowerCase()}` : ''}${
     selfBadTag ? ` has-self-bad self-bad-${selfBadLevel}` : ''
   }" type="button" data-game-id="${game.gameId}">

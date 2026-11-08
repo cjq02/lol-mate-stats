@@ -1093,6 +1093,21 @@ body::before {
   background: linear-gradient(90deg, rgba(255, 92, 122, 0.28), rgba(255, 255, 255, 0.04) 66%);
 }
 
+/* 胜局即使自己小坑，也保留绿色胜利底色，只用左侧红边和徽章标记坑 */
+.match-item.has-self-bad.win {
+  background: linear-gradient(90deg, rgba(61, 220, 151, 0.14), rgba(255, 255, 255, 0.022) 62%);
+}
+
+.match-item.has-self-bad.win:hover {
+  background: linear-gradient(90deg, rgba(61, 220, 151, 0.22), rgba(255, 255, 255, 0.04) 66%);
+}
+
+.match-item.has-self-bad.win .result {
+  color: #041a12;
+  background: var(--win);
+  box-shadow: 0 0 10px rgba(61, 220, 151, 0.4);
+}
+
 .match-item.has-self-bad .result {
   color: #2b0308;
   background: #ff6b81;
