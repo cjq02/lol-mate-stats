@@ -9,6 +9,7 @@ import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
+import { premadeSizesByPuuid } from './premade.js';
 
 let passed = 0;
 
@@ -977,6 +978,26 @@ test('坑场次包含小坑、坑和巨坑', () => {
   ]);
   assert.equal(summary.games, 5);
   assert.equal(summary.pitGames, 4);
+});
+
+test('识别同队共享 teamParticipantId 的开黑玩家', () => {
+  const sizes = premadeSizesByPuuid([
+    [
+      { puuid: 'a', teamParticipantId: 1 },
+      { puuid: 'b', teamParticipantId: 1 },
+      { puuid: 'c', teamParticipantId: 2 },
+    ],
+    [
+      { puuid: 'd', teamParticipantId: 1 },
+      { puuid: 'e', teamParticipantId: 1 },
+    ],
+  ]);
+  assert.equal(sizes.get('a'), 2);
+  assert.equal(sizes.get('b'), 2);
+  assert.equal(sizes.get('c'), undefined);
+  assert.equal(sizes.get('d'), 2);
+  assert.equal(sizes.get('e'), 2);
+  assert.equal(sizes.size, 4);
 });
 
 test('低伤害低承伤但 KDA 好看的局判为挂机', () => {

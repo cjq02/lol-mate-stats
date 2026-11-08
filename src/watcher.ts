@@ -53,6 +53,7 @@ import {
   isRemakeGame,
 } from './stats/flags.js';
 import { gradeOf } from './stats/rating.js';
+import { premadeSizesByPuuid } from './stats/premade.js';
 import { summarizeMatchSummaries, type TimeStatsSummary } from './stats/time-stats.js';
 import { linkLiveAnalysisToGameByTime, getSavedMatchDetail, saveMatchDetail } from './stats/store.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
@@ -118,6 +119,9 @@ export class LiveSource implements DataSource {
   private busy = false;
   private stopped = false;
   private tickRunning = false;
+  /** 本局开黑分组：puuid -> 队伍人数 */
+  private premadeSessionId = '';
+  private premadeSizes = new Map<string, number>();
   /** 本局开始时记录的最新一局，用于赛后识别刚结束的对局 */
   private inGameSession?: {
     sessionId: string;
@@ -1019,9 +1023,28 @@ export class LiveSource implements DataSource {
 
     try {
       const collector = this.ensureCollector(api);
+      // 开黑分组在一局内不会变化，按对局会话缓存；拿不到时下个 tick 再试
+      if (this.premadeSessionId !== liveSessionId) {
+        const flow = await api.getGameflowSession().catch(() => null);
+        if (flow?.gameData) {
+          this.premadeSizes = premadeSizesByPuuid([
+            flow.gameData.teamOne,
+            flow.gameData.teamTwo,
+          ]);
+          this.premadeSessionId = liveSessionId;
+        }
+      }
+      const applyPremade = (list: PlayerReport[]) => {
+        for (const report of list) {
+          const size = report.puuid ? this.premadeSizes.get(report.puuid) : undefined;
+          if (size && size >= 2) report.premadeSize = size;
+          else delete report.premadeSize;
+        }
+      };
       const reports = await collector.collectLive(
         members,
         (partial) => {
+          applyPremade(partial);
           const loaded = partial.filter((player) => !player.loading).length;
           if (initialCollection && loaded > loggedLoaded) {
             loggedLoaded = loaded;
@@ -1033,6 +1056,7 @@ export class LiveSource implements DataSource {
         gameTime,
       );
 
+      applyPremade(reports);
       const selfIndex = self ? members.indexOf(self) : -1;
       const selfReport = selfIndex >= 0 ? reports[selfIndex] : undefined;
       this.patch({
@@ -1106,9 +1130,33 @@ export class LiveSource implements DataSource {
     try {
       const collector = this.ensureCollector(api);
       collector.setSelfPuuid(localMember?.puuid);
+      // 选人阶段用大厅成员识别开黑；对局中大厅接口会失效，改用 gameflow 分组
+      const lobbyMembers = await api.getLobbyMembers().catch(() => null);
+      const partySize = Array.isArray(lobbyMembers) ? lobbyMembers.length : 0;
+      const partyPuuids = new Set(
+        (lobbyMembers ?? []).map((member) => member.puuid).filter(Boolean),
+      );
+      const partySummonerIds = new Set(
+        (lobbyMembers ?? [])
+          .map((member) => Number(member.summonerId))
+          .filter((id) => Number.isFinite(id) && id > 0),
+      );
+      const applyPremade = (list: PlayerReport[]) => {
+        for (const report of list) {
+          const inParty =
+            partySize >= 2 &&
+            Boolean(
+              (report.puuid && partyPuuids.has(report.puuid)) ||
+                (report.summonerId && partySummonerIds.has(report.summonerId)),
+            );
+          if (inParty) report.premadeSize = partySize;
+          else delete report.premadeSize;
+        }
+      };
       const reports = await collector.collect(
         session,
         (partial) => {
+          applyPremade(partial);
           const loaded = partial.filter((player) => !player.loading).length;
           if (loaded > loggedLoaded) {
             loggedLoaded = loaded;
@@ -1126,6 +1174,7 @@ export class LiveSource implements DataSource {
         context,
       );
 
+      applyPremade(reports);
       this.lastCollectAt = Date.now();
       this.patch(
         {

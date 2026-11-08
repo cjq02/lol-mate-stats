@@ -2,6 +2,7 @@ import type {
   ChampSelectSession,
   GameflowSession,
   LcuConnection,
+  LobbyMember,
   RankInfo,
   RawGame,
   SummonerInfo,
@@ -39,6 +40,11 @@ export class LcuApi {
 
   getChampSelectSession(): Promise<ChampSelectSession | null> {
     return this.http.getOrNull<ChampSelectSession>('/lol-champ-select/v1/session', 8_000);
+  }
+
+  /** 大厅/选人阶段的队伍成员；对局中通常为空 */
+  getLobbyMembers(): Promise<LobbyMember[] | null> {
+    return this.http.getOrNull<LobbyMember[]>('/lol-lobby/v2/lobby/members', 5_000);
   }
 
   /** 当前对局信息（队列 ID、模式），选人阶段也能拿到 */

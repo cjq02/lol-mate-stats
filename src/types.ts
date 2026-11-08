@@ -462,10 +462,25 @@ export interface LiveGamePlayer {
   };
 }
 
+export interface GameflowTeamMember {
+  puuid?: string;
+  summonerId?: number;
+  /** 同一开黑队伍会共享这个 ID */
+  teamParticipantId?: number;
+}
+
+/** 大厅/选人阶段的队伍成员（用于识别开黑） */
+export interface LobbyMember {
+  puuid?: string;
+  summonerId?: number;
+}
+
 export interface GameflowSession {
   gameData?: {
     gameMode?: string;
     queue?: { id?: number };
+    teamOne?: GameflowTeamMember[];
+    teamTwo?: GameflowTeamMember[];
   };
 }
 
@@ -606,6 +621,8 @@ export interface PlayerReport {
   isBot?: boolean;
   /** 对局中的敌方玩家 */
   isEnemy?: boolean;
+  /** 本局一起开黑的人数（仅当前对局可识别，2 人以上才有值） */
+  premadeSize?: number;
   /** 近期综合评分 0-100，取不到战绩时为 null */
   rating: number | null;
   grade?: Grade;
