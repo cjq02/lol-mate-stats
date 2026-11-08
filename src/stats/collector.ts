@@ -58,7 +58,7 @@ const CACHE_SAVE_DELAY = 2_000;
 /** 报告缓存保留时长：只用于清理长期不用的数据，是否过期由“最新对局 ID”决定 */
 const REPORT_RETENTION_MS = 30 * DAY_MS;
 /** 缓存版本：标签口径变化时递增，让旧报告自动失效 */
-const REPORT_CACHE_VERSION = 'v4';
+const REPORT_CACHE_VERSION = 'v5';
 /** 两次“检查有没有新对局”的最小间隔，避免对局中每轮都请求 LCU */
 const REPORT_RECHECK_MS = 5 * 60_000;
 /** 单类缓存最多落盘多少条，避免数据库无限增长 */

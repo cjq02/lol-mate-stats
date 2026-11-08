@@ -652,6 +652,9 @@ function buildCard(player, isLocal, options = {}) {
     .slice(0, 5);
   const risk = recent?.risk;
   const risky = Boolean(risk && (risk.level === 'high' || risk.level === 'severe'));
+  const pitGames = Number.isFinite(Number(recent?.pitGames))
+    ? Number(recent.pitGames)
+    : risk?.badGames ?? 0;
   const baseline = player.baseline;
   const championStats = player.championStats;
   const cardMode = options.mode === undefined ? state.snapshot?.gameMode : options.mode;
@@ -782,10 +785,8 @@ function buildCard(player, isLocal, options = {}) {
         ${
           risk
             ? `<div class="metric bad-metric${
-                risk.badGames / Math.max(1, recent.games) >= 0.5 ? ' is-high' : ''
-              }" title="近 ${recent.games} 场中 ${risk.badGames} 场多项数据低于同位置参考值，其中 ${
-                risk.severeGames
-              } 场严重偏低"><span>坑场次</span><b>${risk.badGames} / ${recent.games}</b></div>`
+                pitGames / Math.max(1, recent.games) >= 0.5 ? ' is-high' : ''
+              }" title="近 ${recent.games} 场中 ${pitGames} 场单场评分 < 40，包含小坑 / 坑 / 巨坑"><span>坑场次</span><b>${pitGames} / ${recent.games}</b></div>`
             : ''
         }
         ${

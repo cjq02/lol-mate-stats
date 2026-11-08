@@ -12,6 +12,13 @@ import type { ChampionRole } from './champion-roles.js';
 import { clamp, round } from '../util.js';
 import { LANE_NAMES } from './constants.js';
 
+/** 低于此分数算“坑” */
+export const BAD_GAME_SCORE = 30;
+/** 略低于正常水平，算“小坑” */
+export const MILD_BAD_GAME_SCORE = 40;
+/** 多项数据严重不达标，算“巨坑” */
+export const SEVERE_BAD_GAME_SCORE = 20;
+
 interface MetricProfile {
   kda: number;
   damageShare: number;
@@ -461,6 +468,8 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
   const winRate = sorted.length ? wins / sorted.length : 0;
   const afkGames = sorted.filter(isAfkLike).length;
   const afkRate = sorted.length ? afkGames / sorted.length : 0;
+  // 坑场次按单场评分统一计算，包含小坑 / 坑 / 巨坑
+  const pitGames = sorted.filter((game) => Number(game.score) < MILD_BAD_GAME_SCORE).length;
 
   const positionCounts = new Map<Lane, number>();
   for (const game of sorted) {
@@ -537,6 +546,7 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
     winRate,
     afkGames,
     afkRate,
+    pitGames,
     avgKda: round(avgKda, 2),
     avgScore: round(avgScore, 1),
     avgDamage: Math.round(avgDamage),

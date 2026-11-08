@@ -41,6 +41,7 @@ interface GameOverrides {
   gameCreation?: number;
   heal?: number;
   timeline?: GameTimeline;
+  score?: number;
 }
 
 function makeGame(index: number, lane: Lane, overrides: GameOverrides = {}): AnalyzedGame {
@@ -84,19 +85,21 @@ function makeGame(index: number, lane: Lane, overrides: GameOverrides = {}): Ana
     visionScore: Math.round(visionPerMin * durationMin),
     visionPerMin,
     position: overrides.position ?? lane,
-    score: performanceScore(
-      {
-        kda,
-        damageShare,
-        damagePerMin,
-        tankShare,
-        killParticipation,
-        csPerMin,
-        visionPerMin,
-        win,
-      },
-      overrides.position ?? lane,
-    ),
+    score:
+      overrides.score ??
+      performanceScore(
+        {
+          kda,
+          damageShare,
+          damagePerMin,
+          tankShare,
+          killParticipation,
+          csPerMin,
+          visionPerMin,
+          win,
+        },
+        overrides.position ?? lane,
+      ),
     tags: [],
     timeline: overrides.timeline,
   };
@@ -962,6 +965,18 @@ test('英雄熟练度综合场次和表现并随样本增长', () => {
     championProficiency({ games: 0, winRate: 1, avgScore: 100, bestScore: 100 }),
     0,
   );
+});
+
+test('坑场次包含小坑、坑和巨坑', () => {
+  const summary = summarize([
+    makeGame(1, 'MID', { score: 39.9 }),
+    makeGame(2, 'MID', { score: 30 }),
+    makeGame(3, 'MID', { score: 29.9 }),
+    makeGame(4, 'MID', { score: 19.9 }),
+    makeGame(5, 'MID', { score: 40 }),
+  ]);
+  assert.equal(summary.games, 5);
+  assert.equal(summary.pitGames, 4);
 });
 
 test('低伤害低承伤但 KDA 好看的局判为挂机', () => {

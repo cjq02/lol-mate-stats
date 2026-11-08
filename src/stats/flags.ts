@@ -2,14 +2,15 @@ import type { BadLevel, RawGame } from '../types.js';
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
 import { analyzeParticipant, computeMatchScores } from './analyze.js';
-import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
+import {
+  BAD_GAME_SCORE,
+  isAfkLikeRelative,
+  MILD_BAD_GAME_SCORE,
+  SEVERE_BAD_GAME_SCORE,
+  type AfkRelativeStats,
+} from './rating.js';
 
-/** 低于此分数算“坑” */
-export const BAD_GAME_SCORE = 30;
-/** 略低于正常水平，算“小坑” */
-export const MILD_BAD_GAME_SCORE = 40;
-/** 多项数据严重不达标，算“巨坑” */
-export const SEVERE_BAD_GAME_SCORE = 20;
+export { BAD_GAME_SCORE, MILD_BAD_GAME_SCORE, SEVERE_BAD_GAME_SCORE };
 
 const BAD_LEVEL_RANK: Record<BadLevel, number> = { mild: 1, bad: 2, severe: 3 };
 
