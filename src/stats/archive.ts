@@ -34,6 +34,8 @@ export interface ArchivedMatch {
   gameId: number;
   queueId: number;
   queueName: string;
+  /** 结算接口保存的 gameMode（CLASSIC / ARAM / CHERRY 等） */
+  gameMode?: string;
   gameCreation: number;
   gameDuration: number;
   championId: number;
@@ -935,7 +937,7 @@ export async function getPlayerMatches(
   }
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT m.game_id, m.queue_id, m.game_creation, m.duration_seconds,
+      `SELECT m.game_id, m.queue_id, m.game_mode, m.game_creation, m.duration_seconds,
               p.team_id, p.champion_id, p.champion_name, p.position, p.win,
               p.kills, p.deaths, p.assists, p.cs, p.gold, p.damage,
               p.damage_taken, p.heal, p.vision, p.score, p.tags
@@ -971,6 +973,7 @@ export async function getPlayerMatches(
         gameId,
         queueId: Number(row.queue_id),
         queueName: queueName(Number(row.queue_id)),
+        gameMode: row.game_mode ? String(row.game_mode) : undefined,
         gameCreation: Number(row.game_creation),
         gameDuration: Number(row.duration_seconds),
         championId:

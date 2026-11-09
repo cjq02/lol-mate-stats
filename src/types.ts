@@ -489,6 +489,8 @@ export interface MatchSummary {
   gameId: number;
   queueId: number;
   queueName: string;
+  /** LCU 的 gameMode（CLASSIC / ARAM / CHERRY 等） */
+  gameMode?: string;
   gameCreation: number;
   gameDuration: number;
   championId: number;

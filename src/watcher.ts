@@ -325,6 +325,7 @@ export class LiveSource implements DataSource {
           gameId: toNumber(game.gameId),
           queueId: toNumber(game.queueId),
           queueName: queueName(toNumber(game.queueId)),
+          gameMode: typeof game.gameMode === 'string' ? game.gameMode : undefined,
           gameCreation: toNumber(game.gameCreation),
           gameDuration: rawDuration > 100_000 ? Math.round(rawDuration / 1000) : rawDuration,
           championId,

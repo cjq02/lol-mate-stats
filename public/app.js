@@ -33,6 +33,7 @@ const els = {
   matchesRefresh: document.getElementById('matches-refresh'),
   matchesAi: document.getElementById('matches-ai'),
   matchTabs: document.getElementById('match-tabs'),
+  myMatchesTabs: document.getElementById('my-matches-tabs'),
   matchMeta: document.getElementById('match-meta'),
   matchProgress: document.getElementById('match-progress'),
   matchSummary: document.getElementById('match-summary'),
@@ -221,6 +222,8 @@ const state = {
   modeRecord: null,
   /** 非空时“我的战绩”只显示该英雄的对局 */
   championFilter: null,
+  /** “我的战绩”当前模式页签：all / SR / ARAM / ARENA */
+  myMatchesMode: 'ARAM',
   myGames: [],
   myLcuOffset: 0,
   lcuExhausted: false,
@@ -2397,6 +2400,7 @@ function renderMatchesView(games, title, showScore) {
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   els.matchTabs.classList.add('hidden');
+  els.myMatchesTabs?.classList.add('hidden');
   els.matchesTitle.textContent = title;
   els.matchesList.className = 'match-list';
   els.matchesList.innerHTML = games.length
@@ -2755,11 +2759,56 @@ function mergeMatchLists(...lists) {
   );
 }
 
+/** 把一场战绩归入大模式页签；归不进去的特殊模式只在「全部」里显示 */
+function matchModeKey(game) {
+  const queueId = Number(game?.queueId) || 0;
+  const position = String(game?.position ?? '').toUpperCase();
+  const mode = String(game?.gameMode ?? '').toUpperCase();
+  if (mode === 'ARAM' || queueId === 450 || queueId === 720 || position === 'ARAM') {
+    return 'ARAM';
+  }
+  if (mode === 'CHERRY' || queueId === 1700 || queueId === 1710 || position === 'ARENA') {
+    return 'ARENA';
+  }
+  if (
+    mode === 'CLASSIC' ||
+    mode === 'SWIFTPLAY' ||
+    [400, 420, 430, 440, 890].includes(queueId) ||
+    ['TOP', 'JUNGLE', 'MIDDLE', 'MID', 'BOTTOM', 'ADC', 'UTILITY', 'SUPPORT'].includes(
+      position,
+    )
+  ) {
+    return 'SR';
+  }
+  return undefined;
+}
+
+/** 当前页签对应的存档过滤模式；「全部」不限制 */
+function myMatchesModeValue() {
+  return state.myMatchesMode === 'all' ? '' : state.myMatchesMode;
+}
+
+/** 只保留当前模式页签的对局 */
+function filterGamesByMyMode(games) {
+  if (!state.myMatchesMode || state.myMatchesMode === 'all') return games;
+  return games.filter((game) => matchModeKey(game) === state.myMatchesMode);
+}
+
 function filteredMyGames() {
   const filter = state.championFilter;
   const games = state.myGames ?? [];
-  if (!filter) return games;
+  if (!filter) return filterGamesByMyMode(games);
   return games.filter((game) => Number(game.championId) === filter.championId);
+}
+
+/** 同步「我的战绩」模式页签的显示与选中状态 */
+function updateMyMatchesTabs(visible) {
+  if (!els.myMatchesTabs) return;
+  els.myMatchesTabs.classList.toggle('hidden', !visible);
+  if (!visible) return;
+  for (const button of els.myMatchesTabs.querySelectorAll('[data-my-mode]')) {
+    button.classList.toggle('active', button.dataset.myMode === state.myMatchesMode);
+  }
 }
 
 function renderMyMatches() {
@@ -2782,20 +2831,24 @@ function renderMyMatches() {
       : `我的战绩${count}${stats}`,
     true,
   );
+  updateMyMatchesTabs(!filter);
   els.matchesList.scrollTop = scrollTop;
   state.currentView = renderMyMatches;
   setMatchesRefresh(() =>
-    openMyMatches({ keepFilter: true, preserveNavigation: true }),
+    openMyMatches({ keepFilter: true, keepMode: true, preserveNavigation: true }),
   );
 
   const archiveRemaining = Math.max(0, state.archiveTotal - state.archiveLoaded);
   const hasMore = !state.lcuExhausted || archiveRemaining > 0;
-  if (filter && !games.length) {
+  if (!games.length) {
     const empty = els.matchesList.querySelector('.search-status');
     if (empty) {
+      const subject = filter
+        ? filter.championName || '该英雄'
+        : CHAMPION_RANKING_MODE_LABELS[state.myMatchesMode] ?? '该模式';
       empty.textContent = hasMore
-        ? `已加载的战绩里没有 ${filter.championName || '该英雄'}，可以继续加载更早的战绩`
-        : `没有找到 ${filter.championName || '该英雄'} 的战绩`;
+        ? `已加载的战绩里没有${subject}，可以继续加载更早的战绩`
+        : `没有找到${subject}的战绩`;
     }
   }
   if (hasMore) {
@@ -2822,7 +2875,14 @@ async function loadMoreArchive(button) {
   button.textContent = '正在读取更早的战绩…';
   try {
     const knownIds = new Set(state.myGames.map((game) => String(game.gameId)));
+    const modeValue = myMatchesModeValue();
     const hasNew = (list) => list.some((game) => !knownIds.has(String(game.gameId)));
+    const hasNewForMode = (list) =>
+      list.some(
+        (game) =>
+          !knownIds.has(String(game.gameId)) &&
+          (!modeValue || matchModeKey(game) === modeValue),
+      );
     const championFilter = state.championFilter;
     let incoming = [];
     let added = false;
@@ -2840,6 +2900,7 @@ async function loadMoreArchive(button) {
       } else {
         const params = new URLSearchParams();
         params.set('limit', '100');
+        if (modeValue) params.set('mode', modeValue);
         const cursorParams = archiveCursorParams(state.archiveCursor);
         if (cursorParams) {
           params.set('before', cursorParams.before);
@@ -2893,7 +2954,7 @@ async function loadMoreArchive(button) {
           }
           previousKey = key;
           incoming = mergeMatchLists(incoming, page);
-          if (hasNew(page)) {
+          if (hasNewForMode(page)) {
             added = true;
             break;
           }
@@ -2973,6 +3034,7 @@ function openChampionMatches(championId, championName, options = {}) {
 
 async function openMyMatches(options = {}) {
   if (!options.keepFilter) state.championFilter = null;
+  if (!options.keepMode) state.myMatchesMode = 'ARAM';
   if (!options.preserveNavigation) {
     state.backStack = [];
     state.backScrollStack = [];
@@ -2980,7 +3042,6 @@ async function openMyMatches(options = {}) {
   state.currentView = null;
   state.matchRequestToken += 1;
   const token = state.matchRequestToken;
-  const context = matchesContext();
   state.matchDetail = null;
   state.playerMatches = null;
   state.myGames = [];
@@ -2997,6 +3058,7 @@ async function openMyMatches(options = {}) {
   els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
   updateMatchesBackButton();
   els.matchesTitle.textContent = filter ? championFilterTitle(filter) : '我的最近战绩';
+  updateMyMatchesTabs(!filter);
   setMatchesRefresh(null);
   beginMatchesLoading(
     filter ? '正在读取该英雄的战绩…' : '正在读取最近战绩和评分…',
@@ -3046,7 +3108,10 @@ async function openMyMatches(options = {}) {
 
     try {
       // 客户端战绩读不到时，历史存档仍然可用
-      const response = await fetch('/api/archive/matches?limit=100&offset=0', {
+      const archiveParams = new URLSearchParams({ limit: '100', offset: '0' });
+      const modeValue = myMatchesModeValue();
+      if (modeValue) archiveParams.set('mode', modeValue);
+      const response = await fetch(`/api/archive/matches?${archiveParams.toString()}`, {
         cache: 'no-store',
       });
       const payload = await response.json().catch(() => ({}));
@@ -3067,18 +3132,15 @@ async function openMyMatches(options = {}) {
     }
   }
 
-  const recordContext =
-    context ?? (games[0]?.queueId ? { queueId: games[0].queueId } : undefined);
   const championId = filter?.championId;
-  const modeRecord = await fetchModeRecord(
-    undefined,
-    championId
-      ? filter?.mode
-        ? { mode: filter.mode }
-        : undefined
-      : recordContext,
-    championId,
-  );
+  const recordContext = filter
+    ? filter.mode
+      ? { mode: filter.mode }
+      : undefined
+    : state.myMatchesMode === 'all'
+      ? undefined
+      : { mode: state.myMatchesMode };
+  const modeRecord = await fetchModeRecord(undefined, recordContext, championId);
   if (token !== state.matchRequestToken) return;
   state.modeRecord = modeRecord;
   stopLoadingTimer();
@@ -3089,7 +3151,7 @@ async function openMyMatches(options = {}) {
     }">${lcuError ? `读取失败：${escapeHtml(lcuError)}` : '还没有对局记录'}</div>`;
     els.matchesTitle.textContent = '我的战绩';
     setMatchesRefresh(() =>
-      openMyMatches({ keepFilter: true, preserveNavigation: true }),
+      openMyMatches({ keepFilter: true, keepMode: true, preserveNavigation: true }),
     );
     return;
   }
@@ -3191,6 +3253,7 @@ async function openMatchDetail(gameId, options = {}) {
   els.matchesModal.classList.remove('hidden');
   els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
   els.matchTabs.classList.add('hidden');
+  els.myMatchesTabs?.classList.add('hidden');
   resetAiView();
   clearMatchFlags();
   els.matchesAi.classList.add('hidden');
@@ -3672,6 +3735,15 @@ async function submitSearch(event) {
 
 els.refresh.addEventListener('click', () => void refresh());
 els.myMatches.addEventListener('click', () => void openMyMatches());
+els.myMatchesTabs.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-my-mode]');
+  if (!button) return;
+  const mode = button.dataset.myMode;
+  if (!CHAMPION_RANKING_MODE_LABELS[mode] || mode === state.myMatchesMode) return;
+  state.myMatchesMode = mode;
+  updateMyMatchesTabs(true);
+  void openMyMatches({ keepFilter: true, keepMode: true, preserveNavigation: true });
+});
 els.championRanking.addEventListener('click', () => void openChampionRanking());
 els.championRankingClose.addEventListener('click', closeChampionRanking);
 els.timeStats.addEventListener('click', () => void openTimeStats());
