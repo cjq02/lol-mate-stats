@@ -58,7 +58,7 @@ const CACHE_SAVE_DELAY = 2_000;
 /** 报告缓存保留时长：只用于清理长期不用的数据，是否过期由“最新对局 ID”决定 */
 const REPORT_RETENTION_MS = 30 * DAY_MS;
 /** 缓存版本：标签口径变化时递增，让旧报告自动失效 */
-const REPORT_CACHE_VERSION = 'v5';
+const REPORT_CACHE_VERSION = 'v6';
 /** 两次“检查有没有新对局”的最小间隔，避免对局中每轮都请求 LCU */
 const REPORT_RECHECK_MS = 5 * 60_000;
 /** 单类缓存最多落盘多少条，避免数据库无限增长 */
@@ -769,8 +769,9 @@ export class ReportCollector {
       let filtered = filterByContext(analyzed, context);
       let latestGameId = loaded?.latestGameId ?? 0;
 
-      // 对局中客户端战绩服务可能只返回很少几场；自己的样本不足时用历史存档补齐
-      if (self && filtered.length < target) {
+      // 客户端战绩服务可能只返回很少几场；样本不足时用历史存档补齐。
+      // 这里对双方 10 名玩家都生效，避免卡片只显示 1 场而点开战绩列表却有很多场。
+      if (filtered.length < target) {
         const archived = await this.loadArchivedRecentGames(
           base.puuid,
           context,
@@ -781,7 +782,7 @@ export class ReportCollector {
           latestGameId = Math.max(latestGameId, archived[0]?.gameId ?? 0);
           logTag(
             'match',
-            `对局中自己的样本不足，已用历史存档补齐到 ${filtered.length}/${target} 场`,
+            `对局中样本不足，已用历史存档补齐到 ${filtered.length}/${target} 场`,
           );
         }
       }
