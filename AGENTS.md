@@ -28,6 +28,8 @@
 
 提交前统一执行：`npm run typecheck && npm test`。`npm test` 只运行 `src/stats/rating.test.ts`，新增测试也加在这个文件。
 
+`npm start` 运行的是 `dist/` 构建产物。改完 `src/` 后必须执行 `npm run build` 再启动；只重启服务不会生效。开发调试用 `npm run dev`，或直接用 `npm run start:build`（自动先构建）。
+
 ## 目录职责
 
 - `src/lcu/`：客户端发现、HTTP、WebSocket、Live Client Data API。只做通信，不写业务判断。
@@ -76,6 +78,7 @@
 - 每个评分、标签或模式判断的改动，至少补一条回归用例。
 - 测试名称用中文描述行为，断言失败时给出可读的上下文。
 - 提交前必须通过 `npm run typecheck && npm test`。
+- 任何 `src/` 改动完成后都要 `npm run build`，确保 `dist/` 与源码一致；`dist/` 不提交。
 
 ## 前端
 
@@ -94,7 +97,7 @@
 ## Git 与提交
 
 - 完成一个可运行的改动后，**自动提交并推送到 `origin` 当前分支**，不需要再询问用户。
-- 提交或推送前先跑 `npm run typecheck && npm test`；失败则先修复，不要提交半成品。
+- 提交或推送前先跑 `npm run typecheck && npm test`，改完 `src/` 还要执行 `npm run build`；失败则先修复，不要提交半成品。
 - 提交消息使用中文，保留 Conventional Commits 前缀，例如：
   - `feat: 新增对局详情缓存`
   - `fix: 修正评分权重计算`
