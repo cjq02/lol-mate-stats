@@ -1131,6 +1131,20 @@ test('增量更新会对重复对局去重', () => {
   assert.equal(merged.length, 1);
 });
 
+test('客户端只给 1 场时用存档补齐到目标场次', () => {
+  const fromClient = [makeGame(1, 'ARAM', { queueId: 450, gameCreation: 5_000 })];
+  const archived = [
+    makeGame(2, 'ARAM', { queueId: 450, gameCreation: 4_000 }),
+    makeGame(3, 'ARAM', { queueId: 450, gameCreation: 3_000 }),
+    makeGame(4, 'ARAM', { queueId: 450, gameCreation: 2_000 }),
+  ];
+  const merged = mergeIncrementalGames(fromClient, archived, 10);
+  assert.deepEqual(
+    merged.map((game) => game.gameId),
+    [1001, 1002, 1003, 1004],
+  );
+});
+
 console.log('baseline');
 test('个人基线需要至少 10 场历史', () => {
   assert.equal(compareBaseline(70, { games: 9, avgScore: 60, stdDev: 8 }), undefined);

@@ -58,7 +58,7 @@ const CACHE_SAVE_DELAY = 2_000;
 /** 报告缓存保留时长：只用于清理长期不用的数据，是否过期由“最新对局 ID”决定 */
 const REPORT_RETENTION_MS = 30 * DAY_MS;
 /** 缓存版本：标签口径变化时递增，让旧报告自动失效 */
-const REPORT_CACHE_VERSION = 'v6';
+const REPORT_CACHE_VERSION = 'v7';
 /** 两次“检查有没有新对局”的最小间隔，避免对局中每轮都请求 LCU */
 const REPORT_RECHECK_MS = 5 * 60_000;
 /** 单类缓存最多落盘多少条，避免数据库无限增长 */
@@ -772,19 +772,14 @@ export class ReportCollector {
       // 客户端战绩服务可能只返回很少几场；样本不足时用历史存档补齐。
       // 这里对双方 10 名玩家都生效，避免卡片只显示 1 场而点开战绩列表却有很多场。
       if (filtered.length < target) {
-        const archived = await this.loadArchivedRecentGames(
+        const backfilled = await this.backfillWithArchive(
+          filtered,
           base.puuid,
           context,
-          target + 5,
+          target,
         );
-        if (archived.length) {
-          filtered = mergeIncrementalGames(filtered, archived, target);
-          latestGameId = Math.max(latestGameId, archived[0]?.gameId ?? 0);
-          logTag(
-            'match',
-            `对局中样本不足，已用历史存档补齐到 ${filtered.length}/${target} 场`,
-          );
-        }
+        filtered = backfilled.games;
+        latestGameId = Math.max(latestGameId, backfilled.latestGameId);
       }
 
       if (!filtered.length) {
@@ -968,7 +963,21 @@ export class ReportCollector {
       const games = loaded.games;
 
       const analyzed = this.analyzeGames(games, summoner, championMap);
-      const filtered = filterByContext(analyzed, context);
+      let filtered = filterByContext(analyzed, context);
+      let latestGameId = loaded.latestGameId;
+
+      // 选人阶段 / 对局详情同样可能遇到客户端战绩服务只给很少几场，
+      // 用长期存档补齐，避免卡片只显示 1 场而点开战绩列表却有很多场。
+      if (filtered.length < this.options.recent) {
+        const backfilled = await this.backfillWithArchive(
+          filtered,
+          summoner.puuid,
+          context,
+          this.options.recent,
+        );
+        filtered = backfilled.games;
+        latestGameId = Math.max(latestGameId, backfilled.latestGameId);
+      }
 
       if (!filtered.length) {
         const label = contextLabel(context);
@@ -985,7 +994,7 @@ export class ReportCollector {
         };
         this.reportCache.set(cacheKey, {
           at: Date.now(),
-          latestGameId: loaded.latestGameId,
+          latestGameId,
           report,
         });
         this.scheduleSave();
@@ -1007,7 +1016,7 @@ export class ReportCollector {
       };
       this.reportCache.set(cacheKey, {
         at: Date.now(),
-        latestGameId: loaded.latestGameId,
+        latestGameId,
         report,
       });
       this.scheduleSave();
@@ -1284,6 +1293,23 @@ export class ReportCollector {
     this.rankCache.set(puuid, { at: Date.now(), rank });
     this.scheduleSave();
     return rank;
+  }
+
+  /**
+   * 客户端战绩服务偶尔只给很少几场，样本不足时用长期存档补齐。
+   * 返回的 latestGameId 只用于判断缓存新鲜度，没有存档时为 0。
+   */
+  private async backfillWithArchive(
+    games: AnalyzedGame[],
+    puuid: string | undefined,
+    context: GameContext | undefined,
+    target: number,
+  ): Promise<{ games: AnalyzedGame[]; latestGameId: number }> {
+    const archived = await this.loadArchivedRecentGames(puuid, context, target + 5);
+    if (!archived.length) return { games, latestGameId: 0 };
+    const merged = mergeIncrementalGames(games, archived, target);
+    logTag('match', `近期样本不足，已用历史存档补齐到 ${merged.length}/${target} 场`);
+    return { games: merged, latestGameId: archived[0]?.gameId ?? 0 };
   }
 
   private async loadArchivedRecentGames(
