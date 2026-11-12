@@ -493,6 +493,8 @@ export interface EndOfGamePlayer {
   puuid?: string;
   summonerName?: string;
   teamId?: number;
+  spell1Id?: number;
+  spell2Id?: number;
   selectedPosition?: string;
   detectedTeamPosition?: string;
   items?: number[];
@@ -504,6 +506,8 @@ export interface EndOfGameStatsBlock {
   gameId?: number;
   gameLength?: number;
   gameMode?: string;
+  /** 国服结算接口通常只返回 queueType，没有 queueId */
+  queueType?: string;
   queueId?: number;
   summonerId?: number;
   accountId?: number;

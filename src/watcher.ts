@@ -68,6 +68,24 @@ export interface LiveSourceOptions {
   quiet?: boolean;
 }
 
+/**
+ * 判断战绩列表里的第一局是不是刚结束的那一局。
+ * 国服部分大区的对局 ID 并不按时间递增，所以只排除“还是上一局”，不能比较大小。
+ */
+export function isNewFinishedGame(
+  gameId: number,
+  previousLatestGameId: number,
+  created: number,
+  endedAt: number,
+): boolean {
+  if (!gameId) return false;
+  const recent = created > 0 && created > endedAt - 3 * 60 * 60_000;
+  if (previousLatestGameId > 0) {
+    return gameId !== previousLatestGameId && (created <= 0 || recent);
+  }
+  return recent;
+}
+
 export function phaseMessage(phase: string): string {
   switch (phase) {
     case 'ChampSelect':
@@ -140,6 +158,7 @@ export class LiveSource implements DataSource {
   /** 刚结束、战绩列表还没同步的对局：由结算数据生成，可立即展示 */
   private readonly provisionalGames = new Map<number, { game: RawGame; at: number }>();
   private eogCaptureInFlight = false;
+  private eogCapturePromise?: Promise<void>;
   private eogCapturedGameId = 0;
   /** 本局开始前的最新对局 ID，用来过滤结算接口里上一局的旧数据 */
   private gameEndBaseline = 0;
@@ -292,6 +311,8 @@ export class LiveSource implements DataSource {
         ? `读取我的战绩第 ${offset + 1}-${offset + recent} 场…`
         : `读取我的最近 ${recent} 场战绩…`,
     );
+    // 刚结束就点开时，等结算数据落库，避免这局还没进列表
+    if (offset === 0) await this.waitForEndOfGameCapture();
     let rawGames: RawGame[] | undefined;
     if (offset > 0) {
       try {
@@ -869,14 +890,14 @@ export class LiveSource implements DataSource {
       this.lastPhase = phase;
       if (previousPhase === 'InProgress' && phase !== 'InProgress') {
         this.schedulePostGamePrewarm();
-        void this.captureEndOfGame(api);
+        this.startEndOfGameCapture(api);
       } else if (
         phase === 'WaitingForStats' ||
         phase === 'PreEndOfGame' ||
         phase === 'EndOfGame'
       ) {
         // 结算界面数据比战绩列表更新快；拿到后可以立刻显示刚结束的对局
-        void this.captureEndOfGame(api);
+        this.startEndOfGameCapture(api);
       }
       // 赛后预热不阻塞阶段切换，战绩列表没更新时下一轮继续重试
       if (this.postGame) void this.maybePrewarmFinishedGame(api);
@@ -1480,11 +1501,7 @@ export class LiveSource implements DataSource {
       }
 
       const created = toNumber(newest?.gameCreation) || 0;
-      const isNewGame =
-        pending.previousLatestGameId > 0
-          ? gameId > pending.previousLatestGameId
-          : created > pending.createdAt - 3 * 60 * 60_000;
-      if (!isNewGame) {
+      if (!isNewFinishedGame(gameId, pending.previousLatestGameId, created, pending.createdAt)) {
         pending.nextAttemptAt = Date.now() + 5_000;
         return;
       }
@@ -1513,21 +1530,48 @@ export class LiveSource implements DataSource {
    * 本局刚结束时抢先读取结算数据，写入存档并暂存起来。
    * 这样客户端战绩列表还没同步时，「我的战绩」和「最近一局」也能立刻看到这局。
    */
+  private startEndOfGameCapture(api: LcuApi): void {
+    if (this.eogCaptureInFlight || this.eogCapturePromise || this.stopped) return;
+    const promise = this.captureEndOfGame(api)
+      .catch((error) => {
+        logTag(
+          'match',
+          `结算数据读取失败：${error instanceof Error ? error.message : String(error)}`,
+        );
+      })
+      .finally(() => {
+        if (this.eogCapturePromise === promise) this.eogCapturePromise = undefined;
+      });
+    this.eogCapturePromise = promise;
+  }
+
+  /** 打开战绩列表时，给正在进行的结算读取一点时间，避免刚结束就点开看不到 */
+  private async waitForEndOfGameCapture(ms = 4_000): Promise<void> {
+    const pending = this.eogCapturePromise;
+    if (!pending) return;
+    await Promise.race([pending, sleep(ms)]);
+  }
+
   private async captureEndOfGame(api: LcuApi): Promise<void> {
     if (this.eogCaptureInFlight || this.stopped) return;
     this.eogCaptureInFlight = true;
+    let lastBlockGameId = 0;
+    let lastReason = '';
     try {
       const deadline = Date.now() + 45_000;
       while (!this.stopped && Date.now() < deadline) {
         const block = await api.getEndOfGameStats().catch(() => null);
         const blockGameId = toNumber(block?.gameId);
+        lastBlockGameId = blockGameId || lastBlockGameId;
         // 已经处理过本局，或结算接口还停留在上一局时，等待下一轮
         if (blockGameId && blockGameId === this.eogCapturedGameId) return;
-        if (blockGameId && this.gameEndBaseline > 0 && blockGameId <= this.gameEndBaseline) {
+        // 国服部分大区的对局 ID 不按时间递增，这里只排除“还是上一局”，不能比较大小
+        if (blockGameId && blockGameId === this.gameEndBaseline) {
+          lastReason = '结算接口还停在上一局';
           await sleep(2_000);
           continue;
         }
-        const game = await this.eogToRawGame(api, block);
+        const game = await this.eogToRawGame(api, block, this.snapshot.queueId);
         if (game) {
           const gameId = toNumber(game.gameId);
           if (gameId) {
@@ -1540,8 +1584,15 @@ export class LiveSource implements DataSource {
           }
           return;
         }
+        lastReason = block ? '结算数据缺少必要字段' : '结算接口暂无数据';
         await sleep(2_000);
       }
+      logTag(
+        'match',
+        `结算数据读取超时，暂时没拿到刚结束的对局（${
+          lastReason || '结算接口暂无数据'
+        }；结算 gameId=${lastBlockGameId || '无'}，本局之前最新=${this.gameEndBaseline || '未知'}）`,
+      );
     } finally {
       this.eogCaptureInFlight = false;
     }
@@ -1551,6 +1602,7 @@ export class LiveSource implements DataSource {
   private async eogToRawGame(
     api: LcuApi,
     block: EndOfGameStatsBlock | null,
+    fallbackQueueId?: number,
   ): Promise<RawGame | undefined> {
     if (!block) return undefined;
     const entries = endOfGameEntries(block);
@@ -1586,7 +1638,13 @@ export class LiveSource implements DataSource {
       (item): item is EndOfGameIdentity => item !== undefined,
     );
     if (identities.length !== entries.length) return undefined;
-    return endOfGameToRawGame(block, identities);
+
+    // 结算接口通常没有 queueId，优先用对局中记下的准确队列，再从 queueType 反推
+    const flowQueueId = toNumber(
+      (await api.getGameflowSession().catch(() => null))?.gameData?.queue?.id,
+    );
+    const queueId = toNumber(block.queueId) || toNumber(fallbackQueueId) || flowQueueId;
+    return endOfGameToRawGame(block, identities, Date.now(), queueId || undefined);
   }
 
   /** 取一局结算数据已就绪、但客户端列表还没同步的对局；列表出现后顺手清理 */

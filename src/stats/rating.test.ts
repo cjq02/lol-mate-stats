@@ -11,6 +11,7 @@ import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
 import { premadeSizesByPuuid } from './premade.js';
+import { isNewFinishedGame } from '../watcher.js';
 
 let passed = 0;
 
@@ -1218,6 +1219,115 @@ test('结算数据缺少 puuid 时不生成对局', () => {
     ],
   };
   assert.equal(endOfGameToRawGame(block, [{ puuid: '' }, { puuid: 'p2' }]), undefined);
+});
+
+test('结算数据只有 queueType 时也能识别队列', () => {
+  const block = {
+    gameId: 9_004,
+    queueType: 'ARAM_UNRANKED_5x5',
+    gameMode: 'ARAM',
+    gameLength: 1_165,
+    teams: [
+      {
+        teamId: 100,
+        isWinningTeam: true,
+        players: [{ championId: 113, summonerId: 11, stats: { WIN: 1 } }],
+      },
+      {
+        teamId: 200,
+        isWinningTeam: false,
+        players: [{ championId: 1, summonerId: 22, stats: { WIN: 0 } }],
+      },
+    ],
+  };
+  const game = endOfGameToRawGame(
+    block,
+    [{ puuid: 'p1' }, { puuid: 'p2' }],
+    5_000_000,
+  );
+  assert.equal(game?.queueId, 450, 'queueType 应映射成大乱斗队列');
+  assert.equal(game?.gameMode, 'ARAM');
+  assert.equal(game?.participants?.length, 2);
+});
+
+test('结算数据只有小写统计字段时也能解析', () => {
+  const block = {
+    gameId: 9_005,
+    queueId: 420,
+    gameLength: 1_800,
+    teams: [
+      {
+        teamId: 100,
+        isWinningTeam: true,
+        players: [
+          {
+            championId: 1,
+            summonerId: 11,
+            stats: {
+              WIN: 1,
+              kills: 7,
+              deaths: 3,
+              assists: 9,
+              goldEarned: 12_345,
+              totalDamageDealtToChampions: 23_456,
+              totalDamageTaken: 18_000,
+              totalHeal: 1_500,
+              visionScore: 21,
+              totalMinionsKilled: 180,
+              neutralMinionsKilled: 4,
+              largestKillingSpree: 5,
+              doubleKills: 1,
+              tripleKills: 0,
+              quadraKills: 0,
+              pentaKills: 0,
+              turretKills: 2,
+              firstBloodKill: 1,
+            },
+          },
+        ],
+      },
+      {
+        teamId: 200,
+        isWinningTeam: false,
+        players: [{ championId: 2, summonerId: 22, stats: { WIN: 0 } }],
+      },
+    ],
+  };
+  const game = endOfGameToRawGame(block, [{ puuid: 'p1' }, { puuid: 'p2' }], 5_000_000);
+  const stats = game?.participants?.[0]?.stats;
+  assert.equal(stats?.kills, 7);
+  assert.equal(stats?.deaths, 3);
+  assert.equal(stats?.assists, 9);
+  assert.equal(stats?.goldEarned, 12_345);
+  assert.equal(stats?.totalDamageDealtToChampions, 23_456);
+  assert.equal(stats?.visionScore, 21);
+  assert.equal(stats?.firstBloodKill, true);
+});
+
+console.log('finished-game');
+test('对局 ID 比上一局小也算刚结束的新对局', () => {
+  const endedAt = 1_794_500_000_000;
+  assert.equal(
+    isNewFinishedGame(9_077_410_005, 9_077_419_546, endedAt - 700_000, endedAt),
+    true,
+  );
+});
+
+test('战绩列表还停在上一局时不算刚结束的对局', () => {
+  const endedAt = 1_794_500_000_000;
+  assert.equal(
+    isNewFinishedGame(9_077_419_546, 9_077_419_546, endedAt - 1_500_000, endedAt),
+    false,
+  );
+});
+
+test('没记录到上一局时按对局时间判断新旧', () => {
+  const endedAt = 1_794_500_000_000;
+  assert.equal(isNewFinishedGame(9_077_410_005, 0, endedAt - 600_000, endedAt), true);
+  assert.equal(
+    isNewFinishedGame(9_077_000_000, 0, endedAt - 5 * 60 * 60_000, endedAt),
+    false,
+  );
 });
 
 console.log('baseline');

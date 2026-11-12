@@ -25,6 +25,35 @@ export function queueName(queueId: number | undefined): string {
   return QUEUE_NAMES[queueId] ?? `模式 ${queueId}`;
 }
 
+/** 结算接口只给 queueType，用它反推常用队列 ID */
+const QUEUE_IDS_BY_TYPE: Record<string, number> = {
+  RANKED_SOLO_5x5: 420,
+  RANKED_FLEX_SR: 440,
+  NORMAL: 400,
+  ARAM_UNRANKED_5x5: 450,
+  ARAM_CLASH: 720,
+  CHERRY: 1700,
+  CHERRY_UNRANKED: 1700,
+  URF: 900,
+  ONEFORALL: 1020,
+  NEXUSBLITZ: 1300,
+  ULTBOOK: 1400,
+  SWIFTPLAY: 890,
+  BRAWL: 2300,
+  KIWI: 2400,
+  JADE: 3260,
+  TUTORIAL_MODULE_1: 2000,
+  TUTORIAL_MODULE_2: 2010,
+  TUTORIAL_MODULE_3: 2020,
+};
+
+export function queueIdFromType(type?: string): number | undefined {
+  if (!type) return undefined;
+  // queueType 里的 5x5 是小写 x，不能整体转大写
+  const name = type.trim();
+  return QUEUE_IDS_BY_TYPE[name] ?? QUEUE_IDS_BY_TYPE[name.toUpperCase()];
+}
+
 export const MODE_NAMES: Record<GameModeKey, string> = {
   SR: '召唤师峡谷',
   ARAM: '极地大乱斗',
