@@ -869,9 +869,13 @@ export class LiveSource implements DataSource {
       this.lastPhase = phase;
       if (previousPhase === 'InProgress' && phase !== 'InProgress') {
         this.schedulePostGamePrewarm();
-      }
-      // 结算界面数据比战绩列表更新快；拿到后可以立刻显示刚结束的对局
-      if (phase === 'WaitingForStats' || phase === 'PreEndOfGame' || phase === 'EndOfGame') {
+        void this.captureEndOfGame(api);
+      } else if (
+        phase === 'WaitingForStats' ||
+        phase === 'PreEndOfGame' ||
+        phase === 'EndOfGame'
+      ) {
+        // 结算界面数据比战绩列表更新快；拿到后可以立刻显示刚结束的对局
         void this.captureEndOfGame(api);
       }
       // 赛后预热不阻塞阶段切换，战绩列表没更新时下一轮继续重试
