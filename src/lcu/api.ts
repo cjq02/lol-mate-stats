@@ -1,5 +1,6 @@
 import type {
   ChampSelectSession,
+  EndOfGameStatsBlock,
   GameflowSession,
   LcuConnection,
   LobbyMember,
@@ -113,6 +114,14 @@ export class LcuApi {
 
   getGame(gameId: number): Promise<RawGame> {
     return this.http.get<RawGame>(`/lol-match-history/v1/games/${gameId}`, 20_000);
+  }
+
+  /** 结算界面的数据块：比战绩列表更新更快，用于刚结束的对局 */
+  getEndOfGameStats(): Promise<EndOfGameStatsBlock | null> {
+    return this.http.getOrNull<EndOfGameStatsBlock>(
+      '/lol-end-of-game/v1/eog-stats-block',
+      8_000,
+    );
   }
 
   /* ----------------------------- 段位 ----------------------------- */

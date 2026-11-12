@@ -4,6 +4,7 @@ import type {
   AramChampionOption,
   ChampSelectMember,
   ChampSelectSession,
+  EndOfGameStatsBlock,
   GameContext,
   GameModeKey,
   LcuConnection,
@@ -44,6 +45,7 @@ import {
   type PlayerMatchFilter,
 } from './stats/archive.js';
 import { currentQueueGroup, modeFromQueue, queueGroupName, queueName } from './stats/constants.js';
+import { endOfGameEntries, endOfGameToRawGame, type EndOfGameIdentity } from './stats/eog.js';
 import {
   afkParticipantIds,
   badLevelLabel,
@@ -135,6 +137,12 @@ export class LiveSource implements DataSource {
     createdAt: number;
     nextAttemptAt: number;
   };
+  /** 刚结束、战绩列表还没同步的对局：由结算数据生成，可立即展示 */
+  private readonly provisionalGames = new Map<number, { game: RawGame; at: number }>();
+  private eogCaptureInFlight = false;
+  private eogCapturedGameId = 0;
+  /** 本局开始前的最新对局 ID，用来过滤结算接口里上一局的旧数据 */
+  private gameEndBaseline = 0;
   private prewarmInFlight = false;
   private prewarmedGameId = 0;
   private lastPhase = 'None';
@@ -309,6 +317,15 @@ export class LiveSource implements DataSource {
         throw error;
       }
     }
+    // 刚结束的对局：客户端战绩列表可能还没同步，先用结算数据补在最前面
+    if (offset === 0) {
+      const provisional = this.takeProvisionalGame(rawGames);
+      if (provisional) {
+        rawGames = [...rawGames, provisional].sort(
+          (a, b) => toNumber(b.gameCreation) - toNumber(a.gameCreation),
+        );
+      }
+    }
     const championMap = await api.getChampionMap().catch(() => new Map());
     const games = rawGames
       .map((game) => {
@@ -413,11 +430,17 @@ export class LiveSource implements DataSource {
     try {
       game = await api.getGame(gameId);
     } catch (error) {
-      logTag(
-        'match',
-        `[${gameId}] 读取对局失败：${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw error;
+      // 战绩列表/详情服务还没同步时，用刚才结算数据生成的对局兜底
+      const provisional = this.provisionalGames.get(gameId)?.game;
+      if (!provisional) {
+        logTag(
+          'match',
+          `[${gameId}] 读取对局失败：${error instanceof Error ? error.message : String(error)}`,
+        );
+        throw error;
+      }
+      logTag('match', `[${gameId}] 战绩详情尚未同步，改用结算数据打开`);
+      game = provisional;
     }
 
     const queueId = toNumber(game.queueId);
@@ -846,6 +869,10 @@ export class LiveSource implements DataSource {
       this.lastPhase = phase;
       if (previousPhase === 'InProgress' && phase !== 'InProgress') {
         this.schedulePostGamePrewarm();
+      }
+      // 结算界面数据比战绩列表更新快；拿到后可以立刻显示刚结束的对局
+      if (phase === 'WaitingForStats' || phase === 'PreEndOfGame' || phase === 'EndOfGame') {
+        void this.captureEndOfGame(api);
       }
       // 赛后预热不阻塞阶段切换，战绩列表没更新时下一轮继续重试
       if (this.postGame) void this.maybePrewarmFinishedGame(api);
@@ -1415,6 +1442,7 @@ export class LiveSource implements DataSource {
     const session = this.inGameSession;
     this.inGameSession = undefined;
     if (!session) return;
+    this.gameEndBaseline = session.previousLatestGameId;
     this.postGame = {
       puuid: session.puuid,
       previousLatestGameId: session.previousLatestGameId,
@@ -1477,6 +1505,108 @@ export class LiveSource implements DataSource {
     }
   }
 
+  /**
+   * 本局刚结束时抢先读取结算数据，写入存档并暂存起来。
+   * 这样客户端战绩列表还没同步时，「我的战绩」和「最近一局」也能立刻看到这局。
+   */
+  private async captureEndOfGame(api: LcuApi): Promise<void> {
+    if (this.eogCaptureInFlight || this.stopped) return;
+    this.eogCaptureInFlight = true;
+    try {
+      const deadline = Date.now() + 45_000;
+      while (!this.stopped && Date.now() < deadline) {
+        const block = await api.getEndOfGameStats().catch(() => null);
+        const blockGameId = toNumber(block?.gameId);
+        // 已经处理过本局，或结算接口还停留在上一局时，等待下一轮
+        if (blockGameId && blockGameId === this.eogCapturedGameId) return;
+        if (blockGameId && this.gameEndBaseline > 0 && blockGameId <= this.gameEndBaseline) {
+          await sleep(2_000);
+          continue;
+        }
+        const game = await this.eogToRawGame(api, block);
+        if (game) {
+          const gameId = toNumber(game.gameId);
+          if (gameId) {
+            this.eogCapturedGameId = gameId;
+            this.provisionalGames.set(gameId, { game, at: Date.now() });
+            this.pruneProvisionalGames();
+            const championMap = await api.getChampionMap().catch(() => new Map());
+            await archiveGames([game], championMap);
+            logTag('match', `[${gameId}] 已用结算数据提前写入战绩`);
+          }
+          return;
+        }
+        await sleep(2_000);
+      }
+    } finally {
+      this.eogCaptureInFlight = false;
+    }
+  }
+
+  /** 结算数据里的玩家没有 puuid 时，按 summonerId 补齐后才能写入存档 */
+  private async eogToRawGame(
+    api: LcuApi,
+    block: EndOfGameStatsBlock | null,
+  ): Promise<RawGame | undefined> {
+    if (!block) return undefined;
+    const entries = endOfGameEntries(block);
+    if (entries.length < 2) return undefined;
+
+    const resolved = await mapLimit(
+      entries,
+      5,
+      async (entry): Promise<EndOfGameIdentity | undefined> => {
+        const knownPuuid = typeof entry.player.puuid === 'string' ? entry.player.puuid : '';
+        if (knownPuuid) {
+          return {
+            puuid: knownPuuid,
+            summonerId: toNumber(entry.player.summonerId) || undefined,
+            accountId: toNumber(entry.player.accountId) || undefined,
+            gameName: entry.player.summonerName,
+          };
+        }
+        const summonerId = toNumber(entry.player.summonerId);
+        if (!summonerId) return undefined;
+        const info = await api.getSummonerById(summonerId).catch(() => null);
+        if (!info?.puuid) return undefined;
+        return {
+          puuid: info.puuid,
+          summonerId: info.summonerId || summonerId,
+          accountId: info.accountId,
+          gameName: info.gameName,
+          tagLine: info.tagLine,
+        };
+      },
+    );
+    const identities = resolved.filter(
+      (item): item is EndOfGameIdentity => item !== undefined,
+    );
+    if (identities.length !== entries.length) return undefined;
+    return endOfGameToRawGame(block, identities);
+  }
+
+  /** 取一局结算数据已就绪、但客户端列表还没同步的对局；列表出现后顺手清理 */
+  private takeProvisionalGame(games: RawGame[]): RawGame | undefined {
+    this.pruneProvisionalGames();
+    const known = new Set(games.map((game) => toNumber(game.gameId)));
+    let latest: { game: RawGame; at: number } | undefined;
+    for (const [gameId, entry] of this.provisionalGames) {
+      if (known.has(gameId)) {
+        this.provisionalGames.delete(gameId);
+        continue;
+      }
+      if (!latest || entry.at > latest.at) latest = entry;
+    }
+    return latest?.game;
+  }
+
+  private pruneProvisionalGames(): void {
+    const cutoff = Date.now() - 6 * 60 * 60_000;
+    for (const [gameId, entry] of this.provisionalGames) {
+      if (entry.at < cutoff) this.provisionalGames.delete(gameId);
+    }
+  }
+
   private disconnect(): void {
     this.eventStream?.close();
     this.eventStream = undefined;
@@ -1491,6 +1621,9 @@ export class LiveSource implements DataSource {
     this.lastPhase = 'None';
     this.inGameSession = undefined;
     this.postGame = undefined;
+    this.provisionalGames.clear();
+    this.eogCapturedGameId = 0;
+    this.gameEndBaseline = 0;
     this.inGameRecordAt = 0;
   }
 

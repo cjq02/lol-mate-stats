@@ -484,6 +484,40 @@ export interface GameflowSession {
   };
 }
 
+/** 结算界面（End of Game）返回的玩家数据 */
+export interface EndOfGamePlayer {
+  championId?: number;
+  skinName?: string;
+  summonerId?: number;
+  accountId?: number;
+  puuid?: string;
+  summonerName?: string;
+  teamId?: number;
+  selectedPosition?: string;
+  detectedTeamPosition?: string;
+  items?: number[];
+  stats?: Record<string, number | string | boolean | undefined>;
+}
+
+/** 结算界面的统计块；对局刚结束、客户端战绩列表尚未同步时可用 */
+export interface EndOfGameStatsBlock {
+  gameId?: number;
+  gameLength?: number;
+  gameMode?: string;
+  queueId?: number;
+  summonerId?: number;
+  accountId?: number;
+  championId?: number;
+  teams?: Array<{
+    teamId?: number;
+    isWinningTeam?: boolean;
+    isPlayerTeam?: boolean;
+    players?: EndOfGamePlayer[];
+  }>;
+  /** 部分客户端版本把玩家直接放在顶层 */
+  players?: EndOfGamePlayer[];
+}
+
 /** 首页“我的战绩”列表里的一场比赛 */
 export interface MatchSummary {
   gameId: number;

@@ -6,6 +6,7 @@ import { buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
 import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
+import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
@@ -1143,6 +1144,80 @@ test('客户端只给 1 场时用存档补齐到目标场次', () => {
     merged.map((game) => game.gameId),
     [1001, 1002, 1003, 1004],
   );
+});
+
+console.log('eog');
+test('结算数据可转换成可评分的对局', () => {
+  const block = {
+    gameId: 9_001,
+    queueId: 450,
+    gameMode: 'ARAM',
+    gameLength: 1_200,
+    teams: [
+      {
+        teamId: 100,
+        isWinningTeam: true,
+        players: [
+          {
+            championId: 103,
+            summonerId: 11,
+            summonerName: 'A',
+            stats: { CHAMPIONS_KILLED: 10, NUM_DEATHS: 2, ASSISTS: 20 },
+          },
+          {
+            championId: 22,
+            summonerId: 12,
+            summonerName: 'B',
+            stats: { CHAMPIONS_KILLED: 3, NUM_DEATHS: 5, ASSISTS: 15 },
+          },
+        ],
+      },
+      {
+        teamId: 200,
+        isWinningTeam: false,
+        players: [
+          {
+            championId: 1,
+            summonerId: 21,
+            summonerName: 'C',
+            stats: { CHAMPIONS_KILLED: 2, NUM_DEATHS: 6, ASSISTS: 8 },
+          },
+          {
+            championId: 2,
+            summonerId: 22,
+            summonerName: 'D',
+            stats: { CHAMPIONS_KILLED: 1, NUM_DEATHS: 7, ASSISTS: 6 },
+          },
+        ],
+      },
+    ],
+  };
+  const game = endOfGameToRawGame(
+    block,
+    [{ puuid: 'p1' }, { puuid: 'p2' }, { puuid: 'p3' }, { puuid: 'p4' }],
+    5_000_000,
+  );
+  assert.ok(game, '结算数据应能转换成对局');
+  assert.equal(game.gameId, 9_001);
+  assert.equal(game.gameCreation, 5_000_000 - 1_200_000);
+  assert.equal(game.participants?.length, 4);
+  assert.equal(game.participants?.[0]?.stats?.kills, 10);
+  assert.equal(game.participants?.[0]?.stats?.win, true);
+  assert.equal(game.participants?.[2]?.stats?.win, false);
+  assert.equal(game.participantIdentities?.[0]?.player?.puuid, 'p1');
+});
+
+test('结算数据缺少 puuid 时不生成对局', () => {
+  const block = {
+    gameId: 9_002,
+    queueId: 450,
+    gameLength: 1_200,
+    teams: [
+      { teamId: 100, isWinningTeam: true, players: [{ championId: 1 }] },
+      { teamId: 200, isWinningTeam: false, players: [{ championId: 2 }] },
+    ],
+  };
+  assert.equal(endOfGameToRawGame(block, [{ puuid: '' }, { puuid: 'p2' }]), undefined);
 });
 
 console.log('baseline');
