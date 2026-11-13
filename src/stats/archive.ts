@@ -1087,7 +1087,9 @@ export async function getPlayerRecentAnalyzedGames(
     return rows.flatMap((row): AnalyzedGame[] => {
       const score = Number(row.score);
       if (!Number.isFinite(score)) return [];
-      const durationMin = (Number(row.duration_seconds) || 0) / 60;
+      // 分均数据用精确时长，展示用的 durationMin 取整，避免前端出现 17.3333 分钟
+      const rawDurationMin = (Number(row.duration_seconds) || 0) / 60;
+      const durationMin = Math.round(rawDurationMin);
       const kills = Number(row.kills) || 0;
       const deaths = Number(row.deaths) || 0;
       const assists = Number(row.assists) || 0;
@@ -1119,16 +1121,16 @@ export async function getPlayerRecentAnalyzedGames(
           assists,
           kda: (kills + assists) / Math.max(1, deaths),
           cs,
-          csPerMin: durationMin > 0 ? cs / durationMin : 0,
+          csPerMin: rawDurationMin > 0 ? cs / rawDurationMin : 0,
           gold,
           damage,
           heal,
           damageShare: team.damage > 0 ? damage / team.damage : 0,
-          damagePerMin: durationMin > 0 ? damage / durationMin : 0,
+          damagePerMin: rawDurationMin > 0 ? damage / rawDurationMin : 0,
           tankShare: team.damageTaken > 0 ? damageTaken / team.damageTaken : 0,
           killParticipation: team.kills > 0 ? (kills + assists) / team.kills : 0,
           visionScore: vision,
-          visionPerMin: durationMin > 0 ? vision / durationMin : 0,
+          visionPerMin: rawDurationMin > 0 ? vision / rawDurationMin : 0,
           position: archiveLane(row.position),
           score,
           tags: parseTagList(row.tags as string | null),

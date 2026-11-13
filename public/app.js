@@ -735,7 +735,7 @@ function buildCard(player, isLocal, options = {}) {
 
   const record = thisGame
     ? `本局 · <b class="${thisGame.win ? 'win' : 'loss'}">${thisGame.win ? '胜' : '负'}</b> · ${
-        thisGame.durationMin ?? '-'
+        durationMinutes(thisGame.durationMin) ?? '-'
       } 分钟`
     : recent
       ? `${modeName} ${recent.games} 场 · <b class="win">${recent.wins}胜</b> <b class="loss">${recent.losses}负</b> · 胜率 ${winRatePct(
@@ -2054,8 +2054,15 @@ function clearMatchFlags() {
   clearMatchSummary();
 }
 
+/** 对局时长统一按整数分钟展示，避免 17.3333 这类浮点数直接出现在界面 */
+function durationMinutes(value) {
+  const raw = Number(value);
+  return Number.isFinite(raw) ? Math.round(raw) : null;
+}
+
 function matchRow(game, showScore) {
-  const durationMin = game.durationMin ?? Math.round((Number(game.gameDuration) || 0) / 60);
+  const durationMin =
+    durationMinutes(game.durationMin) ?? Math.round((Number(game.gameDuration) || 0) / 60);
   const score = showScore && Number.isFinite(Number(game.score)) ? Math.round(game.score) : null;
   const tags = game.tags ?? [];
   const remake = tags.includes('重开');
