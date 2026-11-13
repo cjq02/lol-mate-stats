@@ -527,6 +527,13 @@ function renderBoard(players) {
     const sig = `${key}|${isLocal}|${JSON.stringify(player)}`;
     const cached = cardCache.get(key);
     if (cached && cached.sig === sig) return cached.node;
+    // 只有本局实时数据变化时，更新卡片里的实时区块即可；
+    // 头像、历史战绩图标等静态内容保持不动，避免每 3 秒重建整块 DOM。
+    const staticSig = `${key}|${isLocal}|${JSON.stringify({ ...player, live: undefined })}`;
+    if (cached && cached.staticSig === staticSig && updateCardLive(cached.node, player)) {
+      cached.sig = sig;
+      return cached.node;
+    }
     const node = buildCard(player, isLocal, {
       liveView,
       context: snapshotContext(),
@@ -534,7 +541,7 @@ function renderBoard(players) {
     node.dataset.key = key;
     // 只有新出现的卡片才播放入场动画，避免数据刷新时整块闪一下
     if (!currentKeys.has(key)) enterCard(node);
-    cardCache.set(key, { sig, node });
+    cardCache.set(key, { sig, staticSig, node });
     return node;
   });
 
@@ -618,6 +625,95 @@ function skeletonCard() {
   const node = document.createElement('div');
   node.className = 'skeleton';
   return node;
+}
+
+/** 本局实时数据（每 3 秒会变）：单独抽出来，命中缓存时只刷新这一块 */
+function liveRowsHtml(live, visionGame) {
+  const liveExtras = [];
+  if (live?.summonerSpells?.length) {
+    liveExtras.push(`召唤师技能 ${live.summonerSpells.join(' / ')}`);
+  }
+  if (live?.runes) liveExtras.push(`符文 ${live.runes}`);
+  if (live?.respawnTimer) liveExtras.push(`复活 ${Math.ceil(live.respawnTimer)}s`);
+  if (live?.health !== undefined && live?.maxHealth !== undefined) {
+    liveExtras.push(`血量 ${Math.round(live.health)}/${Math.round(live.maxHealth)}`);
+  }
+  if (
+    live?.resourceValue !== undefined &&
+    live?.resourceMax !== undefined &&
+    live.resourceType !== 'NONE'
+  ) {
+    const label = live.resourceType === 'ENERGY' ? '能量' : '蓝量';
+    liveExtras.push(`${label} ${Math.round(live.resourceValue)}/${Math.round(live.resourceMax)}`);
+  }
+  if (live?.currentGold !== undefined) liveExtras.push(`金币 ${kilo(live.currentGold)}`);
+  if (live?.abilities?.length) {
+    liveExtras.push(
+      `技能 ${live.abilities.map((ability) => `${ability.key}${ability.level}`).join(' ')}`,
+    );
+  }
+  const liveExtraRow = liveExtras.length
+    ? `<div class="live-extra">${liveExtras.map((item) => escapeHtml(item)).join(' · ')}</div>`
+    : '';
+  const liveRow = live
+    ? `<div class="live-row">
+        <span class="live-tag">本局</span>
+        <span class="live-kda">${live.kills} / <b class="loss">${live.deaths}</b> / ${live.assists}</span>
+        <span class="live-stat">补刀 <b>${Math.round(live.cs ?? 0)}</b></span>
+        <span class="live-stat">等级 <b>${live.championLevel ?? '-'}</b></span>
+        ${
+          live.gold !== undefined
+            ? `<span class="live-stat">装备价值 <b>${kilo(live.gold)}</b></span>`
+            : ''
+        }
+        ${
+          visionGame
+            ? `<span class="live-stat">视野 <b>${num(live.wardScore, 0)}</b></span>`
+            : ''
+        }
+        ${live.isDead ? '<span class="live-dead">已阵亡</span>' : ''}
+      </div>${liveExtraRow}`
+    : '';
+  return liveRow;
+}
+
+function liveMetricsHtml(live, visionGame) {
+  if (!live) return '';
+  return `<div class="metrics live-metrics">
+      <div class="metric"><span>参团率</span><b>${pct(live.killParticipation)}</b></div>
+      <div class="metric"><span>分均经济</span><b>${
+        live.goldPerMin === undefined ? '-' : Math.round(live.goldPerMin)
+      }</b></div>
+      <div class="metric"><span>分均补刀</span><b>${num(live.csPerMin, 1)}</b></div>
+      ${
+        visionGame
+          ? `<div class="metric"><span>分均视野</span><b>${num(live.visionPerMin, 2)}</b></div>`
+          : ''
+      }
+      <div class="metric"><span>KDA</span><b>${num(live.kda, 2)}</b></div>
+      <div class="metric"><span>队伍击杀</span><b>${live.teamKills ?? '-'}</b></div>
+      <div class="metric pending-metric" title="官方实时接口不提供伤害与承伤，对局结算后才会出现在「本局详情」里">
+        <span>伤害 / 承伤</span><b>结算后</b>
+      </div>
+    </div>`;
+}
+
+/** 装备图标行；装备数据可能比页面晚到（客户端刚启动），看到装备格时再补拉一次 */
+function itemIconsHtml(itemIds) {
+  if (!itemIds?.length) return '';
+  if (!(state.itemIcons && Object.keys(state.itemIcons).length)) {
+    void loadItemIcons();
+  }
+  return `<div class="items">${itemIds
+    .map((itemId) => {
+      const meta = state.itemIcons?.[String(itemId)];
+      return iconHtml(meta?.icon ?? null, meta?.name ?? String(itemId), 'sm', meta?.name);
+    })
+    .join('')}</div>`;
+}
+
+function isVisionGameMode(mode) {
+  return mode !== 'ARAM' && mode !== 'ARENA';
 }
 
 function buildCard(player, isLocal, options = {}) {
@@ -864,51 +960,6 @@ function buildCard(player, isLocal, options = {}) {
       : '';
 
   const live = player.live;
-  const liveExtras = [];
-  if (live?.summonerSpells?.length) {
-    liveExtras.push(`召唤师技能 ${live.summonerSpells.join(' / ')}`);
-  }
-  if (live?.runes) liveExtras.push(`符文 ${live.runes}`);
-  if (live?.respawnTimer) liveExtras.push(`复活 ${Math.ceil(live.respawnTimer)}s`);
-  if (live?.health !== undefined && live?.maxHealth !== undefined) {
-    liveExtras.push(`血量 ${Math.round(live.health)}/${Math.round(live.maxHealth)}`);
-  }
-  if (
-    live?.resourceValue !== undefined &&
-    live?.resourceMax !== undefined &&
-    live.resourceType !== 'NONE'
-  ) {
-    const label = live.resourceType === 'ENERGY' ? '能量' : '蓝量';
-    liveExtras.push(`${label} ${Math.round(live.resourceValue)}/${Math.round(live.resourceMax)}`);
-  }
-  if (live?.currentGold !== undefined) liveExtras.push(`金币 ${kilo(live.currentGold)}`);
-  if (live?.abilities?.length) {
-    liveExtras.push(
-      `技能 ${live.abilities.map((ability) => `${ability.key}${ability.level}`).join(' ')}`,
-    );
-  }
-  const liveExtraRow = liveExtras.length
-    ? `<div class="live-extra">${liveExtras.map((item) => escapeHtml(item)).join(' · ')}</div>`
-    : '';
-  const liveRow = live
-    ? `<div class="live-row">
-        <span class="live-tag">本局</span>
-        <span class="live-kda">${live.kills} / <b class="loss">${live.deaths}</b> / ${live.assists}</span>
-        <span class="live-stat">补刀 <b>${Math.round(live.cs ?? 0)}</b></span>
-        <span class="live-stat">等级 <b>${live.championLevel ?? '-'}</b></span>
-        ${
-          live.gold !== undefined
-            ? `<span class="live-stat">装备价值 <b>${kilo(live.gold)}</b></span>`
-            : ''
-        }
-        ${
-          visionGame
-            ? `<span class="live-stat">视野 <b>${num(live.wardScore, 0)}</b></span>`
-            : ''
-        }
-        ${live.isDead ? '<span class="live-dead">已阵亡</span>' : ''}
-      </div>${liveExtraRow}`
-    : '';
 
   const gameRow = thisGame
     ? `<div class="live-row this-game-row ${thisGame.win ? 'win' : 'loss'}">
@@ -920,7 +971,7 @@ function buildCard(player, isLocal, options = {}) {
             : ''
         }
       </div>`
-    : liveRow;
+    : '';
 
   const radarBlock =
     thisGame && options.radar?.length
@@ -968,24 +1019,7 @@ function buildCard(player, isLocal, options = {}) {
         </div>`
       : '';
 
-  const itemIds = thisGame
-    ? thisGame.items
-    : options.liveView
-      ? live?.items
-      : undefined;
-  // 装备数据可能比页面晚到（客户端刚启动），看到装备格时再补拉一次
-  if (itemIds?.length && !(state.itemIcons && Object.keys(state.itemIcons).length)) {
-    void loadItemIcons();
-  }
-  const itemRow =
-    itemIds?.length
-      ? `<div class="items">${itemIds
-          .map((itemId) => {
-            const meta = state.itemIcons?.[String(itemId)];
-            return iconHtml(meta?.icon ?? null, meta?.name ?? String(itemId), 'sm', meta?.name);
-          })
-          .join('')}</div>`
-      : '';
+  const itemRow = thisGame ? itemIconsHtml(thisGame.items) : '';
 
   const thisGameMetrics = thisGame
     ? `<div class="metrics">
@@ -1001,25 +1035,16 @@ function buildCard(player, isLocal, options = {}) {
       </div>`
     : '';
 
-  const liveMetrics = options.liveView && live
-    ? `<div class="metrics live-metrics">
-        <div class="metric"><span>参团率</span><b>${pct(live.killParticipation)}</b></div>
-        <div class="metric"><span>分均经济</span><b>${
-          live.goldPerMin === undefined ? '-' : Math.round(live.goldPerMin)
-        }</b></div>
-        <div class="metric"><span>分均补刀</span><b>${num(live.csPerMin, 1)}</b></div>
-        ${
-          visionGame
-            ? `<div class="metric"><span>分均视野</span><b>${num(live.visionPerMin, 2)}</b></div>`
-            : ''
-        }
-        <div class="metric"><span>KDA</span><b>${num(live.kda, 2)}</b></div>
-        <div class="metric"><span>队伍击杀</span><b>${live.teamKills ?? '-'}</b></div>
-        <div class="metric pending-metric" title="官方实时接口不提供伤害与承伤，对局结算后才会出现在「本局详情」里">
-          <span>伤害 / 承伤</span><b>结算后</b>
-        </div>
-      </div>`
-    : '';
+  const liveItems = itemIconsHtml(live?.items);
+  const liveBlock =
+    !thisGame && options.liveView && live
+      ? `<div class="card-live" data-live-slot><div data-live-stats>${liveRowsHtml(
+          live,
+          visionGame,
+        )}${liveMetricsHtml(live, visionGame)}</div>${
+          liveItems ? `<div data-live-items>${liveItems}</div>` : ''
+        }</div>`
+      : '';
 
   card.innerHTML = `
     <div class="card-head">
@@ -1066,11 +1091,11 @@ function buildCard(player, isLocal, options = {}) {
       </div>
     </div>
 
-    ${thisGame ? gameRow : liveRow}
+    ${thisGame ? gameRow : liveBlock}
     ${thisGame ? radarBlock : ''}
     ${thisGame ? timelineBlock : ''}
-    ${thisGame ? thisGameMetrics : liveMetrics}
-    ${thisGame || options.liveView ? itemRow : ''}
+    ${thisGame ? thisGameMetrics : ''}
+    ${thisGame ? itemRow : ''}
     ${thisGame ? '' : gameChips ? `<div class="games">${gameChips}</div>` : ''}
     ${thisGame ? '' : sparkBlock}
     ${thisGame ? '' : loading}
@@ -1082,6 +1107,8 @@ function buildCard(player, isLocal, options = {}) {
     ${thisGame ? '' : error}
     ${detail}
   `;
+  const liveSlot = card.querySelector('[data-live-slot]');
+  if (liveSlot) liveSlot.dataset.items = (live?.items ?? []).join(',');
   const matchesButton = card.querySelector('[data-action="matches"]');
   if (matchesButton) {
     matchesButton.addEventListener('click', () => openMatches(player, options.context));
@@ -1094,6 +1121,36 @@ function buildCard(player, isLocal, options = {}) {
   }
 
   return card;
+}
+
+/** 命中缓存、只有实时数据变化时，原地刷新本局区块，不重建头像和历史战绩图标 */
+function updateCardLive(node, player) {
+  const slot = node.querySelector('[data-live-slot]');
+  const live = player.live;
+  if (!slot || !live) return false;
+  const visionGame = isVisionGameMode(state.snapshot?.gameMode);
+  const stats = slot.querySelector('[data-live-stats]');
+  if (stats) {
+    stats.innerHTML = `${liveRowsHtml(live, visionGame)}${liveMetricsHtml(live, visionGame)}`;
+  }
+  // 装备只在真正变化时才重画，避免每轮重建图标
+  const itemsKey = (live.items ?? []).join(',');
+  if (slot.dataset.items !== itemsKey) {
+    const itemsHtml = itemIconsHtml(live.items);
+    let holder = slot.querySelector('[data-live-items]');
+    if (itemsHtml) {
+      if (!holder) {
+        holder = document.createElement('div');
+        holder.dataset.liveItems = '';
+        slot.append(holder);
+      }
+      holder.innerHTML = itemsHtml;
+    } else {
+      holder?.remove();
+    }
+    slot.dataset.items = itemsKey;
+  }
+  return true;
 }
 
 function renderHeader(snapshot, players, collecting) {

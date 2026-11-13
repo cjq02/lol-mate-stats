@@ -703,7 +703,11 @@ export class ReportCollector {
       const base = bases[index] as PlayerReport;
       const report = await this.buildLiveFullReport(player, base, championMap, context);
       reports[index] = report;
-      onProgress?.([...reports]);
+      // 缓存命中时除了每轮都会变的实时数据，其它内容完全一样，
+      // 不必再推一帧；只在新战绩真正加载出来时通知前端。
+      if (reportSignature(report) !== reportSignature(base)) {
+        onProgress?.([...reports]);
+      }
     });
 
     await this.attachHistoryInsights(reports);
@@ -883,13 +887,19 @@ export class ReportCollector {
       recent: cached?.recent,
       games: cached?.games,
       rank: cached?.rank,
+      // 基础卡片也带上缓存里的长期对比，避免同一轮推送“有基线 / 无基线”两个版本
+      baseline: cached?.baseline,
+      championStats: cached?.championStats,
       isBot: Boolean(player.isBot),
       isEnemy: Boolean(player.isEnemy),
       live: liveStats(player, liveContext),
       loading: !player.isBot && !cached,
+      error: cached?.error,
     };
 
     if (!info && !player.isBot) base.error = '无法读取召唤师信息';
+    // 实时接口偶尔不给位置（如大乱斗），沿用缓存里的位置，避免每轮都被判定成“变了”
+    if (!base.position && cached?.position) base.position = cached.position;
     return base;
   }
 
@@ -1731,4 +1741,9 @@ function liveStats(
 export function percentage(value: number | undefined): string {
   if (value === undefined || Number.isNaN(value)) return '-';
   return `${round(value * 100, 0)}%`;
+}
+
+/** 忽略每轮都会变化的实时数据，只比较战绩相关内容，用来判断是否需要推送新一帧 */
+function reportSignature(report: PlayerReport): string {
+  return JSON.stringify({ ...report, live: undefined });
 }

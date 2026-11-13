@@ -2695,6 +2695,14 @@ body::before {
 
 /* 本局实时数据 */
 
+/* 实时区块在缓存命中时会被局部刷新，用嵌套容器保持和卡片一致的间距 */
+.card-live,
+.card-live [data-live-stats] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .live-row {
   display: flex;
   align-items: center;
