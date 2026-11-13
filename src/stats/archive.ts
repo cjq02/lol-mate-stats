@@ -107,10 +107,11 @@ function parseTagList(raw: string | null): string[] {
   return [];
 }
 
-/** 逃跑/坑/MVP 标签每次读取时重新推断，避免旧数据里的误判一直保留 */
+/** 重开/逃跑/坑/MVP 标签每次读取时重新推断，避免旧数据里的误判一直保留 */
 function stripComputedTags(tags: string[]): string[] {
   return tags.filter(
     (tag) =>
+      tag !== '重开' &&
       tag !== 'MVP' &&
       tag !== 'SVP' &&
       !/^(?:自己|队友|对手|敌方)(?:小坑|坑|巨坑|逃跑)$/.test(tag),

@@ -108,13 +108,9 @@ export function endOfGameToRawGame(
       pentaKills: eogNumber(stats, 'PENTA_KILLS', 'pentaKills'),
       turretKills: eogNumber(stats, 'TURRETS_KILLED', 'turretKills'),
       firstBloodKill: eogNumber(stats, 'FIRST_BLOOD', 'firstBloodKill') > 0,
+      // 只认 early surrender 字段：普通投降（gameEndedInSurrender）不是重开
       gameEndedInEarlySurrender:
-        eogNumber(
-          stats,
-          'GAME_ENDED_IN_EARLY_SURRENDER',
-          'gameEndedInSurrender',
-          'gameEndedInIGNBSurrender',
-        ) > 0,
+        eogNumber(stats, 'GAME_ENDED_IN_EARLY_SURRENDER', 'gameEndedInEarlySurrender') > 0,
     };
     const items = Array.isArray(entry.player.items) ? entry.player.items : [];
     for (let slot = 0; slot < 7; slot += 1) {

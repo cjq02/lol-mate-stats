@@ -3,7 +3,7 @@ import type { AnalyzedGame, GameTimeline, Lane, RawGame, Snapshot } from '../typ
 import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
 import { buildLiveAnalysisMessages } from '../ai.js';
-import { badLevelLabel, badLevelOfScore, gameFlagTags, worseBadLevel } from './flags.js';
+import { badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
 import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
@@ -1302,6 +1302,72 @@ test('结算数据只有小写统计字段时也能解析', () => {
   assert.equal(stats?.totalDamageDealtToChampions, 23_456);
   assert.equal(stats?.visionScore, 21);
   assert.equal(stats?.firstBloodKill, true);
+});
+
+test('普通投降不会被当成重开', () => {
+  const block = {
+    gameId: 9_006,
+    queueId: 450,
+    gameMode: 'ARAM',
+    gameLength: 792,
+    teams: [
+      {
+        teamId: 100,
+        isWinningTeam: true,
+        players: [
+          {
+            championId: 1,
+            stats: { WIN: 1, gameEndedInEarlySurrender: 0, gameEndedInSurrender: 1 },
+          },
+        ],
+      },
+      {
+        teamId: 200,
+        isWinningTeam: false,
+        players: [
+          {
+            championId: 2,
+            stats: { WIN: 0, gameEndedInEarlySurrender: 0, gameEndedInSurrender: 1 },
+          },
+        ],
+      },
+    ],
+  };
+  const game = endOfGameToRawGame(block, [{ puuid: 'p1' }, { puuid: 'p2' }], 5_000_000);
+  assert.ok(game, '结算数据应能转换成对局');
+  assert.equal(
+    game.participants?.[0]?.stats?.gameEndedInEarlySurrender,
+    false,
+    '普通投降字段不应写进 early surrender',
+  );
+  assert.equal(isRemakeGame(game), false, '13 分钟的投降局不应标记为重开');
+});
+
+test('early surrender 仍然识别为重开', () => {
+  const block = {
+    gameId: 9_007,
+    queueId: 420,
+    gameLength: 240,
+    teams: [
+      {
+        teamId: 100,
+        isWinningTeam: true,
+        players: [
+          { championId: 1, stats: { WIN: 1, gameEndedInEarlySurrender: 1 } },
+        ],
+      },
+      {
+        teamId: 200,
+        isWinningTeam: false,
+        players: [
+          { championId: 2, stats: { WIN: 0, gameEndedInEarlySurrender: 1 } },
+        ],
+      },
+    ],
+  };
+  const game = endOfGameToRawGame(block, [{ puuid: 'p1' }, { puuid: 'p2' }], 5_000_000);
+  assert.ok(game, '结算数据应能转换成对局');
+  assert.equal(isRemakeGame(game), true, 'early surrender 应标记为重开');
 });
 
 console.log('finished-game');

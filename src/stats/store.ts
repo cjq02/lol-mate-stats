@@ -121,7 +121,7 @@ async function connect(): Promise<Pool | undefined> {
 }
 
 /** 表结构版本：每次新增迁移递增，旧库启动时按顺序补齐 */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 interface SchemaMigration {
   version: number;
@@ -218,6 +218,22 @@ const SCHEMA_MIGRATIONS: SchemaMigration[] = [
         'match_participants',
         'idx_mp_champion_game',
         'champion_id, game_id',
+      );
+    },
+  },
+  {
+    version: 5,
+    describe: '清理普通投降被误标的重开标签',
+    up: async (db) => {
+      // 旧版结算数据把 gameEndedInSurrender 当成 early surrender，
+      // 导致超过 5 分钟的普通投降对局也被写成“重开”；这里按真实时长清理。
+      await db.query(
+        `UPDATE match_participants p
+         JOIN matches m ON m.game_id = p.game_id
+         SET p.tags = JSON_REMOVE(p.tags, JSON_UNQUOTE(JSON_SEARCH(p.tags, 'one', '重开')))
+         WHERE m.duration_seconds > 300
+           AND JSON_VALID(p.tags)
+           AND JSON_CONTAINS(p.tags, JSON_QUOTE('重开'))`,
       );
     },
   },
