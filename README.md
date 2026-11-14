@@ -116,6 +116,8 @@ LOL_MATE_AI_DISABLED=1
 
 也兼容 `OPENCODE_GO_API_KEY` / `OPENCODE_API_KEY` 作为 Key 的别名。配置后重启面板，打开任意一场对局的「本局详情」，点右上角的「✨ AI 分析」即可流式生成复盘。
 
+AI 会先按当前模式校验装备可用性：大乱斗不会推荐守护天使、黑暗封印、梅贾的窃魂卷、共生鞋鱼，也不会建议回城补给、插眼反眼或争夺小龙/大龙。
+
 也兼容 `LCU_PORT`、`LCU_PASSWORD`、`LOL_LOCKFILE`、`LOL_INSTALL_DIR`。旧版的 `LOL_MATE_DB` / `LOL_MATE_CACHE` 已不再使用。
 
 ### 找不到客户端时

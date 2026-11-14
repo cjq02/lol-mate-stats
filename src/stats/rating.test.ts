@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import type { AnalyzedGame, GameTimeline, Lane, RawGame, Snapshot } from '../types.js';
+import type { AnalyzedGame, GameTimeline, Lane, MatchDetail, RawGame, Snapshot } from '../types.js';
 import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
-import { buildLiveAnalysisMessages } from '../ai.js';
+import { buildAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
 import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
@@ -578,7 +578,7 @@ test('解析 Live Client Data 的装备对象', () => {
   assert.deepEqual(liveItemIds(undefined), []);
 });
 
-test('实时 AI 提示词包含装备、召唤师技能、符文、血量和事件', () => {
+test('实时 AI 提示词包含装备、模式限制、符文、血量和事件', () => {
   const snapshot = {
     mode: 'live',
     phase: 'InProgress',
@@ -653,6 +653,41 @@ test('实时 AI 提示词包含装备、召唤师技能、符文、血量和事�
   assert.ok(text.includes('权重（局内百分位）'), text);
   assert.ok(text.includes('输出占比权重最高'), text);
   assert.ok(text.includes('2. 我的评分提升重点'), text);
+  // 大乱斗必须明确禁用装备和不能回城等硬规则，避免 AI 推荐守护天使
+  assert.ok(text.includes('商店禁用装备'), text);
+  assert.ok(text.includes('守护天使'), text);
+  assert.ok(text.includes('黑暗封印'), text);
+  assert.ok(text.includes('没有回城'), text);
+  assert.ok(text.includes('只列当前模式能买到'), text);
+
+  const srText = buildLiveAnalysisMessages(
+    { ...snapshot, queueId: 420, gameMode: 'CLASSIC' } as unknown as Snapshot,
+    () => '',
+  )
+    .map((message) => message.content)
+    .join('\n');
+  assert.ok(!srText.includes('守护天使'), srText);
+  assert.ok(srText.includes('【装备可用性】'), srText);
+});
+
+test('赛后 AI 复盘同样校验大乱斗禁用装备', () => {
+  const detail = {
+    gameId: 1,
+    queueId: 450,
+    queueName: '极地大乱斗',
+    gameMode: 'ARAM',
+    gameCreation: 0,
+    gameDuration: 1200,
+    selfPuuid: 'me',
+    scoreboard: [{ puuid: 'me', championName: '格温', teamId: 100, isEnemy: false }],
+    players: [],
+  } as unknown as MatchDetail;
+  const text = buildAnalysisMessages(detail)
+    .map((message) => message.content)
+    .join('\n');
+  assert.ok(text.includes('商店禁用装备'), text);
+  assert.ok(text.includes('守护天使'), text);
+  assert.ok(text.includes('先确认装备在当前模式可购买'), text);
 });
 
 test('每队最佳：胜方 MVP、负方 SVP', () => {
