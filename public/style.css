@@ -717,13 +717,14 @@ body::before {
 
 .ai-modal {
   z-index: 60;
-  padding: 18px;
+  /* 上下各留 2.5vh，让 95vh 的弹窗正好占满屏幕高度 */
+  padding: 2.5vh 1vw;
 }
 
 .ai-modal-card {
-  width: min(1520px, 98vw);
-  height: min(1000px, 92vh);
-  max-height: 92vh;
+  width: min(1800px, 98vw);
+  height: 95vh;
+  max-height: 95vh;
 }
 
 .ai-modal-card .modal-head {
@@ -773,7 +774,7 @@ body::before {
 .ai-body {
   flex: 1 1 auto;
   width: 100%;
-  max-width: 1360px;
+  max-width: 1600px;
   min-height: 0;
   margin: 0 auto;
   overflow: auto;
