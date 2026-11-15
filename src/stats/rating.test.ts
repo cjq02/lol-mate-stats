@@ -10,7 +10,7 @@ import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
-import { premadeSizesByPuuid } from './premade.js';
+import { premadeSizesByPuuid, premadeSizesFromGames } from './premade.js';
 import { isNewFinishedGame } from '../watcher.js';
 
 let passed = 0;
@@ -607,6 +607,8 @@ test('实时 AI 提示词包含装备、模式限制、符文、血量和事件'
         championName: '格温',
         position: 'ARAM',
         isEnemy: false,
+        premadeSize: 2,
+        premadeSource: 'session',
         labels: [],
         live: {
           kills: 0,
@@ -649,6 +651,7 @@ test('实时 AI 提示词包含装备、模式限制、符文、血量和事件'
   assert.ok(text.includes('峡谷制造者'), text);
   assert.ok(text.includes('本局事件'), text);
   assert.ok(text.includes('我 击杀 敌人'), text);
+  assert.ok(text.includes('开黑 2 人（本局确认）'), text);
   assert.ok(text.includes('【评分目标】'), text);
   assert.ok(text.includes('权重（局内百分位）'), text);
   assert.ok(text.includes('输出占比权重最高'), text);
@@ -1035,6 +1038,68 @@ test('识别同队共享 teamParticipantId 的开黑玩家', () => {
   assert.equal(sizes.get('d'), 2);
   assert.equal(sizes.get('e'), 2);
   assert.equal(sizes.size, 4);
+});
+
+test('历史对局按最近同队同局推断开黑分组', () => {
+  const game = (gameId: number, teamId: number) => ({ gameId, teamId });
+  const sizes = premadeSizesFromGames(
+    [
+      {
+        puuid: 'duo-a',
+        isEnemy: true,
+        games: [game(1, 100), game(2, 100), game(3, 100), game(4, 100)],
+      },
+      {
+        puuid: 'duo-b',
+        isEnemy: true,
+        games: [game(1, 100), game(2, 100), game(3, 100)],
+      },
+      {
+        puuid: 'random-a',
+        isEnemy: true,
+        games: [game(1, 100), game(5, 100), game(6, 100)],
+      },
+      {
+        puuid: 'random-b',
+        isEnemy: true,
+        games: [game(1, 100), game(5, 200), game(6, 200)],
+      },
+      {
+        puuid: 'trio-a',
+        isEnemy: false,
+        games: [game(1, 200), game(7, 200), game(8, 200)],
+      },
+      {
+        puuid: 'trio-b',
+        isEnemy: false,
+        games: [game(1, 200), game(7, 200), game(8, 200)],
+      },
+      {
+        puuid: 'trio-c',
+        isEnemy: false,
+        games: [game(1, 200), game(7, 200), game(8, 200)],
+      },
+    ],
+    1,
+  );
+  assert.equal(sizes.get('duo-a'), 2, '两场同队同局应识别为双排');
+  assert.equal(sizes.get('duo-b'), 2);
+  assert.equal(sizes.get('random-a'), undefined, '同局但不同队不应算开黑');
+  assert.equal(sizes.get('random-b'), undefined);
+  assert.equal(sizes.get('trio-a'), 3, '三人共同同队同局应识别为三排');
+  assert.equal(sizes.get('trio-b'), 3);
+  assert.equal(sizes.get('trio-c'), 3);
+});
+
+test('只有一场同队同局时不标开黑，避免随机重排误判', () => {
+  const sizes = premadeSizesFromGames(
+    [
+      { puuid: 'a', isEnemy: true, games: [{ gameId: 10, teamId: 100 }] },
+      { puuid: 'b', isEnemy: true, games: [{ gameId: 10, teamId: 100 }] },
+    ],
+    10,
+  );
+  assert.equal(sizes.size, 0);
 });
 
 test('低伤害低承伤但 KDA 好看的局判为挂机', () => {

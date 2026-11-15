@@ -27,6 +27,7 @@ import {
 } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName } from './constants.js';
 import { gameFlagTags, gameFlags, isRemakeGame } from './flags.js';
+import { premadeSizesFromGames } from './premade.js';
 import { compareBaseline, summarize } from './rating.js';
 import { getDb, withTransaction } from './store.js';
 
@@ -658,6 +659,18 @@ export class ReportCollector {
       (a, b) => Number(Boolean(a.isEnemy)) - Number(Boolean(b.isEnemy)),
     );
     await this.attachHistoryInsights(sorted);
+    // 历史对局没有 teamParticipantId，用最近战绩里“同队同局”的次数推断开黑，
+    // 这样对局详情里敌方双排也能被标出来；缓存里可能带着上一局的旧标记，先清掉。
+    const premade = premadeSizesFromGames(sorted, matchGameId || undefined);
+    for (const report of sorted) {
+      delete report.premadeSize;
+      delete report.premadeSource;
+      const size = report.puuid ? premade.get(report.puuid) : undefined;
+      if (size && size >= 2) {
+        report.premadeSize = size;
+        report.premadeSource = 'history';
+      }
+    }
     return sorted;
   }
 

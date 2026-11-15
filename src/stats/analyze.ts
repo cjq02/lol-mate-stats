@@ -436,6 +436,7 @@ export function analyzeParticipant(
 
   return {
     ...data,
+    teamId: toNumber(participant.teamId) || undefined,
     score,
     tags: gameTags({
       ...data,

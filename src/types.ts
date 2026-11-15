@@ -172,6 +172,8 @@ export interface AnalyzedGame {
   gameId: number;
   queueId: number;
   queueName: string;
+  /** 该玩家在这局所在的队伍；用于根据“同队同局”推断开黑分组 */
+  teamId?: number;
   gameCreation: number;
   durationMin: number;
   championId: number;
@@ -661,8 +663,10 @@ export interface PlayerReport {
   isBot?: boolean;
   /** 对局中的敌方玩家 */
   isEnemy?: boolean;
-  /** 本局一起开黑的人数（仅当前对局可识别，2 人以上才有值） */
+  /** 本局一起开黑的人数（2 人以上才有值；历史对局按最近同队同局推断） */
   premadeSize?: number;
+  /** 开黑标记来源：session 为当前对局/选人信息，history 为最近同队同局推断 */
+  premadeSource?: 'session' | 'history';
   /** 近期综合评分 0-100，取不到战绩时为 null */
   rating: number | null;
   grade?: Grade;

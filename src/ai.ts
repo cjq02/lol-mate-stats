@@ -189,6 +189,13 @@ function liveText(row: PlayerReport, itemName: (id: number) => string): string {
   if (live.gold !== undefined) parts.push(`装备价值 ${fix(live.gold)}`);
   if (live.killParticipation !== undefined) parts.push(`参团 ${pct(live.killParticipation)}`);
   if (live.wardScore !== undefined) parts.push(`视野 ${fix(live.wardScore)}`);
+  if (row.premadeSize && row.premadeSize >= 2) {
+    parts.push(
+      row.premadeSource === 'session'
+        ? `开黑 ${row.premadeSize} 人（本局确认）`
+        : `开黑 ${row.premadeSize} 人（近期同队推断）`,
+    );
+  }
   if (live.items?.length) {
     parts.push(
       `装备 ${live.items.map((id) => itemName(Number(id)) || `#${id}`).join('、')}`,
@@ -412,6 +419,7 @@ export function buildLiveAnalysisMessages(
     modeRuleText(snapshot.gameMode),
     '装备和资源建议必须先核对模式可用性，再谈强度和评分收益。',
     '大乱斗/竞技场模式不要用补刀、视野、分带等召唤师峡谷标准苛责；数据不足时直接说明。',
+    '阵容里标了“开黑”的可以用于判断配合和针对优先级；标注“近期同队推断”的只能当参考，不要当成确定事实。',
     '每条建议都要说明它提升哪个评分项（KDA / 参团 / 输出占比 / 承伤占比 / 治疗占比），不能只写“多参团”。',
     '优先在正常赢法内优化评分：不要建议卖队友保 KDA、刷无效伤害或刻意拖延比赛；如果赢法和评分冲突，先讲取舍再给方案。',
     '输出中文，分点清晰，必须引用具体英雄和数字。',
@@ -461,16 +469,22 @@ export function buildAnalysisMessages(
         const recentRating =
           typeof report?.rating === 'number' ? `近期评分 ${fix(report.rating)}；` : '';
         const tags = row.tags?.length ? `标签 ${row.tags.join('、')}；` : '';
+        const premade =
+          report?.premadeSize && report.premadeSize >= 2
+            ? `开黑 ${report.premadeSize} 人${
+                report.premadeSource === 'session' ? '' : '（近期同队推断）'
+              }；`
+            : '';
         if (isSelf) {
           return `- ${label}（${row.championName ?? '未知英雄'} / ${lane(row.position)}）：本局评分 ${fix(
             row.score,
-          )}；${recentRating}${tags}`;
+          )}；${recentRating}${premade}${tags}`;
         }
         return `- ${label}（${row.championName ?? '未知英雄'} / ${lane(row.position)}）：KDA ${kdaText(
           row,
         )}；补刀 ${fix(row.cs)}；经济 ${fix(row.gold)}；伤害 ${fix(row.damage)}；承伤 ${fix(
           row.damageTaken,
-        )}；视野 ${fix(row.vision)}；评分 ${fix(row.score)}；${recentRating}${tags}装备 ${itemsText(
+        )}；视野 ${fix(row.vision)}；评分 ${fix(row.score)}；${recentRating}${premade}${tags}装备 ${itemsText(
           row,
           itemName,
         )}`;
@@ -521,6 +535,7 @@ export function buildAnalysisMessages(
     '输出中文，分点清晰，必须引用具体数字；大乱斗/竞技场模式不要用补刀、视野苛责。',
     modeRuleText(detail.gameMode),
     '装备和资源建议必须先核对模式可用性；如果本局出装包含该模式禁用或买不到的装备，直接指出。',
+    '阵容里标了“开黑”的可以用于判断配合和针对优先级；标注“近期同队推断”的只能当参考，不要当成确定事实。',
     '使用 Markdown 排版：每个部分用 `## 1. 小标题` 开头；部分内用 `-` 分点，重点用 `**加粗**`；每个部分先给一句结论，再用 2-5 条短要点展开。不要使用 Markdown 表格。固定输出 7 个部分：',
     '1. 局势总览（2-3 句：胜负主因、双方阵容与关键差距、本局节奏）',
     '2. 胜负关键（3-4 条，每条带具体数字和英雄/位置）',

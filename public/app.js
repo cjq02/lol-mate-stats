@@ -1065,8 +1065,12 @@ function buildCard(player, isLocal, options = {}) {
           ${!thisGame ? mainPositionHint(player, cardMode) : ''}
           ${player.isEnemy ? '<span class="side-badge enemy">敌方</span>' : ''}
           ${
-            !player.isEnemy && Number(player.premadeSize) >= 2
-              ? `<span class="premade-badge" title="与 ${Number(player.premadeSize) - 1} 名玩家一起组队进入本局">开黑 ${Number(player.premadeSize)} 人</span>`
+            Number(player.premadeSize) >= 2
+              ? `<span class="premade-badge" title="${
+                  player.premadeSource === 'session'
+                    ? `与另外 ${Number(player.premadeSize) - 1} 名玩家一起组队进入本局`
+                    : `最近战绩中与另外 ${Number(player.premadeSize) - 1} 名玩家多次同队开局`
+                }">开黑 ${Number(player.premadeSize)} 人</span>`
               : ''
           }
           <span>${escapeHtml(rankLabel(player.rank))}</span>

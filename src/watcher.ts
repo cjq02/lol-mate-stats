@@ -1090,8 +1090,13 @@ export class LiveSource implements DataSource {
       const applyPremade = (list: PlayerReport[]) => {
         for (const report of list) {
           const size = report.puuid ? this.premadeSizes.get(report.puuid) : undefined;
-          if (size && size >= 2) report.premadeSize = size;
-          else delete report.premadeSize;
+          if (size && size >= 2) {
+            report.premadeSize = size;
+            report.premadeSource = 'session';
+          } else {
+            delete report.premadeSize;
+            delete report.premadeSource;
+          }
         }
       };
       const reports = await collector.collectLive(
@@ -1202,8 +1207,13 @@ export class LiveSource implements DataSource {
               (report.puuid && partyPuuids.has(report.puuid)) ||
                 (report.summonerId && partySummonerIds.has(report.summonerId)),
             );
-          if (inParty) report.premadeSize = partySize;
-          else delete report.premadeSize;
+          if (inParty) {
+            report.premadeSize = partySize;
+            report.premadeSource = 'session';
+          } else {
+            delete report.premadeSize;
+            delete report.premadeSource;
+          }
         }
       };
       const reports = await collector.collect(
