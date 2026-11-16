@@ -2436,9 +2436,10 @@ function miniRadarSvg(series) {
 
 /** 本局按评分给全部玩家排名，同分并列，返回每行名次和总人数 */
 function scoreRankMap(scoreboard) {
+  // 用精确分数排名，不能用展示时的整数，否则 74.6 和 74.8 都会被算成并列第 1
   const ranked = scoreboard
     .filter((row) => Number.isFinite(Number(row.score)))
-    .map((row) => ({ row, score: Math.round(Number(row.score)) }))
+    .map((row) => ({ row, score: Number(row.score) }))
     .sort((a, b) => b.score - a.score);
   const ranks = new Map();
   let lastScore = null;
