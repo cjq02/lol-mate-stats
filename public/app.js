@@ -323,15 +323,21 @@ const RATING_TONES = [
   { min: -Infinity, className: 'score-low', color: '#ff4d6d' },
 ];
 
+/** 时段统计看的是平均分，实际集中在 50-75，单独用更细的分段颜色 */
+const TIME_STATS_SCORE_TONES = [
+  { min: 75, className: 'avg-75', color: '#3ddc97' },
+  { min: 70, className: 'avg-70', color: '#38bdf8' },
+  { min: 65, className: 'avg-65', color: '#a3e635' },
+  { min: 60, className: 'avg-60', color: '#ffe14d' },
+  { min: 55, className: 'avg-55', color: '#ffb020' },
+  { min: 50, className: 'avg-50', color: '#ff7a45' },
+  { min: -Infinity, className: 'avg-low', color: '#ff4d6d' },
+];
+
 function ratingColor(rating, stats) {
   if (rating === null || rating === undefined) return '#5b6b8c';
   if (isInactiveKda(stats)) return '#7c8aa5';
   return RATING_TONES.find((tone) => rating >= tone.min)?.color ?? '#ff4d6d';
-}
-
-/** 评分所在的颜色分段，供需要 CSS 类名的场景使用 */
-function ratingTone(rating) {
-  return RATING_TONES.find((tone) => rating >= tone.min)?.className ?? 'score-low';
 }
 
 function hexToRgba(hex, alpha) {
@@ -3607,7 +3613,10 @@ function timeStatsTone(period) {
 
 function timeStatsScoreTone(period) {
   if (!period?.scoreGames) return 'empty';
-  return ratingTone(Number(period.avgScore) || 0);
+  const avgScore = Number(period.avgScore) || 0;
+  return (
+    TIME_STATS_SCORE_TONES.find((tone) => avgScore >= tone.min)?.className ?? 'avg-low'
+  );
 }
 
 function updateTimeStatsTabs() {

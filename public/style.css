@@ -651,52 +651,60 @@ body::before {
   background: #ff6b81;
 }
 
-/* 评分口径按分数段取色，和卡片环形评分保持一致 */
-.time-stat-row.score-80 .time-stat-rate {
+/* 评分口径看的是平均分，实际集中在 50-75，按 5 分一段区分颜色 */
+.time-stat-row.avg-75 .time-stat-rate {
   color: #3ddc97;
 }
 
-.time-stat-row.score-80 .time-stat-bar > span {
+.time-stat-row.avg-75 .time-stat-bar > span {
   background: #3ddc97;
 }
 
-.time-stat-row.score-70 .time-stat-rate {
-  color: #5eead4;
+.time-stat-row.avg-70 .time-stat-rate {
+  color: #38bdf8;
 }
 
-.time-stat-row.score-70 .time-stat-bar > span {
-  background: #5eead4;
+.time-stat-row.avg-70 .time-stat-bar > span {
+  background: #38bdf8;
 }
 
-.time-stat-row.score-60 .time-stat-rate {
-  color: #f5c76a;
+.time-stat-row.avg-65 .time-stat-rate {
+  color: #a3e635;
 }
 
-.time-stat-row.score-60 .time-stat-bar > span {
-  background: #f5c76a;
+.time-stat-row.avg-65 .time-stat-bar > span {
+  background: #a3e635;
 }
 
-.time-stat-row.score-50 .time-stat-rate {
-  color: #ffab5e;
+.time-stat-row.avg-60 .time-stat-rate {
+  color: #ffe14d;
 }
 
-.time-stat-row.score-50 .time-stat-bar > span {
-  background: #ffab5e;
+.time-stat-row.avg-60 .time-stat-bar > span {
+  background: #ffe14d;
 }
 
-.time-stat-row.score-40 .time-stat-rate {
-  color: #ff9b9b;
+.time-stat-row.avg-55 .time-stat-rate {
+  color: #ffb020;
 }
 
-.time-stat-row.score-40 .time-stat-bar > span {
-  background: #ff9b9b;
+.time-stat-row.avg-55 .time-stat-bar > span {
+  background: #ffb020;
 }
 
-.time-stat-row.score-low .time-stat-rate {
+.time-stat-row.avg-50 .time-stat-rate {
+  color: #ff7a45;
+}
+
+.time-stat-row.avg-50 .time-stat-bar > span {
+  background: #ff7a45;
+}
+
+.time-stat-row.avg-low .time-stat-rate {
   color: #ff4d6d;
 }
 
-.time-stat-row.score-low .time-stat-bar > span {
+.time-stat-row.avg-low .time-stat-bar > span {
   background: #ff4d6d;
 }
 
