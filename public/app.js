@@ -531,7 +531,13 @@ function render() {
   const collecting = Boolean(snapshot?.collecting);
   const showSkeleton = !players.length && collecting;
 
-  if (!snapshot?.inGame && state.ai?.kind === 'live') resetAiView();
+  if (
+    !snapshot?.inGame &&
+    !snapshot?.inChampSelect &&
+    (state.ai?.kind === 'live' || state.ai?.kind === 'champSelect')
+  ) {
+    resetAiView();
+  }
 
   document.title = players.length ? `(${players.length}) 队友战绩 · LoL` : '队友战绩 · LoL';
 
@@ -1223,10 +1229,17 @@ function renderHeader(snapshot, players, collecting) {
   );
 
   els.mode.classList.toggle('hidden', snapshot?.mode !== 'demo');
-  els.liveAi.classList.toggle(
-    'hidden',
-    !(snapshot?.inGame && players.length > 0 && snapshot.localPlayer),
+  const canChampSelectAi = Boolean(
+    snapshot?.inChampSelect &&
+      !collecting &&
+      players.length > 0 &&
+      snapshot.localPlayer,
   );
+  const canLiveAi = Boolean(
+    snapshot?.inGame && players.length > 0 && snapshot.localPlayer,
+  );
+  els.liveAi.classList.toggle('hidden', !(canChampSelectAi || canLiveAi));
+  setAiButton(Boolean(state.ai?.running));
   if (snapshot?.region) {
     els.region.textContent = String(snapshot.region).toUpperCase();
     els.region.classList.remove('hidden');
@@ -1482,12 +1495,16 @@ const AI_CONFIG_HINT =
   '在项目根目录的 .env 中设置 LOL_MATE_AI_API_KEY=你的 OpenCode Go API Key，然后重启面板。默认使用 deepseek-v4.1-flash。';
 
 function setAiButton(running) {
+  const champSelect = Boolean(state.snapshot?.inChampSelect);
+  const label = champSelect ? '✨ AI 选人' : '✨ AI 分析';
   for (const button of [els.matchesAi, els.liveAi]) {
     button.disabled = Boolean(running);
     button.classList.toggle('loading', Boolean(running));
     button.innerHTML = running
       ? '<span class="spinner"></span>分析中…'
-      : '✨ AI 分析';
+      : button === els.liveAi
+        ? label
+        : '✨ AI 分析';
   }
   els.matchesAi.title = running
     ? '正在生成 AI 复盘分析…'
@@ -1495,10 +1512,14 @@ function setAiButton(running) {
       ? 'AI 分析未配置：在 .env 设置 LOL_MATE_AI_API_KEY 后重启面板'
       : `用 AI 复盘本局（${state.aiStatus?.model ?? 'DeepSeek V4.1 Flash'}）`;
   els.liveAi.title = running
-    ? '正在生成出装和打法建议…'
+    ? champSelect
+      ? '正在生成选人建议…'
+      : '正在生成出装和打法建议…'
     : state.aiStatus?.enabled === false
       ? 'AI 分析未配置：在 .env 设置 LOL_MATE_AI_API_KEY 后重启面板'
-      : `AI 出装、技能与打法建议（${state.aiStatus?.model ?? 'DeepSeek V4.1 Flash'}）`;
+      : champSelect
+        ? `AI 选人建议：阵容、符文、召唤师技能和出装（${state.aiStatus?.model ?? 'DeepSeek V4.1 Flash'}）`
+        : `AI 出装、技能与打法建议（${state.aiStatus?.model ?? 'DeepSeek V4.1 Flash'}）`;
 }
 
 function hideAiView() {
@@ -1652,7 +1673,9 @@ function renderAiView() {
   const tab = activeAiTab(ai);
   const liveTab = tab === 'live';
 
-  els.aiModalTitle.textContent = ai.title ? `✨ AI 复盘 · ${ai.title}` : '✨ AI 复盘';
+  els.aiModalTitle.textContent = ai.title
+    ? `✨ ${ai.kind === 'champSelect' ? 'AI 选人建议' : 'AI 复盘'} · ${ai.title}`
+    : `✨ ${ai.kind === 'champSelect' ? 'AI 选人建议' : 'AI 复盘'}`;
   els.aiTabs.classList.toggle('hidden', !hasLive);
   if (hasLive) {
     for (const button of els.aiTabs.querySelectorAll('[data-ai-tab]')) {
@@ -1664,7 +1687,11 @@ function renderAiView() {
   els.aiRerun.classList.toggle('hidden', !canRerun);
   els.aiRerun.disabled = ai.running;
   els.aiRerun.textContent =
-    liveTab && !String(ai.text ?? '').trim() ? '生成赛后复盘' : '重新分析';
+    ai.kind === 'champSelect'
+      ? '重新生成'
+      : liveTab && !String(ai.text ?? '').trim()
+        ? '生成赛后复盘'
+        : '重新分析';
 
   if (liveTab) {
     const savedAt = ai.live.savedAt ? ` · 对局中保存 ${formatGameTime(ai.live.savedAt)}` : '';
@@ -1690,7 +1717,11 @@ function renderAiView() {
     const foot =
       ai.running && ai.status
         ? `<div class="ai-foot">${escapeHtml(ai.status)}</div>`
-        : `<div class="ai-foot">内容由 AI 根据本局数据生成，仅供参考</div>`;
+        : `<div class="ai-foot">${
+            ai.kind === 'champSelect'
+              ? '内容由 AI 根据选人阶段数据生成，敌方阵容未知，仅供参考'
+              : '内容由 AI 根据本局数据生成，仅供参考'
+          }</div>`;
     body.innerHTML = `<div class="ai-content">${aiMarkdown(ai.text)}${cursor}</div>${foot}`;
   }
   if (nearBottom) body.scrollTop = body.scrollHeight;
@@ -1929,8 +1960,41 @@ function liveAiTitle(snapshot) {
   return `${champion} · 本局出装与打法`;
 }
 
+function champSelectAiTitle(snapshot) {
+  const players = snapshot.players ?? [];
+  const local = snapshot.localPlayer;
+  const self =
+    (local?.summonerId
+      ? players.find((player) => player.summonerId === local.summonerId)
+      : undefined) ?? players.find((player) => !player.isEnemy);
+  const champion = self?.championName ?? local?.championName ?? '本局';
+  return `${champion} · 选人阶段`;
+}
+
+async function runChampSelectAiAnalysis(options = {}) {
+  const snapshot = state.snapshot;
+  if (!snapshot?.inChampSelect || !snapshot.players?.length || !snapshot.localPlayer) {
+    return;
+  }
+  const title = champSelectAiTitle(snapshot);
+
+  const existing = state.ai;
+  if (!options.force && existing && existing.kind === 'champSelect' && !existing.error) {
+    showAiView();
+    renderAiView();
+    return;
+  }
+  if (state.aiLoading) return;
+
+  await streamAiAnalysis('/api/champ-select/ai', { kind: 'champSelect', title });
+}
+
 async function runLiveAiAnalysis(options = {}) {
   const snapshot = state.snapshot;
+  if (snapshot?.inChampSelect) {
+    await runChampSelectAiAnalysis(options);
+    return;
+  }
   if (
     !snapshot?.inGame ||
     !snapshot.players?.length ||
@@ -4300,8 +4364,9 @@ els.aiTabs.addEventListener('click', (event) => {
   renderAiView();
 });
 els.aiRerun.addEventListener('click', () => {
-  if (state.ai?.kind === 'live') void runLiveAiAnalysis({ force: true });
-  else void runAiAnalysis({ force: true });
+  if (state.ai?.kind === 'live' || state.ai?.kind === 'champSelect') {
+    void runLiveAiAnalysis({ force: true });
+  } else void runAiAnalysis({ force: true });
 });
 els.matchesRefresh.addEventListener('click', () => void refreshMatchesView());
 els.matchesBack.addEventListener('click', () => {

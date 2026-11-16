@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DataSource } from './source.js';
 import type { GameContext, GameModeKey } from './types.js';
-import { buildAnalysisMessages, buildLiveAnalysisMessages, getAiConfig, streamChatCompletion } from './ai.js';
+import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages, getAiConfig, streamChatCompletion } from './ai.js';
 import {
   DATA_DIR,
   getAiAnalysis,
@@ -192,6 +192,79 @@ async function handleRequest(
         ? undefined
         : '在项目根目录的 .env 中设置 LOL_MATE_AI_API_KEY=你的 OpenCode Go API Key，然后重启面板。',
     });
+    return;
+  }
+
+  if (method === 'POST' && url.pathname === '/api/champ-select/ai') {
+    const config = getAiConfig();
+    if (!config.enabled) {
+      sendJson(res, 400, {
+        ok: false,
+        code: 'ai-not-configured',
+        error:
+          'AI 分析未启用：请在项目根目录的 .env 里设置 LOL_MATE_AI_API_KEY=你的 OpenCode Go API Key，然后重启面板。',
+      });
+      return;
+    }
+    const snapshot = source.getSnapshot();
+    if (!snapshot.inChampSelect || !snapshot.players?.length || !snapshot.localPlayer) {
+      sendJson(res, 400, {
+        ok: false,
+        error: '选人数据还没准备好，请稍后再试。',
+      });
+      return;
+    }
+
+    const started = Date.now();
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.on('error', () => undefined);
+    res.flushHeaders?.();
+
+    const abort = new AbortController();
+    res.on('close', () => {
+      if (!res.writableEnded) abort.abort(new Error('客户端已断开'));
+    });
+    const sendEvent = (payload: unknown): void => {
+      if (abort.signal.aborted || res.writableEnded) return;
+      res.write(`${JSON.stringify(payload)}\n`);
+    };
+
+    logTag('ai', `开始分析选人阶段（${config.model}）…`);
+    try {
+      sendEvent({ type: 'status', text: '正在整理我方阵容和我的近期数据…' });
+      const messages = buildChampSelectAnalysisMessages(snapshot);
+
+      sendEvent({ type: 'status', text: '正在生成选人、符文和出装建议…' });
+      let content = '';
+      await streamChatCompletion(
+        config,
+        messages,
+        (text) => {
+          content += text;
+          sendEvent({ type: 'delta', text });
+        },
+        abort.signal,
+        `lol-mate-champselect-${started}`,
+      );
+      if (!content.trim()) {
+        throw new Error('AI 没有返回正式内容（可能推理被截断），请点「重新分析」再试一次。');
+      }
+      // 选人结果变化很快，不落库，避免缓存挡住下一次换英雄后的建议
+      sendEvent({ type: 'done', model: config.model, saved: false });
+      logTag('ai', `选人阶段分析完成，用时 ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        const message = error instanceof Error ? error.message : String(error);
+        sendEvent({ type: 'error', error: message });
+        logTag('ai', `选人阶段分析失败：${message}`);
+      }
+    }
+    if (!res.writableEnded) res.end();
     return;
   }
 

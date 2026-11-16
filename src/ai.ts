@@ -161,6 +161,30 @@ function formatTime(value?: number): string {
   }
 }
 
+function topChampionsText(report?: PlayerReport, limit = 5): string {
+  const top = report?.recent?.topChampions ?? [];
+  if (!top.length) return '暂无';
+  return top
+    .slice(0, limit)
+    .map(
+      (champion) =>
+        `${champion.name} ${fix(champion.games)} 场 ${pct(champion.winRate)}、${fix(
+          champion.avgKda,
+          2,
+        )} KDA`,
+    )
+    .join('；');
+}
+
+function championUsageText(report?: PlayerReport): string {
+  const usage = report?.championStats;
+  if (!usage || !usage.games) return '本英雄近期没有样本';
+  return `本英雄 ${fix(usage.games)} 场，胜率 ${pct(usage.winRate)}，场均评分 ${fix(
+    usage.avgScore,
+    1,
+  )}，最高 ${fix(usage.bestScore)}`;
+}
+
 function recentText(report?: PlayerReport): string {
   const recent = report?.recent;
   if (!recent) return '';
@@ -432,6 +456,104 @@ export function buildLiveAnalysisMessages(
     '6. 团战打法（站位、优先目标、开团/反打/保护；明确我该抢输出、承伤、治疗还是参团，如何少死）',
     '7. 接下来 3-5 条可执行动作（带时间/目标/资源：推线、拿龙、抱团、回家出装等，每条末尾用括号标注预计提升的评分项）',
     '要求：每个部分都要展开写，结合双方具体英雄和当前数据，总字数控制在 1400-1800 字。',
+  ].join('\n');
+
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ];
+}
+
+/** 选人阶段：只有我方英雄和替补席，没有敌方与实时数据 */
+export function buildChampSelectAnalysisMessages(
+  snapshot: Snapshot,
+): ChatMessage[] {
+  const players = snapshot.players ?? [];
+  const local = snapshot.localPlayer;
+  const self =
+    (local?.summonerId
+      ? players.find((player) => player.summonerId === local.summonerId)
+      : undefined) ?? players.find((player) => !player.isEnemy);
+  const allies = players.filter((player) => !player.isEnemy);
+  const championId = self?.championId ?? local?.championId ?? 0;
+  const championName =
+    self?.championName ?? local?.championName ?? (championId ? `英雄 ${championId}` : '未选英雄');
+  const position = lane(self?.position ?? self?.recent?.mainPosition);
+  const role = championRole(championId);
+  const championLine = championId
+    ? `${championName} / ${position}；${championUsageText(self)}`
+    : '尚未选择英雄';
+
+  let mateIndex = 0;
+  const teamText = allies
+    .map((row) => {
+      const isSelf = row === self;
+      const label = isSelf ? '我' : `队友${++mateIndex}`;
+      const recent =
+        typeof row.rating === 'number'
+          ? `近期评分 ${fix(row.rating)}`
+          : row.loading
+            ? '战绩加载中'
+            : '近期无战绩';
+      const tags = row.labels?.length ? `；标签 ${row.labels.join('、')}` : '';
+      const premade =
+        row.premadeSize && row.premadeSize >= 2
+          ? `；开黑 ${row.premadeSize} 人${
+              row.premadeSource === 'session' ? '' : '（近期同队推断）'
+            }`
+          : '';
+      return `- ${label}（${row.championName ?? '未选英雄'} / ${lane(
+        row.position,
+      )}）：${recent}；常用英雄 ${topChampionsText(row, 3)}${tags}${premade}${rankText(row)}`;
+    })
+    .join('\n');
+
+  const aramText = (snapshot.aramChampions ?? [])
+    .map((champion) => {
+      const roleTags = [champion.isCurrent ? '当前' : '替补', champion.isPriority ? '优先' : '']
+        .filter(Boolean)
+        .join('、');
+      return `- ${champion.championName}（${roleTags}）：我的 ${fix(champion.games)} 场 ${pct(
+        champion.winRate,
+      )}，均分 ${fix(champion.avgScore, 1)}；本地存档 ${fix(champion.globalGames)} 场 ${pct(
+        champion.globalWinRate,
+      )}`;
+    })
+    .join('\n');
+
+  const modeText = snapshot.gameMode ? `（${snapshot.gameMode}）` : '';
+  const user = [
+    `【选人阶段】队列：${queueName(snapshot.queueId)}${modeText}；我方 ${allies.length} 人；敌方英雄在选人阶段不可见，未知`,
+    `【我的英雄】${championLine}`,
+    `【评分目标】类型：${ROLE_NAMES[role]}；权重（局内百分位）：${scoreWeightText(
+      role,
+    )}。${ROLE_SCORE_FOCUS[role]}`,
+    recentText(self),
+    `【我的常用英雄】${topChampionsText(self)}`,
+    `【我方阵容】\n${teamText || '- 暂无队友数据'}`,
+    aramText ? `【大乱斗可选英雄】\n${aramText}` : '',
+    '【数据限制】选人阶段只能看到我方英雄/替补席和近期战绩；敌方英雄、敌方阵容、符文和召唤师技能都未知，不要编造。',
+    '【请分析】先判断当前英雄是否适合我方阵容，再给出符文、召唤师技能、出装和开局计划；如果应该换英雄，给出 2-3 个具体备选和理由。按系统要求输出 6 个部分。',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const system = [
+    '你是一名严谨、务实的英雄联盟选人阶段教练，擅长根据我方阵容、我的英雄池和近期战绩给出选人、符文、召唤师技能、出装与开局建议。',
+    '现在是选人阶段：敌方英雄和敌方阵容未知，不要编造敌方选择、对线对手或具体战斗过程。',
+    '这局的目标是：选出适合阵容、能赢下来、并且能让我打出高赛后评分的英雄；如果当前英雄已经合适，明确建议保留，不要为了换而换。',
+    '如果当前英雄明显不适合我方阵容，直接指出缺什么，并给出 2-3 个备选英雄及理由；备选优先从我的常用英雄里选，超出英雄池时明确说明是通用建议。',
+    modeRuleText(snapshot.gameMode),
+    '装备、符文和召唤师技能建议必须先核对当前模式可用性；大乱斗不要推荐禁用装备，也不要写回城、插眼、分带和争夺小龙/大龙。',
+    '不要建议秒选、抢位置、挂机或消极游戏；需要队友配合时给出礼貌、具体的沟通话术。',
+    '使用 Markdown 排版：每个部分用 `## 1. 小标题` 开头；部分内用 `-` 分点，重点用 `**加粗**`；每个部分先给一句结论，再用 2-5 条短要点展开。不要使用 Markdown 表格。固定输出 6 个部分：',
+    '1. 选人结论（留当前英雄还是换；大乱斗明确说留当前还是换替补；需要换时给出 2-3 个备选和理由）',
+    '2. 阵容判断（我方已选英雄的伤害类型、前排、控制、开团和保护，缺什么；敌方未知）',
+    '3. 我的评分目标（英雄类型权重；本局优先打 KDA / 参团 / 输出 / 承伤 / 治疗中的哪几项）',
+    '4. 符文、召唤师技能与出装（给出具体选择；只列当前模式能买到且未被禁用的装备，说明核心装、鞋子和针对装；至少列出 4 件）',
+    '5. 开局计划（召唤师峡谷：一级团/对线或刷野路线、第一次回城、视野；大乱斗：出门装、第一波站位、清线和第一次死亡后的换装节点）',
+    '6. 选人结束前 3-5 条可执行动作（换英雄、换符文、和队友沟通等，每条带理由和预期收益）',
+    '要求：每个部分都要展开写，结合我方具体英雄和我的近期数据，总字数控制在 900-1300 字。',
   ].join('\n');
 
   return [

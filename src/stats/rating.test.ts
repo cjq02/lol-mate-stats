@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { AnalyzedGame, GameTimeline, Lane, MatchDetail, RawGame, Snapshot } from '../types.js';
 import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
-import { buildAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
+import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
 import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
@@ -671,6 +671,122 @@ test('实时 AI 提示词包含装备、模式限制、符文、血量和事件'
     .join('\n');
   assert.ok(!srText.includes('守护天使'), srText);
   assert.ok(srText.includes('【装备可用性】'), srText);
+});
+
+test('选人阶段 AI 提示词包含替补席、开黑和模式限制', () => {
+  const recent = (champion: string) => ({
+    games: 10,
+    wins: 6,
+    losses: 4,
+    winRate: 0.6,
+    avgScore: 62,
+    avgKda: 2.4,
+    avgDamage: 18000,
+    avgDamagePerMin: 900,
+    avgKillParticipation: 0.62,
+    avgCsPerMin: 5.2,
+    avgVisionPerMin: 0.8,
+    avgDeaths: 4.1,
+    labels: ['稳健'],
+    topChampions: [
+      { championId: 86, name: champion, games: 12, wins: 7, winRate: 0.58, avgKda: 2.6 },
+      { championId: 103, name: '九尾妖狐', games: 6, wins: 4, winRate: 0.67, avgKda: 3.1 },
+    ],
+  });
+  const snapshot = {
+    mode: 'live',
+    phase: 'ChampSelect',
+    inChampSelect: true,
+    inGame: false,
+    collecting: false,
+    updatedAt: '',
+    queueId: 450,
+    gameMode: 'ARAM',
+    aramChampions: [
+      {
+        championId: 86,
+        championName: '盖伦',
+        isCurrent: true,
+        games: 5,
+        wins: 3,
+        winRate: 0.6,
+        avgScore: 62,
+        globalGames: 100,
+        globalWinRate: 0.52,
+      },
+      {
+        championId: 103,
+        championName: '九尾妖狐',
+        isCurrent: false,
+        isPriority: true,
+        games: 0,
+        wins: 0,
+        winRate: 0,
+        avgScore: 0,
+        globalGames: 200,
+        globalWinRate: 0.55,
+      },
+    ],
+    localPlayer: {
+      summonerId: 1,
+      displayName: '我',
+      cellId: 0,
+      championId: 86,
+      championName: '盖伦',
+    },
+    players: [
+      {
+        summonerId: 1,
+        displayName: '我',
+        championName: '盖伦',
+        position: 'ARAM',
+        isEnemy: false,
+        rating: 62,
+        labels: [],
+        premadeSize: 2,
+        premadeSource: 'session',
+        recent: recent('盖伦'),
+        championStats: {
+          championId: 86,
+          games: 5,
+          wins: 3,
+          winRate: 0.6,
+          avgScore: 62,
+          bestScore: 78,
+        },
+      },
+      {
+        summonerId: 2,
+        displayName: '队友',
+        isEnemy: false,
+        rating: 48,
+        labels: [],
+      },
+    ],
+  } as unknown as Snapshot;
+  const text = buildChampSelectAnalysisMessages(snapshot)
+    .map((message) => message.content)
+    .join('\n');
+  assert.ok(text.includes('【选人阶段】'), text);
+  assert.ok(text.includes('敌方英雄在选人阶段不可见'), text);
+  assert.ok(text.includes('大乱斗可选英雄'), text);
+  assert.ok(text.includes('九尾妖狐'), text);
+  assert.ok(text.includes('替补'), text);
+  assert.ok(text.includes('开黑 2 人'), text);
+  assert.ok(text.includes('守护天使'), text);
+  assert.ok(text.includes('6 个部分'), text);
+
+  const srText = buildChampSelectAnalysisMessages({
+    ...snapshot,
+    queueId: 420,
+    gameMode: 'SR',
+    aramChampions: undefined,
+  } as Snapshot)
+    .map((message) => message.content)
+    .join('\n');
+  assert.ok(srText.includes('选人结论'), srText);
+  assert.ok(!srText.includes('大乱斗可选英雄'), srText);
+  assert.ok(!srText.includes('商店禁用装备'), srText);
 });
 
 test('赛后 AI 复盘同样校验大乱斗禁用装备', () => {
