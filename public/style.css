@@ -2383,19 +2383,19 @@ body::before {
   letter-spacing: 0.08em;
 }
 
-/* 本局评分排名，叠在评分环右上角，不参与卡片布局 */
+/* 本局评分排名，叠在评分环左上角，不参与卡片布局 */
 .ring-rank {
   position: absolute;
   top: -7px;
-  right: -8px;
+  left: -8px;
   z-index: 2;
   display: grid;
   place-items: center;
-  min-width: 22px;
-  height: 18px;
-  padding: 0 5px;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
   border-radius: 999px;
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
