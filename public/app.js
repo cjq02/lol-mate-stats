@@ -314,15 +314,24 @@ function isInactiveKda(stats) {
   return kills === 0 && assists === 0 && deaths <= 1;
 }
 
+const RATING_TONES = [
+  { min: 80, className: 'score-80', color: '#3ddc97' },
+  { min: 70, className: 'score-70', color: '#5eead4' },
+  { min: 60, className: 'score-60', color: '#f5c76a' },
+  { min: 50, className: 'score-50', color: '#ffab5e' },
+  { min: 40, className: 'score-40', color: '#ff9b9b' },
+  { min: -Infinity, className: 'score-low', color: '#ff4d6d' },
+];
+
 function ratingColor(rating, stats) {
   if (rating === null || rating === undefined) return '#5b6b8c';
   if (isInactiveKda(stats)) return '#7c8aa5';
-  if (rating >= 80) return '#3ddc97';
-  if (rating >= 70) return '#5eead4';
-  if (rating >= 60) return '#f5c76a';
-  if (rating >= 50) return '#ffab5e';
-  if (rating >= 40) return '#ff9b9b';
-  return '#ff4d6d';
+  return RATING_TONES.find((tone) => rating >= tone.min)?.color ?? '#ff4d6d';
+}
+
+/** 评分所在的颜色分段，供需要 CSS 类名的场景使用 */
+function ratingTone(rating) {
+  return RATING_TONES.find((tone) => rating >= tone.min)?.className ?? 'score-low';
 }
 
 function hexToRgba(hex, alpha) {
@@ -3594,17 +3603,7 @@ function timeStatsTone(period) {
 
 function timeStatsScoreTone(period) {
   if (!period?.scoreGames) return 'empty';
-  switch (period.grade) {
-    case 'S':
-    case 'A':
-      return 'good';
-    case 'B':
-      return 'even';
-    case 'C':
-      return 'warn';
-    default:
-      return 'bad';
-  }
+  return ratingTone(Number(period.avgScore) || 0);
 }
 
 function updateTimeStatsTabs() {

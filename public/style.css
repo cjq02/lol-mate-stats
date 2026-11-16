@@ -651,6 +651,55 @@ body::before {
   background: #ff6b81;
 }
 
+/* 评分口径按分数段取色，和卡片环形评分保持一致 */
+.time-stat-row.score-80 .time-stat-rate {
+  color: #3ddc97;
+}
+
+.time-stat-row.score-80 .time-stat-bar > span {
+  background: #3ddc97;
+}
+
+.time-stat-row.score-70 .time-stat-rate {
+  color: #5eead4;
+}
+
+.time-stat-row.score-70 .time-stat-bar > span {
+  background: #5eead4;
+}
+
+.time-stat-row.score-60 .time-stat-rate {
+  color: #f5c76a;
+}
+
+.time-stat-row.score-60 .time-stat-bar > span {
+  background: #f5c76a;
+}
+
+.time-stat-row.score-50 .time-stat-rate {
+  color: #ffab5e;
+}
+
+.time-stat-row.score-50 .time-stat-bar > span {
+  background: #ffab5e;
+}
+
+.time-stat-row.score-40 .time-stat-rate {
+  color: #ff9b9b;
+}
+
+.time-stat-row.score-40 .time-stat-bar > span {
+  background: #ff9b9b;
+}
+
+.time-stat-row.score-low .time-stat-rate {
+  color: #ff4d6d;
+}
+
+.time-stat-row.score-low .time-stat-bar > span {
+  background: #ff4d6d;
+}
+
 .time-stat-row.noisy {
   border-color: rgba(255, 107, 129, 0.35);
   background: rgba(255, 107, 129, 0.06);
