@@ -2179,6 +2179,18 @@ function matchRow(game, showScore) {
   const durationMin =
     durationMinutes(game.durationMin) ?? Math.round((Number(game.gameDuration) || 0) / 60);
   const score = showScore && Number.isFinite(Number(game.score)) ? Math.round(game.score) : null;
+  // 该局在 10 人里的评分排名，和记分板卡片上的徽标一致
+  const rank =
+    showScore && Number.isFinite(Number(game.rank)) ? Math.round(Number(game.rank)) : null;
+  const rankTotal = Number.isFinite(Number(game.rankTotal))
+    ? Math.round(Number(game.rankTotal))
+    : null;
+  const rankHtml =
+    rank === null
+      ? ''
+      : `<span class="rank" style="color:${rankColor(rank)}" title="本局评分排名第 ${rank}${
+          rankTotal ? ` / ${rankTotal}` : ''
+        }">#${rank}</span>`;
   const tags = game.tags ?? [];
   const remake = tags.includes('重开');
   const bestTag = remake ? null : tags.includes('MVP') ? 'MVP' : tags.includes('SVP') ? 'SVP' : null;
@@ -2217,9 +2229,9 @@ function matchRow(game, showScore) {
       displayTags?.length ? ` · ${matchFlagsHtml(displayTags)}` : ''
     }</small></span>
     <span class="kda">${game.kills}/${game.deaths}/${game.assists}</span>
-    <span class="pts"${score === null ? '' : ` style="color:${ratingColor(score, game)}"`}>${
+    <span class="score-cell">${rankHtml}<span class="pts"${score === null ? '' : ` style="color:${ratingColor(score, game)}"`}>${
       score === null ? (showScore ? '--' : '›') : score
-    }</span>
+    }</span></span>
   </button>`;
 }
 

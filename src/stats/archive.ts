@@ -52,6 +52,10 @@ export interface ArchivedMatch {
   heal: number;
   vision: number;
   score?: number;
+  /** 本局在该场有评分玩家中的排名；同分并列 */
+  rank?: number;
+  /** 参与排名的玩家数 */
+  rankTotal?: number;
   tags: string[];
 }
 
@@ -278,6 +282,42 @@ async function loadParticipantsByGame(
       score: row.score === null ? null : Number(row.score),
     });
     result.set(gameId, list);
+  }
+  return result;
+}
+
+/** 一场对局里某个玩家的评分排名，只统计有评分的玩家；同分并列 */
+function participantRank(
+  participants: ArchivedParticipant[],
+  puuid: string,
+): { rank: number; total: number } | undefined {
+  const scored = participants.filter(
+    (participant) => participant.score !== null && Number.isFinite(Number(participant.score)),
+  );
+  const self = scored.find((participant) => participant.puuid === puuid);
+  if (!self || self.score === null || scored.length < 2) return undefined;
+  const selfScore = Number(self.score);
+  const better = scored.filter((participant) => Number(participant.score) > selfScore).length;
+  return { rank: better + 1, total: scored.length };
+}
+
+/** 批量读取某个玩家这些对局里的评分排名，用于战绩列表 */
+export async function getPlayerMatchRanks(
+  puuid: string,
+  gameIds: number[],
+): Promise<Map<number, { rank: number; total: number }>> {
+  const result = new Map<number, { rank: number; total: number }>();
+  const ids = [...new Set(gameIds.filter((id) => id > 0))];
+  const db = await getDb();
+  if (!db || !puuid || !ids.length) return result;
+  try {
+    const participantsByGame = await loadParticipantsByGame(db, ids);
+    for (const [gameId, participants] of participantsByGame) {
+      const rank = participantRank(participants, puuid);
+      if (rank) result.set(gameId, rank);
+    }
+  } catch {
+    /* 排名读取失败不影响战绩列表 */
   }
   return result;
 }
@@ -967,13 +1007,15 @@ export async function getPlayerMatches(
 
     const games = rows.map((row) => {
       const gameId = Number(row.game_id);
+      const participants = participantsByGame.get(gameId) ?? [];
       const tags = archivedGameTags(
         puuid,
         Number(row.team_id),
         Number(row.duration_seconds),
         row.tags as string | null,
-        participantsByGame.get(gameId) ?? [],
+        participants,
       );
+      const rank = participantRank(participants, puuid);
       return {
         gameId,
         queueId: Number(row.queue_id),
@@ -998,6 +1040,8 @@ export async function getPlayerMatches(
         heal: Number(row.heal),
         vision: Number(row.vision),
         score: row.score === null ? undefined : Number(row.score),
+        rank: rank?.rank,
+        rankTotal: rank?.total,
         tags,
       };
     });

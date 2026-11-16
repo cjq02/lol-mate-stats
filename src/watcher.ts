@@ -33,6 +33,7 @@ import {
   countPlayerMatches,
   getChampionModeRecords,
   getPlayerChampionScores,
+  getPlayerMatchRanks,
   getPlayerMatchTags,
   getPlayerMatches,
   getPlayerScores,
@@ -380,7 +381,7 @@ export class LiveSource implements DataSource {
 
     // 读取/补算每场评分；还没归档的对局会顺便写入历史存档。
     // 客户端列表接口通常只返回自己这一行，队友/对手的坑和逃跑标记必须用完整对局补算。
-    const { scores, tags: detailTags } = await this.fillMissingScores(
+    const { scores, tags: detailTags, ranks: detailRanks } = await this.fillMissingScores(
       api,
       games,
       championMap,
@@ -390,11 +391,20 @@ export class LiveSource implements DataSource {
       puuid,
       games.map((game) => game.gameId),
     );
-    const scored = games.map((game) => ({
-      ...game,
-      score: scores.get(game.gameId),
-      tags: archivedTags.get(game.gameId) ?? detailTags.get(game.gameId) ?? game.tags,
-    }));
+    const ranks = await getPlayerMatchRanks(
+      puuid,
+      games.map((game) => game.gameId),
+    );
+    const scored = games.map((game) => {
+      const rank = ranks.get(game.gameId) ?? detailRanks.get(game.gameId);
+      return {
+        ...game,
+        score: scores.get(game.gameId),
+        rank: rank?.rank,
+        rankTotal: rank?.total,
+        tags: archivedTags.get(game.gameId) ?? detailTags.get(game.gameId) ?? game.tags,
+      };
+    });
 
     logTag(
       'match',
@@ -687,14 +697,19 @@ export class LiveSource implements DataSource {
     games: MatchSummary[],
     championMap: Map<number, ChampionSummary>,
     summoner: SummonerInfo,
-  ): Promise<{ scores: Map<number, number>; tags: Map<number, string[]> }> {
+  ): Promise<{
+    scores: Map<number, number>;
+    tags: Map<number, string[]>;
+    ranks: Map<number, { rank: number; total: number }>;
+  }> {
     const scores = await getPlayerScores(
       summoner.puuid ?? '',
       games.map((game) => game.gameId),
     );
     const tags = new Map<number, string[]>();
+    const ranks = new Map<number, { rank: number; total: number }>();
     const missing = games.filter((game) => game.gameId > 0 && !scores.has(game.gameId));
-    if (!missing.length) return { scores, tags };
+    if (!missing.length) return { scores, tags, ranks };
 
     logTag('archive', `正在计算 ${missing.length} 场对局的评分…`);
     let done = 0;
@@ -733,11 +748,21 @@ export class LiveSource implements DataSource {
           ...(bestTag ? [bestTag] : []),
           ...gameFlagTags(flags),
         ]);
+        // 没配置数据库时也能给出这局的名次：直接用刚算出的 10 人评分
+        const selfScore =
+          selfParticipantId === undefined ? undefined : scoreMap.get(selfParticipantId);
+        const allScores = [...scoreMap.values()].filter((score) => Number.isFinite(score));
+        if (typeof selfScore === 'number' && allScores.length >= 2) {
+          ranks.set(game.gameId, {
+            rank: 1 + allScores.filter((score) => score > selfScore).length,
+            total: allScores.length,
+          });
+        }
       }
       done += 1;
       if (done === missing.length) logTag('archive', `评分计算完成：${done} 场`);
     });
-    return { scores, tags };
+    return { scores, tags, ranks };
   }
 
   /** 长期存档：查询某个玩家（默认自己）的历史对局 */

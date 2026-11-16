@@ -1628,11 +1628,26 @@ function withMatchFlags(
       ...(bestTag ? [bestTag] : []),
     ]),
   ];
-  if (!tags.length) return analyzed;
+  const rank =
+    scores && participantId !== undefined ? scoreRankOf(scores, participantId) : undefined;
+  if (!tags.length && !rank) return analyzed;
   return {
     ...analyzed,
+    ...(rank ? { rank: rank.rank, rankTotal: rank.total } : {}),
     tags,
   };
+}
+
+/** 在整场评分表里算某位玩家（participantId）的名次；同分并列 */
+function scoreRankOf(
+  scores: Map<number, number>,
+  participantId: number,
+): { rank: number; total: number } | undefined {
+  const selfScore = scores.get(participantId);
+  if (typeof selfScore !== 'number' || !Number.isFinite(selfScore)) return undefined;
+  const values = [...scores.values()].filter((score) => Number.isFinite(score));
+  if (values.length < 2) return undefined;
+  return { rank: 1 + values.filter((score) => score > selfScore).length, total: values.length };
 }
 
 /** 只保留当前队列/模式的历史对局 */

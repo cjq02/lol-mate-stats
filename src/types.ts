@@ -196,6 +196,10 @@ export interface AnalyzedGame {
   visionPerMin: number;
   position: Lane;
   score: number;
+  /** 本局在有评分玩家中的排名；同分并列 */
+  rank?: number;
+  /** 参与排名的玩家数 */
+  rankTotal?: number;
   tags: string[];
   /** 结算接口提供 timeline 时才有 */
   timeline?: GameTimeline;
@@ -543,6 +547,10 @@ export interface MatchSummary {
   assists: number;
   /** 本场评分（从本地存档或实时分析得到） */
   score?: number;
+  /** 本局在该场有评分玩家中的排名；同分并列 */
+  rank?: number;
+  /** 参与排名的玩家数 */
+  rankTotal?: number;
   /** 本场标记：重开、队友逃跑等 */
   tags?: string[];
 }
