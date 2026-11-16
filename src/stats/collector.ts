@@ -913,12 +913,12 @@ export class ReportCollector {
     if (!info && !player.isBot) base.error = '无法读取召唤师信息';
     // 实时接口偶尔不给位置（如大乱斗），沿用缓存里的位置，避免每轮都被判定成“变了”
     if (!base.position && cached?.position) base.position = cached.position;
-    return base;
+    return withRecentAvgRank(base);
   }
 
   /** 复用缓存时只覆盖本局会变化的部分（英雄、实时数据） */
   private withLiveData(report: PlayerReport, base: PlayerReport): PlayerReport {
-    return {
+    return withRecentAvgRank({
       ...report,
       summonerId: base.summonerId,
       puuid: base.puuid,
@@ -933,7 +933,7 @@ export class ReportCollector {
       isEnemy: base.isEnemy,
       live: base.live,
       loading: false,
-    };
+    });
   }
 
   private async buildFullReport(
@@ -1062,7 +1062,7 @@ export class ReportCollector {
     championMap: Map<number, ChampionSummary>,
   ): PlayerReport {
     const championId = effectiveChampionId(member);
-    return {
+    return withRecentAvgRank({
       ...report,
       position: base.position,
       championId: championId || undefined,
@@ -1073,7 +1073,7 @@ export class ReportCollector {
       isBot: base.isBot,
       loading: false,
       error: report.error,
-    };
+    });
   }
 
   /**
@@ -1769,6 +1769,26 @@ function liveStats(
 export function percentage(value: number | undefined): string {
   if (value === undefined || Number.isNaN(value)) return '-';
   return `${round(value * 100, 0)}%`;
+}
+
+/**
+ * 旧报告缓存里的 recent 可能还没有平均排名（新字段上线前写入的），
+ * 但 games 里已经带着每局名次，这里按当前战绩补算一次，避免必须等下一局才显示。
+ */
+function withRecentAvgRank(report: PlayerReport): PlayerReport {
+  const recent = report.recent;
+  const games = report.games ?? [];
+  if (!recent || !games.length) return report;
+  const ranks = games
+    .filter((game) => !game.tags?.includes('重开'))
+    .map((game) => Number(game.rank))
+    .filter((rank) => Number.isFinite(rank) && rank > 0);
+  if (!ranks.length) return report;
+  const avgRank = round(ranks.reduce((sum, rank) => sum + rank, 0) / ranks.length, 1);
+  return {
+    ...report,
+    recent: { ...recent, avgRank, avgRankGames: ranks.length },
+  };
 }
 
 /** 忽略每轮都会变化的实时数据，只比较战绩相关内容，用来判断是否需要推送新一帧 */

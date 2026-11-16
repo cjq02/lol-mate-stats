@@ -1727,6 +1727,21 @@ test('近期摘要给出主玩位置与占比', () => {
   assert.equal(summary.mainPositionShare, 0.8);
 });
 
+test('近期摘要计算平均评分排名', () => {
+  const games = [1, 3, 5].map((rank, index) => ({
+    ...makeGame(index, 'MID'),
+    rank,
+    rankTotal: 10,
+  }));
+  const summary = summarize(games);
+  assert.equal(summary.avgRank, 3);
+  assert.equal(summary.avgRankGames, 3);
+
+  const noRank = summarize([makeGame(9, 'MID')]);
+  assert.equal(noRank.avgRank, undefined);
+  assert.equal(noRank.avgRankGames, undefined);
+});
+
 console.log('timeline');
 test('解析结算时间线：分均经济、对位补刀差与掉线段', () => {
   const timeline = parseGameTimeline(

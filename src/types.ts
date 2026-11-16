@@ -269,6 +269,10 @@ export interface RecentSummary {
   pitGames: number;
   avgKda: number;
   avgScore: number;
+  /** 最近 N 场有排名对局的平均评分名次（1 最好，双方 10 人） */
+  avgRank?: number;
+  /** 参与平均排名的对局数 */
+  avgRankGames?: number;
   avgDamage: number;
   avgDamagePerMin: number;
   avgDamageShare: number;

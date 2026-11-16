@@ -463,6 +463,12 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
   const avgAssists = average(sorted.map((game) => game.assists));
   const avgTankShare = average(sorted.map((game) => game.tankShare));
   const avgScore = average(sorted.map((game) => game.score));
+  const rankGames = sorted.filter(
+    (game) => Number.isFinite(Number(game.rank)) && Number(game.rank) > 0,
+  );
+  const avgRank = rankGames.length
+    ? average(rankGames.map((game) => Number(game.rank)))
+    : undefined;
   const uniqueChampions = new Set(sorted.map((game) => game.championId)).size;
   const topChampions = buildTopChampions(sorted);
   const winRate = sorted.length ? wins / sorted.length : 0;
@@ -549,6 +555,8 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
     pitGames,
     avgKda: round(avgKda, 2),
     avgScore: round(avgScore, 1),
+    avgRank: avgRank === undefined ? undefined : round(avgRank, 1),
+    avgRankGames: rankGames.length || undefined,
     avgDamage: Math.round(avgDamage),
     avgDamagePerMin: Math.round(avgDamagePerMin),
     avgDamageShare,

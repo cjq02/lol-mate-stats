@@ -784,6 +784,17 @@ function buildCard(player, isLocal, options = {}) {
           options.rankTotal ? ` / ${options.rankTotal}` : ''
         }">#${rank}</span>`
       : '';
+  // 近期平均排名：只在展示近期综合数据的卡片上出现，对局详情的本局卡片用评分环上的单场名次
+  const avgRankValue = !thisGame ? Number(player.recent?.avgRank) : Number.NaN;
+  const avgRank =
+    Number.isFinite(avgRankValue) && avgRankValue > 0 ? avgRankValue : null;
+  const avgRankGames = Number(player.recent?.avgRankGames) || 0;
+  const avgRankBadge =
+    avgRank !== null
+      ? `<span class="avg-rank-badge" title="最近 ${avgRankGames || '若干'} 场平均评分排名第 ${avgRank.toFixed(
+          1,
+        )} 名（双方 10 人）">平均 #${avgRank.toFixed(1)}</span>`
+      : '';
   const name = player.displayName ?? '未知召唤师';
   const tag = player.tagLine;
   const rawLabels = thisGame ? thisGame.tags ?? [] : player.labels ?? [];
@@ -1134,6 +1145,7 @@ function buildCard(player, isLocal, options = {}) {
               : ''
           }
           <span>${escapeHtml(rankLabel(player.rank))}</span>
+          ${avgRankBadge}
           ${streak}
         </div>
       </div>
