@@ -1320,6 +1320,10 @@ function connectStream() {
       /* 忽略异常数据帧 */
     }
   });
+  // 服务重启后复用已打开的页签：直接刷新当前页面，不再新开标签
+  source.addEventListener('reload', () => {
+    window.location.reload();
+  });
   source.onopen = () => setLive(true);
   source.onerror = () => setLive(false);
 }

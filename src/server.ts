@@ -76,9 +76,40 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   const source = options.source;
   const host = options.host ?? '127.0.0.1';
   const clients = new Set<ServerResponse>();
+  /** 启动后等待旧页签自动重连的时间，命中就不再新开页签 */
+  const STARTUP_REUSE_WINDOW_MS = 1_500;
+  let url = '';
+  let startupSettled = !options.open;
+  let startupTimer: NodeJS.Timeout | undefined;
+
+  const settleStartup = (reused: boolean): void => {
+    if (startupSettled) return;
+    startupSettled = true;
+    if (startupTimer) {
+      clearTimeout(startupTimer);
+      startupTimer = undefined;
+    }
+    if (reused) {
+      if (!options.quiet) logTag('web', '检测到已打开的面板，已刷新现有页签');
+      for (const client of clients) {
+        if (!client.writableEnded) client.write('event: reload\ndata: {}\n\n');
+      }
+      return;
+    }
+    if (!options.quiet) logTag('web', '正在打开浏览器…');
+    openBrowser(url);
+  };
 
   const server: Server = createServer((req, res) => {
-    handleRequest(req, res, source, clients).catch((error) => {
+    handleRequest(
+      req,
+      res,
+      source,
+      clients,
+      () => {
+        if (!startupSettled) settleStartup(true);
+      },
+    ).catch((error) => {
       if (!res.headersSent) {
         res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       }
@@ -87,17 +118,22 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   });
 
   const port = await listenFixed(server, options.port, host);
-  const url = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
+  url = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
 
   if (!options.quiet) {
-    logTag('web', `面板已启动：${url}${options.open ? '（正在打开浏览器…）' : ''}`);
+    logTag('web', `面板已启动：${url}`);
   }
-  if (options.open) openBrowser(url);
+  if (options.open) {
+    startupTimer = setTimeout(() => settleStartup(false), STARTUP_REUSE_WINDOW_MS);
+    startupTimer.unref?.();
+  }
 
   return {
     port,
     url,
     close: async () => {
+      if (startupTimer) clearTimeout(startupTimer);
+      startupSettled = true;
       for (const client of clients) client.end();
       clients.clear();
       // 关闭 keep-alive 连接，避免旧进程退出时卡住端口
@@ -112,6 +148,7 @@ async function handleRequest(
   res: ServerResponse,
   source: DataSource,
   clients: Set<ServerResponse>,
+  onStreamClient?: () => void,
 ): Promise<void> {
   const method = req.method ?? 'GET';
   const url = new URL(req.url ?? '/', 'http://localhost');
@@ -263,7 +300,7 @@ async function handleRequest(
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
-    res.write('retry: 3000\n\n');
+    res.write('retry: 1000\n\n');
 
     const send = (snapshot: unknown): void => {
       if (res.writableEnded) return;
@@ -272,6 +309,7 @@ async function handleRequest(
 
     clients.add(res);
     send(source.getSnapshot());
+    onStreamClient?.();
     const unsubscribe = source.subscribe(send);
     const heartbeat = setInterval(() => {
       if (!res.writableEnded) res.write(': ping\n\n');
