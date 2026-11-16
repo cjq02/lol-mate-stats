@@ -156,6 +156,29 @@ const ROLE_WEIGHTS: Record<ChampionRole, RoleWeights> = {
   default: { kda: 5.3987, kp: 1.2844, damage: 6.7913, taken: 3.2165, heal: 0.0214 },
 };
 
+type CoreMetric = 'kda' | 'kp' | 'damage' | 'taken' | 'heal';
+
+/** 各类型的核心指标：少于 2 项处于本局后 20% 才不扣短板分 */
+const CORE_METRICS: Record<ChampionRole, CoreMetric[]> = {
+  carry: ['kda', 'kp', 'damage'],
+  support: ['kda', 'kp', 'heal'],
+  tank: ['kda', 'kp', 'taken'],
+  fighter: ['kda', 'damage', 'taken'],
+  default: ['kda', 'kp', 'damage'],
+};
+
+/** 参团 + 另一项核心指标同时低于该阈值时，额外扣短板分 */
+const LOW_PAIR: Record<
+  ChampionRole,
+  { metric: 'damageShare' | 'tankShare' | 'healShare'; threshold: number }
+> = {
+  carry: { metric: 'damageShare', threshold: 0.08 },
+  support: { metric: 'healShare', threshold: 0.1 },
+  tank: { metric: 'tankShare', threshold: 0.18 },
+  fighter: { metric: 'damageShare', threshold: 0.08 },
+  default: { metric: 'damageShare', threshold: 0.08 },
+};
+
 /** 评分权重（供 AI 提示词等地方复用，避免和评分模型脱节） */
 export function roleScoreWeights(role: ChampionRole): RoleWeights {
   return ROLE_WEIGHTS[role];
@@ -173,11 +196,12 @@ function percentileRank(values: number[], value: number): number {
 /**
  * 单场评分：按本局所有参与者的 KDA / 参团 / 输出 / 承伤 / 治疗百分位加权。
  * 权重来自 40 个掌盟评分样本的拟合结果，先得到绝对分（掌盟 0–20 × 5），
- * 再用 0.7 次幂做单调校准：低分往上托、高分往 100 拉，但不会把 10 分直接变成 25 分。
+ * 再用 0.7 次幂做单调校准；最后对“参团 + 另一项核心指标同时垫底”的局扣短板分。
  */
 function scoreWithWeights(
   inputs: MatchPercentileInput[],
   weightsFor: (input: MatchPercentileInput) => RoleWeights,
+  applyDeficitDeduction = true,
 ): number[] {
   if (!inputs.length) return [];
   const rank = (
@@ -194,6 +218,7 @@ function scoreWithWeights(
   const heal = rank('healShare');
 
   return inputs.map((input, index) => {
+    const role = input.role ?? 'default';
     const weights = weightsFor(input);
     const score20 =
       0.9764 +
@@ -217,7 +242,30 @@ function scoreWithWeights(
         input.healShare < 0.1 &&
         input.killParticipation < 0.3 &&
         (input.deaths ?? 0) <= 5);
-    return round(clamp(catastrophic ? Math.min(curved, 12) : curved, 0, 100), 1);
+
+    let deduction = 0;
+    if (applyDeficitDeduction && !catastrophic) {
+      const percentiles: Record<CoreMetric, number> = {
+        kda: kda[index] ?? 0.5,
+        kp: kp[index] ?? 0.5,
+        damage: damage[index] ?? 0.5,
+        taken: taken[index] ?? 0.5,
+        heal: heal[index] ?? 0.5,
+      };
+      const weakCount = CORE_METRICS[role].filter(
+        (key) => percentiles[key] <= 0.2,
+      ).length;
+      const pair = LOW_PAIR[role];
+      // 参团和另一项核心指标同时低到阈值以下：即便权重托了一下，也要扣分
+      const pairLow =
+        input.killParticipation < 0.35 && input[pair.metric] < pair.threshold;
+      deduction = weakCount >= 3 ? 8 : pairLow ? 6 : weakCount >= 2 ? 4 : 0;
+    }
+
+    return round(
+      clamp(catastrophic ? Math.min(curved, 12) : Math.max(0, curved - deduction), 0, 100),
+      1,
+    );
   });
 }
 
@@ -226,9 +274,9 @@ export function percentileScores(inputs: MatchPercentileInput[]): number[] {
   return scoreWithWeights(inputs, (input) => ROLE_WEIGHTS[input.role ?? 'default']);
 }
 
-/** 旧版全局权重：用于分阶段回滚/对比 */
+/** 旧版全局权重：用于分阶段回滚/对比（不应用短板减分） */
 export function legacyPercentileScores(inputs: MatchPercentileInput[]): number[] {
-  return scoreWithWeights(inputs, () => ROLE_WEIGHTS.default);
+  return scoreWithWeights(inputs, () => ROLE_WEIGHTS.default, false);
 }
 
 export function gradeOf(rating: number): Grade {

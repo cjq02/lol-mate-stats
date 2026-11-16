@@ -680,6 +680,25 @@ test('坦克高承伤和参团时不再被输出位稳压', () => {
   );
 });
 
+test('参团和输出同时垫底时按减分制判坑', () => {
+  // 2026-11-16 23:50 极地大乱斗真实数据：螳螂 9/6/3，参团 32.4%、输出占比 7.2%，
+  // 两项都远低于输出位阈值，曲线校准后的 30.1 分应再扣短板分，落到「坑」。
+  const scores = percentileScores([
+    { kda: 2.0, killParticipation: 0.541, damageShare: 0.188, tankShare: 0.197, healShare: 0.356, role: 'carry' as const },
+    { kda: 1.35, killParticipation: 0.622, damageShare: 0.275, tankShare: 0.319, healShare: 0.388, role: 'fighter' as const },
+    { kda: 1.83, killParticipation: 0.595, damageShare: 0.253, tankShare: 0.211, healShare: 0.113, role: 'carry' as const },
+    { kda: 2.0, killParticipation: 0.324, damageShare: 0.072, tankShare: 0.109, healShare: 0.079, role: 'carry' as const },
+    { kda: 3.0, killParticipation: 0.73, damageShare: 0.213, tankShare: 0.163, healShare: 0.064, role: 'carry' as const },
+    { kda: 5.67, killParticipation: 0.63, damageShare: 0.215, tankShare: 0.168, healShare: 0.106, role: 'carry' as const },
+    { kda: 5.13, killParticipation: 0.759, damageShare: 0.249, tankShare: 0.251, healShare: 0.414, role: 'carry' as const },
+    { kda: 3.2, killParticipation: 0.593, damageShare: 0.125, tankShare: 0.289, healShare: 0.298, role: 'fighter' as const },
+    { kda: 6.0, killParticipation: 0.333, damageShare: 0.065, tankShare: 0.08, healShare: 0.083, role: 'carry' as const },
+    { kda: 4.0, killParticipation: 0.741, damageShare: 0.346, tankShare: 0.211, healShare: 0.099, role: 'carry' as const },
+  ]);
+  assert.ok(scores[3]! < 30, `螳螂=${scores[3]}`);
+  assert.equal(badLevelOfScore(scores[3]), 'bad');
+});
+
 test('解析 Live Client Data 的装备对象', () => {
   assert.deepEqual(liveItemIds([{ itemID: 6655 }, { itemID: 3020 }]), [6655, 3020]);
   assert.deepEqual(liveItemIds([6655, 3020]), [6655, 3020]);
