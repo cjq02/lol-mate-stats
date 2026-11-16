@@ -978,6 +978,93 @@ test('时段统计使用当前坑线重新判断结果', () => {
   assert.equal(early.selfBadGames, 1);
 });
 
+test('时段统计按各维度汇总平均评分并忽略缺失评分', () => {
+  const at = (day: number, hour: number) => new Date(2026, 0, day, hour, 30).getTime();
+  const summary = summarizeTimeStats([
+    {
+      gameCreation: at(5, 0),
+      win: true,
+      tags: [],
+      position: 'TOP',
+      championId: 103,
+      score: 80,
+    },
+    {
+      gameCreation: at(5, 1),
+      win: false,
+      tags: [],
+      position: 'TOP',
+      championId: 103,
+      score: 60,
+    },
+    {
+      gameCreation: at(5, 3),
+      win: true,
+      tags: [],
+      position: 'JUNGLE',
+      championId: 64,
+      score: 55.5,
+    },
+    {
+      gameCreation: at(5, 3),
+      win: false,
+      tags: [],
+      position: 'JUNGLE',
+      championId: 64,
+    },
+    {
+      gameCreation: at(5, 0),
+      win: true,
+      tags: ['重开'],
+      position: 'MID',
+      championId: 103,
+      score: 100,
+    },
+  ]);
+
+  assert.equal(summary.totalGames, 4);
+  assert.equal(summary.scoreGames, 3);
+  assert.equal(summary.avgScore, 65.2);
+
+  const early = summary.dimensions.hour[0];
+  assert.ok(early);
+  assert.equal(early.games, 2);
+  assert.equal(early.scoreGames, 2);
+  assert.equal(early.avgScore, 70);
+  assert.equal(early.bestScore, 80);
+  assert.equal(early.worstScore, 60);
+  assert.equal(early.grade, 'A');
+
+  const morning = summary.dimensions.hour[1];
+  assert.ok(morning);
+  assert.equal(morning.games, 2);
+  assert.equal(morning.scoreGames, 1);
+  assert.equal(morning.avgScore, 55.5);
+  assert.equal(morning.grade, 'C');
+
+  const noScore = summary.dimensions.hour[2];
+  assert.ok(noScore);
+  assert.equal(noScore.games, 0);
+  assert.equal(noScore.scoreGames, 0);
+  assert.equal(noScore.grade, undefined);
+
+  const top = summary.dimensions.position.find((bucket) => bucket.key === 'pos-top');
+  assert.ok(top);
+  assert.equal(top.scoreGames, 2);
+  assert.equal(top.avgScore, 70);
+
+  const jungle = summary.dimensions.position.find((bucket) => bucket.key === 'pos-jungle');
+  assert.ok(jungle);
+  assert.equal(jungle.games, 2);
+  assert.equal(jungle.scoreGames, 1);
+  assert.equal(jungle.avgScore, 55.5);
+
+  const remakeOnly = summary.dimensions.position.find((bucket) => bucket.key === 'pos-mid');
+  assert.ok(remakeOnly);
+  assert.equal(remakeOnly.games, 0);
+  assert.equal(remakeOnly.scoreGames, 0);
+});
+
 test('英雄熟练度综合场次和表现并随样本增长', () => {
   const oneGame = championProficiency({
     games: 1,

@@ -1,6 +1,7 @@
-import type { GameModeKey, MatchSummary } from '../types.js';
+import type { GameModeKey, Grade, MatchSummary } from '../types.js';
 import { championRole } from './champion-roles.js';
 import { modeFromQueue } from './constants.js';
+import { gradeOf } from './rating.js';
 
 /** 时段维度的 bucket 长度（小时） */
 export const TIME_PERIOD_HOURS = 2;
@@ -17,6 +18,8 @@ export interface TimeStatsGame {
   position?: string;
   /** 本局使用的英雄，用于按英雄类型统计 */
   championId?: number;
+  /** 本局单场评分（0-100），缺失时不参与平均分 */
+  score?: number;
   /** 重新按当前坑线判断的结果（历史 tags 可能仍是旧阈值） */
   teammateBad?: boolean;
   selfBad?: boolean;
@@ -35,6 +38,16 @@ export interface TimeStatsBucket {
   /** 本 bucket 里自己被标记为坑/逃跑的对局数 */
   selfBadGames: number;
   selfBadRate: number;
+  /** 本 bucket 里带评分的对局数 */
+  scoreGames: number;
+  /** 平均单场评分 0-100（只统计带评分的对局） */
+  avgScore: number;
+  /** 带评分对局里的最高分 */
+  bestScore: number;
+  /** 带评分对局里的最低分 */
+  worstScore: number;
+  /** 均分对应的等级，没有评分样本时为空 */
+  grade?: Grade;
 }
 
 export type TimeStatsDimension =
@@ -64,6 +77,10 @@ export interface TimeStatsSummary {
   totalGames: number;
   wins: number;
   winRate: number;
+  /** 全部对局里带评分的场次 */
+  scoreGames: number;
+  /** 全部带评分对局的均分 */
+  avgScore: number;
   dimensions: TimeStatsDimensions;
 }
 
@@ -122,6 +139,10 @@ function pad(value: number): string {
   return String(value).padStart(2, '0');
 }
 
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 function emptyBucket(key: string, label: string): TimeStatsBucket {
   return {
     key,
@@ -134,6 +155,10 @@ function emptyBucket(key: string, label: string): TimeStatsBucket {
     teammateBadRate: 0,
     selfBadGames: 0,
     selfBadRate: 0,
+    scoreGames: 0,
+    avgScore: 0,
+    bestScore: 0,
+    worstScore: 0,
   };
 }
 
@@ -142,6 +167,8 @@ function finalizeBucket(bucket: TimeStatsBucket): TimeStatsBucket {
   bucket.winRate = bucket.games ? bucket.wins / bucket.games : 0;
   bucket.teammateBadRate = bucket.games ? bucket.teammateBadGames / bucket.games : 0;
   bucket.selfBadRate = bucket.games ? bucket.selfBadGames / bucket.games : 0;
+  bucket.avgScore = bucket.scoreGames ? round1(bucket.avgScore) : 0;
+  bucket.grade = bucket.scoreGames ? gradeOf(bucket.avgScore) : undefined;
   return bucket;
 }
 
@@ -150,11 +177,19 @@ function addGame(
   win: boolean,
   teammateBad: boolean,
   selfBad: boolean,
+  score?: number,
 ): void {
   bucket.games += 1;
   bucket.wins += win ? 1 : 0;
   bucket.teammateBadGames += teammateBad ? 1 : 0;
   bucket.selfBadGames += selfBad ? 1 : 0;
+  if (typeof score === 'number' && Number.isFinite(score) && score > 0) {
+    const shown = Math.min(100, score);
+    bucket.bestScore = bucket.scoreGames ? Math.max(bucket.bestScore, shown) : shown;
+    bucket.worstScore = bucket.scoreGames ? Math.min(bucket.worstScore, shown) : shown;
+    bucket.avgScore = (bucket.avgScore * bucket.scoreGames + shown) / (bucket.scoreGames + 1);
+    bucket.scoreGames += 1;
+  }
 }
 
 /** 本地时间周一 00:00 */
@@ -232,6 +267,8 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
 
   let totalGames = 0;
   let totalWins = 0;
+  let totalScoreGames = 0;
+  let totalScore = 0;
   let latestTimestamp = 0;
 
   for (const game of games) {
@@ -246,6 +283,9 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
     const teammateBad =
       Boolean(game.teammateBad) || tags.some((tag) => TEAMMATE_BAD_TAG.test(tag));
     const selfBad = Boolean(game.selfBad) || tags.some((tag) => SELF_BAD_TAG.test(tag));
+    const rawScore = Number(game.score);
+    const score =
+      Number.isFinite(rawScore) && rawScore > 0 ? Math.min(100, rawScore) : undefined;
     latestTimestamp = Math.max(latestTimestamp, timestamp);
 
     const hourIndex = Math.min(
@@ -253,37 +293,43 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
       Math.max(0, Math.floor(date.getHours() / TIME_PERIOD_HOURS)),
     );
     const hourBucket = hourBuckets[hourIndex];
-    if (hourBucket) addGame(hourBucket, win, teammateBad, selfBad);
+    if (hourBucket) addGame(hourBucket, win, teammateBad, selfBad, score);
 
     const weekdayIndex = (date.getDay() + 6) % 7;
     const weekdayBucket = weekdayBuckets[weekdayIndex];
-    if (weekdayBucket) addGame(weekdayBucket, win, teammateBad, selfBad);
+    if (weekdayBucket) addGame(weekdayBucket, win, teammateBad, selfBad, score);
 
     const positionBucket = positionByKey.get(positionBucketKey(game.position));
-    if (positionBucket) addGame(positionBucket, win, teammateBad, selfBad);
+    if (positionBucket) addGame(positionBucket, win, teammateBad, selfBad, score);
 
     const typeBucket = typeByKey.get(typeBucketKey(game.championId));
-    if (typeBucket) addGame(typeBucket, win, teammateBad, selfBad);
+    if (typeBucket) addGame(typeBucket, win, teammateBad, selfBad, score);
 
     const weekStart = startOfWeek(date);
     const weekKey = dateKey(weekStart);
     const weekBucket = weekBuckets.get(weekKey) ?? emptyBucket(weekKey, weekLabel(weekStart));
     weekBuckets.set(weekKey, weekBucket);
-    addGame(weekBucket, win, teammateBad, selfBad);
+    addGame(weekBucket, win, teammateBad, selfBad, score);
 
     const month = monthKey(date);
     const monthBucket = monthBuckets.get(month) ?? emptyBucket(month, month);
     monthBuckets.set(month, monthBucket);
-    addGame(monthBucket, win, teammateBad, selfBad);
+    addGame(monthBucket, win, teammateBad, selfBad, score);
 
     totalGames += 1;
     totalWins += win ? 1 : 0;
+    if (score !== undefined) {
+      totalScoreGames += 1;
+      totalScore += score;
+    }
   }
 
   return {
     totalGames,
     wins: totalWins,
     winRate: totalGames ? totalWins / totalGames : 0,
+    scoreGames: totalScoreGames,
+    avgScore: totalScoreGames ? round1(totalScore / totalScoreGames) : 0,
     dimensions: {
       hour: hourBuckets.map(finalizeBucket),
       weekday: weekdayBuckets.map(finalizeBucket),
@@ -310,6 +356,7 @@ export function summarizeMatchSummaries(
       tags: game.tags,
       position: game.position,
       championId: game.championId,
+      score: game.score,
     })),
   );
 }

@@ -163,13 +163,18 @@
       >
         <div class="modal-card time-stats-card">
           <div class="modal-head">
-            <h2 id="time-stats-title">我的时段胜率</h2>
+            <h2 id="time-stats-title">我的时段胜率 / 评分</h2>
             <div class="modal-actions">
               <span id="time-stats-meta" class="champion-ranking-meta"></span>
               <button id="time-stats-close" class="btn" type="button">关闭</button>
             </div>
           </div>
-          <div id="time-stats-tabs" class="champion-ranking-tabs" role="tablist">
+          <div id="time-stats-tabs" class="champion-ranking-tabs" role="group" aria-label="时段统计筛选">
+            <div id="time-stats-views" class="time-stats-views" role="tablist" aria-label="统计口径">
+              <button class="time-stats-view active" type="button" role="tab" data-time-view="winRate">胜率</button>
+              <button class="time-stats-view" type="button" role="tab" data-time-view="score">评分</button>
+            </div>
+            <span class="time-stats-tab-sep" aria-hidden="true"></span>
             <button class="tab" type="button" data-time-mode="all">全部</button>
             <button class="tab" type="button" data-time-mode="SR">召唤师峡谷</button>
             <button class="tab active" type="button" data-time-mode="ARAM">极地大乱斗</button>

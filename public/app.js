@@ -186,6 +186,11 @@ const TIME_STATS_DIMENSION_LABELS = {
   type: '按类型',
 };
 
+const TIME_STATS_VIEW_LABELS = {
+  winRate: '胜率',
+  score: '评分',
+};
+
 function currentModeLabel() {
   const snapshot = state.snapshot;
   if (snapshot?.queueId && QUEUE_LABELS[snapshot.queueId]) {
@@ -241,6 +246,8 @@ const state = {
   championRankingToken: 0,
   /** 时段胜率当前模式：all / SR / ARAM / ARENA */
   timeStatsMode: 'ARAM',
+  /** 时段统计口径：winRate / score */
+  timeStatsView: 'winRate',
   /** 时段胜率统计维度：hour / weekday / week / month */
   timeStatsDimension: 'hour',
   timeStatsData: null,
@@ -3585,10 +3592,32 @@ function timeStatsTone(period) {
   return 'bad';
 }
 
+function timeStatsScoreTone(period) {
+  if (!period?.scoreGames) return 'empty';
+  switch (period.grade) {
+    case 'S':
+    case 'A':
+      return 'good';
+    case 'B':
+      return 'even';
+    case 'C':
+      return 'warn';
+    default:
+      return 'bad';
+  }
+}
+
 function updateTimeStatsTabs() {
   if (!els.timeStatsTabs) return;
   for (const button of els.timeStatsTabs.querySelectorAll('[data-time-mode]')) {
-    button.classList.toggle('active', button.dataset.timeMode === state.timeStatsMode);
+    const active = button.dataset.timeMode === state.timeStatsMode;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  }
+  for (const button of els.timeStatsTabs.querySelectorAll('[data-time-view]')) {
+    const active = button.dataset.timeView === state.timeStatsView;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
   }
   if (els.timeStatsDimension) {
     els.timeStatsDimension.value = TIME_STATS_DIMENSION_LABELS[state.timeStatsDimension]
@@ -3597,34 +3626,31 @@ function updateTimeStatsTabs() {
   }
 }
 
-function renderTimeStats(data, mode = state.timeStatsMode) {
-  const modeLabel =
-    CHAMPION_RANKING_MODE_LABELS[mode] ?? CHAMPION_RANKING_MODE_LABELS.all;
-  const dimension = TIME_STATS_DIMENSION_LABELS[state.timeStatsDimension]
-    ? state.timeStatsDimension
-    : 'hour';
-  const dimensionLabel = TIME_STATS_DIMENSION_LABELS[dimension];
-  const buckets = Array.isArray(data?.dimensions?.[dimension])
-    ? data.dimensions[dimension]
-    : [];
-  if (!data || !data.totalGames || !buckets.length) {
-    els.timeStatsMeta.textContent = `${modeLabel} · ${dimensionLabel}`;
-    els.timeStatsSummary.innerHTML = '';
-    const hint =
-      state.timeStatsSource === 'none'
-        ? '没有读到历史战绩，先在「我的战绩」里加载一些对局，或启动客户端后再试'
-        : `${modeLabel}还没有足够的对局，多打几局后再来看看`;
-    els.timeStatsList.innerHTML = `<div class="search-status">${escapeHtml(hint)}</div>`;
-    return;
-  }
+function timeStatsEmptyHint(modeLabel) {
+  return state.timeStatsSource === 'none'
+    ? '没有读到历史战绩，先在「我的战绩」里加载一些对局，或启动客户端后再试'
+    : `${modeLabel}还没有足够的对局，多打几局后再来看看`;
+}
 
-  const sourceNote =
-    state.timeStatsSource === 'recent' ? ' · 最近 100 场（该模式暂无历史存档）' : '';
+function timeStatsSourceNote() {
+  return state.timeStatsSource === 'recent' ? ' · 最近 100 场（该模式暂无历史存档）' : '';
+}
+
+function timeStatsHighlight(label, period, detail) {
+  return period
+    ? `<div class="time-stat-highlight">
+        <span>${label}</span>
+        <b>${escapeHtml(period.label)}</b>
+        <small>${detail}</small>
+      </div>`
+    : '';
+}
+
+function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods) {
   els.timeStatsMeta.textContent = `${modeLabel} · ${dimensionLabel} · ${
     data.totalGames
-  } 场 · 总胜率 ${winRatePct(data.winRate)}${sourceNote}`;
+  } 场 · 总胜率 ${winRatePct(data.winRate)}${timeStatsSourceNote()}`;
 
-  const periods = buckets.filter((period) => Number(period.games) > 0);
   const qualified = periods.filter((period) => Number(period.games) >= 3);
   const worst = qualified.length
     ? qualified.reduce((current, period) =>
@@ -3638,22 +3664,13 @@ function renderTimeStats(data, mode = state.timeStatsMode) {
     : null;
   const badPeriod = mostBad && mostBad.teammateBadGames > 0 ? mostBad : null;
 
-  const highlight = (label, period, detail) =>
-    period
-      ? `<div class="time-stat-highlight">
-          <span>${label}</span>
-          <b>${escapeHtml(period.label)}</b>
-          <small>${detail}</small>
-        </div>`
-      : '';
-
   els.timeStatsSummary.innerHTML = `<div class="time-stat-highlights">
-    ${highlight(
+    ${timeStatsHighlight(
       '胜率最低',
       worst,
       `${worst?.games ?? 0} 场 · 胜率 ${winRatePct(worst?.winRate)}`,
     )}
-    ${highlight(
+    ${timeStatsHighlight(
       '最常遇到坑',
       badPeriod,
       `队友坑/逃 ${badPeriod?.teammateBadGames ?? 0} 场 · ${pct(
@@ -3689,6 +3706,106 @@ function renderTimeStats(data, mode = state.timeStatsMode) {
     .join('');
 }
 
+function renderTimeStatsScore(data, modeLabel, dimensionLabel, periods) {
+  const scoreSummary = data.scoreGames
+    ? `均分 ${Number(data.avgScore).toFixed(1)}（${data.scoreGames} 场有评分）`
+    : '暂无评分';
+  els.timeStatsMeta.textContent = `${modeLabel} · ${dimensionLabel} · ${data.totalGames} 场 · ${scoreSummary}${timeStatsSourceNote()}`;
+
+  if (!data.scoreGames) {
+    els.timeStatsSummary.innerHTML = '';
+    els.timeStatsList.innerHTML = `<div class="search-status">${escapeHtml(
+      `${modeLabel}还没有带评分的对局，多打几局后再来看看`,
+    )}</div>`;
+    return;
+  }
+
+  const qualified = periods.filter((period) => Number(period.scoreGames) >= 3);
+  const best = qualified.length
+    ? qualified.reduce((current, period) =>
+        period.avgScore > current.avgScore ? period : current,
+      )
+    : null;
+  const worst = qualified.length
+    ? qualified.reduce((current, period) =>
+        period.avgScore < current.avgScore ? period : current,
+      )
+    : null;
+
+  els.timeStatsSummary.innerHTML = `<div class="time-stat-highlights">
+    ${timeStatsHighlight(
+      '评分最高',
+      best,
+      `${best?.scoreGames ?? 0} 场 · 均分 ${Number(best?.avgScore ?? 0).toFixed(1)}`,
+    )}
+    ${timeStatsHighlight(
+      '评分最低',
+      worst,
+      `${worst?.scoreGames ?? 0} 场 · 均分 ${Number(worst?.avgScore ?? 0).toFixed(1)}`,
+    )}
+  </div>`;
+
+  els.timeStatsList.innerHTML = periods
+    .map((period) => {
+      if (!period.scoreGames) {
+        return `<div class="time-stat-row empty">
+          <span class="time-stat-range">${escapeHtml(period.label)}</span>
+          <div class="time-stat-main">
+            <div class="time-stat-bar"><span style="width:0%"></span></div>
+            <div class="time-stat-sub">${period.games} 场 · 暂无评分</div>
+          </div>
+          <span class="time-stat-rate">--</span>
+        </div>`;
+      }
+      const tone = timeStatsScoreTone(period);
+      const width = Math.max(0, Math.min(100, Number(period.avgScore) || 0));
+      return `<div class="time-stat-row ${tone}">
+        <span class="time-stat-range">${escapeHtml(period.label)}</span>
+        <div class="time-stat-main">
+          <div class="time-stat-bar"><span style="width:${width.toFixed(1)}%"></span></div>
+          <div class="time-stat-sub">
+            ${period.games} 场 · ${period.scoreGames} 场有评分
+            · 最高 ${Number(period.bestScore).toFixed(1)}
+            · 最低 ${Number(period.worstScore).toFixed(1)}
+            · ${period.wins}胜${period.losses}负
+          </div>
+        </div>
+        <span class="time-stat-rate">${Number(period.avgScore).toFixed(1)}</span>
+      </div>`;
+    })
+    .join('');
+}
+
+function renderTimeStats(data, mode = state.timeStatsMode) {
+  const modeLabel =
+    CHAMPION_RANKING_MODE_LABELS[mode] ?? CHAMPION_RANKING_MODE_LABELS.all;
+  const view = TIME_STATS_VIEW_LABELS[state.timeStatsView]
+    ? state.timeStatsView
+    : 'winRate';
+  const dimension = TIME_STATS_DIMENSION_LABELS[state.timeStatsDimension]
+    ? state.timeStatsDimension
+    : 'hour';
+  const dimensionLabel = TIME_STATS_DIMENSION_LABELS[dimension];
+  const buckets = Array.isArray(data?.dimensions?.[dimension])
+    ? data.dimensions[dimension]
+    : [];
+  if (!data || !data.totalGames || !buckets.length) {
+    els.timeStatsMeta.textContent = `${modeLabel} · ${dimensionLabel}`;
+    els.timeStatsSummary.innerHTML = '';
+    els.timeStatsList.innerHTML = `<div class="search-status">${escapeHtml(
+      timeStatsEmptyHint(modeLabel),
+    )}</div>`;
+    return;
+  }
+
+  const periods = buckets.filter((period) => Number(period.games) > 0);
+  if (view === 'score') {
+    renderTimeStatsScore(data, modeLabel, dimensionLabel, periods);
+    return;
+  }
+  renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods);
+}
+
 async function loadTimeStats() {
   const token = (state.timeStatsToken ?? 0) + 1;
   state.timeStatsToken = token;
@@ -3697,7 +3814,7 @@ async function loadTimeStats() {
   els.timeStatsMeta.textContent = '';
   els.timeStatsSummary.innerHTML = '';
   els.timeStatsList.innerHTML =
-    '<div class="search-status"><span class="spinner"></span><span>正在统计各维度胜率…</span></div>';
+    '<div class="search-status"><span class="spinner"></span><span>正在统计各维度数据…</span></div>';
   try {
     const params = new URLSearchParams();
     if (mode !== 'all') params.set('mode', mode);
@@ -3817,6 +3934,17 @@ els.championRankingClose.addEventListener('click', closeChampionRanking);
 els.timeStats.addEventListener('click', () => void openTimeStats());
 els.timeStatsClose.addEventListener('click', closeTimeStats);
 els.timeStatsTabs.addEventListener('click', (event) => {
+  const viewButton = event.target.closest('[data-time-view]');
+  if (viewButton) {
+    const view = viewButton.dataset.timeView;
+    if (!TIME_STATS_VIEW_LABELS[view] || view === state.timeStatsView) return;
+    state.timeStatsView = view;
+    updateTimeStatsTabs();
+    if (state.timeStatsData) {
+      renderTimeStats(state.timeStatsData, state.timeStatsMode);
+    }
+    return;
+  }
   const button = event.target.closest('[data-time-mode]');
   if (!button) return;
   const mode = button.dataset.timeMode;

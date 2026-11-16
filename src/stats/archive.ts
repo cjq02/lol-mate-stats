@@ -628,7 +628,7 @@ export async function getPlayerTimeStats(
   if (modeFilter) conditions.push(modeFilter);
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT m.game_creation, p.win, p.tags, p.position, p.champion_id,
+      `SELECT m.game_creation, p.win, p.tags, p.position, p.champion_id, p.score,
               MAX(CASE WHEN p.score IS NOT NULL AND p.score < ? THEN 1 ELSE 0 END) AS self_bad_score,
               MAX(CASE
                     WHEN q.puuid IS NOT NULL
@@ -655,6 +655,10 @@ export async function getPlayerTimeStats(
             ? undefined
             : String(row.position),
         championId: Number(row.champion_id) || 0,
+        score:
+          row.score === null || row.score === undefined
+            ? undefined
+            : Number(row.score),
         selfBad: Number(row.self_bad_score) === 1,
         teammateBad: Number(row.teammate_bad_score) === 1,
       })),
