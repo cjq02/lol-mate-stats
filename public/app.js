@@ -789,11 +789,16 @@ function buildCard(player, isLocal, options = {}) {
   const avgRank =
     Number.isFinite(avgRankValue) && avgRankValue > 0 ? avgRankValue : null;
   const avgRankGames = Number(player.recent?.avgRankGames) || 0;
-  const avgRankBadge =
+  const avgRankColor = avgRank !== null ? rankColor(Math.round(avgRank)) : null;
+  const avgRankLine =
     avgRank !== null
-      ? `<span class="avg-rank-badge" title="最近 ${avgRankGames || '若干'} 场平均评分排名第 ${avgRank.toFixed(
+      ? `<div class="avg-rank-line" style="--avg-rank:${avgRankColor}" title="最近 ${avgRankGames || '若干'} 场平均评分排名第 ${avgRank.toFixed(
           1,
-        )} 名（双方 10 人）">平均 #${avgRank.toFixed(1)}</span>`
+        )} 名（双方 10 人）">
+          <span class="avg-rank-label">平均排名</span>
+          <b class="avg-rank-value">#${avgRank.toFixed(1)}</b>
+          <span class="avg-rank-sample">近 ${avgRankGames || '若干'} 场</span>
+        </div>`
       : '';
   const name = player.displayName ?? '未知召唤师';
   const tag = player.tagLine;
@@ -1145,7 +1150,6 @@ function buildCard(player, isLocal, options = {}) {
               : ''
           }
           <span>${escapeHtml(rankLabel(player.rank))}</span>
-          ${avgRankBadge}
           ${streak}
         </div>
       </div>
@@ -1168,6 +1172,7 @@ function buildCard(player, isLocal, options = {}) {
       </div>
     </div>
 
+    ${thisGame ? '' : avgRankLine}
     ${thisGame ? gameRow : liveBlock}
     ${thisGame ? radarBlock : ''}
     ${thisGame ? timelineBlock : ''}

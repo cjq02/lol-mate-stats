@@ -436,6 +436,40 @@ export class LiveSource implements DataSource {
   }
 
   /** 某场对局里 10 名玩家的近期战绩 */
+  /** 旧缓存详情没有写入每局名次，打开时按存档补算一次，保证近期卡片能显示平均排名 */
+  private async enrichDetailRanks(detail: MatchDetail): Promise<boolean> {
+    let changed = false;
+    await mapLimit(detail.players ?? [], 4, async (player) => {
+      const games = player.games ?? [];
+      if (!player.puuid || !games.length) return;
+      const missing = games
+        .filter((game) => !game.tags?.includes('重开') && !(Number(game.rank) > 0))
+        .map((game) => game.gameId);
+      if (missing.length) {
+        const ranks = await getPlayerMatchRanks(player.puuid, missing);
+        for (const game of games) {
+          const rank = ranks.get(game.gameId);
+          if (rank && !(Number(game.rank) > 0)) {
+            game.rank = rank.rank;
+            game.rankTotal = rank.total;
+            changed = true;
+          }
+        }
+      }
+      const ranked = games
+        .filter((game) => !game.tags?.includes('重开') && Number(game.rank) > 0)
+        .map((game) => Number(game.rank));
+      if (!ranked.length || !player.recent) return;
+      const avgRank =
+        Math.round((ranked.reduce((sum, rank) => sum + rank, 0) / ranked.length) * 10) / 10;
+      if (player.recent.avgRank !== avgRank || player.recent.avgRankGames !== ranked.length) {
+        player.recent = { ...player.recent, avgRank, avgRankGames: ranked.length };
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
   async getMatchDetail(
     gameId: number,
     recent: number,
@@ -446,7 +480,13 @@ export class LiveSource implements DataSource {
     if (!options.force) {
       const cached = await getSavedMatchDetail(gameId);
       if (cached) {
-        logTag('match', `[${gameId}] 命中对局详情缓存，直接返回`);
+        const filled = await this.enrichDetailRanks(cached);
+        if (filled) {
+          await saveMatchDetail(cached);
+          logTag('match', `[${gameId}] 命中对局详情缓存，已补算近期平均排名`);
+        } else {
+          logTag('match', `[${gameId}] 命中对局详情缓存，直接返回`);
+        }
         options.onScoreboard?.(cached);
         return cached;
       }
@@ -678,6 +718,7 @@ export class LiveSource implements DataSource {
       );
 
       const detail: MatchDetail = { ...baseDetail, players };
+      await this.enrichDetailRanks(detail);
       await saveMatchDetail(detail);
       return detail;
     } catch (error) {
