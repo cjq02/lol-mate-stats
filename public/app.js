@@ -37,7 +37,6 @@ const els = {
   matchMeta: document.getElementById('match-meta'),
   matchProgress: document.getElementById('match-progress'),
   matchSummary: document.getElementById('match-summary'),
-  matchRanking: document.getElementById('match-ranking'),
   matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
   aiModalTitle: document.getElementById('ai-modal-title'),
@@ -747,6 +746,14 @@ function buildCard(player, isLocal, options = {}) {
   const rating = thisGame?.score ?? player.rating;
   const grade = thisGame?.grade ?? player.grade;
   const color = ratingColor(rating, thisGame);
+  // 本局评分排名：名次直接叠在评分环上，不占用卡片布局高度
+  const rank = Number.isFinite(options.rank) ? options.rank : null;
+  const rankBadge =
+    rank !== null
+      ? `<span class="ring-rank" style="--rank-color:${color}" title="本局评分排名第 ${rank}${
+          options.rankTotal ? ` / ${options.rankTotal}` : ''
+        }">#${rank}</span>`
+      : '';
   const name = player.displayName ?? '未知召唤师';
   const tag = player.tagLine;
   const rawLabels = thisGame ? thisGame.tags ?? [] : player.labels ?? [];
@@ -1105,6 +1112,7 @@ function buildCard(player, isLocal, options = {}) {
 
     <div class="score-row">
       <div class="ring${!thisGame && player.loading && !recent ? ' loading' : ''}" style="--p:${rating ?? 0};--ring:${color}">
+        ${rankBadge}
         <div class="ring-inner"><b>${rating ?? '--'}</b><small>${thisGame ? '本局评分' : '评分'}</small></div>
       </div>
       <div class="score-meta">
@@ -2053,58 +2061,6 @@ function renderMatchFlags(detail) {
   els.matchFlags.classList.toggle('hidden', parts.length === 0);
 }
 
-/** 本局 10 名玩家的评分排名，放在卡片上方，不占卡片高度 */
-function renderMatchRanking(detail) {
-  if (!els.matchRanking) return;
-  const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
-  const scored = scoreboard
-    .filter((row) => Number.isFinite(Number(row.score)))
-    .map((row) => ({ row, score: Math.round(Number(row.score)) }))
-    .sort((a, b) => b.score - a.score);
-
-  if (scored.length < 2) {
-    clearMatchRanking();
-    return;
-  }
-
-  const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
-  let lastScore = null;
-  let lastRank = 0;
-  const items = scored
-    .map(({ row, score }, index) => {
-      const rank = score === lastScore ? lastRank : index + 1;
-      lastScore = score;
-      lastRank = rank;
-      const bestTag = row.tags?.find((tag) => tag === 'MVP' || tag === 'SVP');
-      const isSelf = Boolean(row.puuid && selfPuuid && row.puuid === selfPuuid);
-      const color = ratingColor(score, row);
-      const name = String(row.name ?? '').replace(/#.*$/, '') || '未知召唤师';
-      const title = `第 ${rank} 名 · ${row.name ?? '未知召唤师'} · 评分 ${score}${
-        bestTag ? ` · ${bestTag}` : ''
-      }`;
-      return `<li class="match-rank-item${row.isEnemy ? ' enemy' : ''}${
-        isSelf ? ' is-self' : ''
-      }${bestTag === 'MVP' ? ' is-mvp' : bestTag === 'SVP' ? ' is-svp' : ''}" style="--rank-color:${color}" title="${escapeHtml(
-        title,
-      )}">
-      <span class="match-rank-no">${rank}</span>
-      ${iconHtml(champPath(row.championId), row.championName ?? '?', 'sm', title)}
-      <span class="match-rank-name">${escapeHtml(name)}</span>
-      <b class="match-rank-score">${score}</b>
-    </li>`;
-    })
-    .join('');
-
-  els.matchRanking.innerHTML = `<span class="match-ranking-label">评分排名 · ${scored.length} 人</span><ol class="match-ranking-list">${items}</ol>`;
-  els.matchRanking.classList.remove('hidden');
-}
-
-function clearMatchRanking() {
-  if (!els.matchRanking) return;
-  els.matchRanking.innerHTML = '';
-  els.matchRanking.classList.add('hidden');
-}
-
 function renderMatchSummary(detail) {
   if (!els.matchSummary) return;
   const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
@@ -2191,7 +2147,6 @@ function clearMatchSummary() {
 function clearMatchFlags() {
   els.matchFlags.innerHTML = '';
   els.matchFlags.classList.add('hidden');
-  clearMatchRanking();
   clearMatchSummary();
 }
 
@@ -2448,6 +2403,24 @@ function miniRadarSvg(series) {
   </svg>`;
 }
 
+/** 本局按评分给全部玩家排名，同分并列，返回每行名次和总人数 */
+function scoreRankMap(scoreboard) {
+  const ranked = scoreboard
+    .filter((row) => Number.isFinite(Number(row.score)))
+    .map((row) => ({ row, score: Math.round(Number(row.score)) }))
+    .sort((a, b) => b.score - a.score);
+  const ranks = new Map();
+  let lastScore = null;
+  let lastRank = 0;
+  ranked.forEach(({ row, score }, index) => {
+    const rank = score === lastScore ? lastRank : index + 1;
+    lastScore = score;
+    lastRank = rank;
+    ranks.set(row, rank);
+  });
+  return { ranks, total: ranked.length };
+}
+
 function renderScoreboard(detail) {
   const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
   const players = Array.isArray(detail.players) ? detail.players : [];
@@ -2470,6 +2443,7 @@ function renderScoreboard(detail) {
     .find((tag) => /^自己(小坑|坑|巨坑)$/.test(tag))
     ?.replace(/^自己/, '');
   const radarContext = buildRadarContext(scoreboard);
+  const { ranks, total: rankTotal } = scoreRankMap(scoreboard);
 
   const nodes = scoreboard.map((row) => {
     const report = (row.puuid && byPuuid.get(row.puuid)) || byName.get(row.name);
@@ -2490,6 +2464,8 @@ function renderScoreboard(detail) {
         mode: detail.gameMode ?? null,
         modeLabel: detail.queueName ?? '本局',
         thisGame: row,
+        rank: ranks.get(row),
+        rankTotal,
         badTag: isLocal ? selfBadTag : undefined,
         radar: radarContext ? buildRadarSeries(row, radarContext) : undefined,
       },
@@ -3384,7 +3360,6 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
     detail.tags?.length ? ` · ${matchFlagsHtml(detail.tags)}` : ''
   }`;
   renderMatchFlags(detail);
-  renderMatchRanking(detail);
   renderMatchSummary(detail);
   updateMatchesBackButton();
   renderMatchTab(tab);
