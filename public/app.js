@@ -38,6 +38,7 @@ const els = {
   matchProgress: document.getElementById('match-progress'),
   matchSummary: document.getElementById('match-summary'),
   matchesSummary: document.getElementById('matches-summary'),
+  matchesRangeTabs: document.getElementById('matches-range-tabs'),
   matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
   aiModalTitle: document.getElementById('ai-modal-title'),
@@ -229,6 +230,10 @@ const state = {
   championFilter: null,
   /** “我的战绩”当前模式页签：all / SR / ARAM / ARENA */
   myMatchesMode: 'ARAM',
+  /** 战绩列表当前显示范围：50 / 100 / 200 / 0（全部） */
+  matchesRange: 50,
+  matchesRangeLoading: false,
+  matchesRangeToken: 0,
   myGames: [],
   myLcuOffset: 0,
   lcuExhausted: false,
@@ -1431,6 +1436,7 @@ function beginMatchesLoading(text) {
   const started = Date.now();
   state.loadingProgress = null;
   els.matchesSummary?.classList.add('hidden');
+  els.matchesRangeTabs?.classList.add('hidden');
   els.matchesList.className = 'match-list';
   els.matchesList.innerHTML = `<div class="search-status"><span class="spinner"></span><span class="match-loading">${escapeHtml(
     text,
@@ -2530,6 +2536,58 @@ function setMatchesCardWidth(width) {
   card.classList.toggle('wide', width === 'wide');
 }
 
+function applyMatchRange(games) {
+  const range = state.matchesRange;
+  return range > 0 ? (games ?? []).slice(0, range) : games ?? [];
+}
+
+/** 同步「近 50 / 100 / 200 / 全部」页签的显示与选中状态 */
+function updateMatchesRangeTabs(visible) {
+  if (!els.matchesRangeTabs) return;
+  els.matchesRangeTabs.classList.toggle('hidden', !visible);
+  if (!visible) return;
+  for (const button of els.matchesRangeTabs.querySelectorAll('[data-match-range]')) {
+    button.classList.toggle('active', Number(button.dataset.matchRange) === state.matchesRange);
+  }
+}
+
+/** 当前范围需要更多对局时，自动继续翻页，直到满足场次或没有更多 */
+async function fillMatchRange() {
+  const range = state.matchesRange;
+  if (!range || state.matchesRangeLoading) return;
+  const token = state.matchesRangeToken + 1;
+  state.matchesRangeToken = token;
+  state.matchesRangeLoading = true;
+  try {
+    for (let guard = 0; guard < 20; guard += 1) {
+      if (token !== state.matchesRangeToken) break;
+
+      const page = state.playerMatches;
+      if (page) {
+        if (page.games.length >= range) break;
+        if (page.archiveLoading) break;
+        const remaining = Math.max(0, page.total - page.offset);
+        if (page.archiveReady && remaining === 0) break;
+        const before = page.games.length;
+        await loadPlayerMatchesPage();
+        if (state.playerMatches !== page || page.games.length <= before) break;
+        continue;
+      }
+
+      if (filteredMyGames().length >= range) break;
+      const hasMore = !state.lcuExhausted || state.archiveTotal > state.archiveLoaded;
+      if (!hasMore) break;
+      const button = els.matchesList.querySelector('[data-action="archive-more"]');
+      if (!button) break;
+      const before = state.myGames.length;
+      await loadMoreArchive(button);
+      if (state.myGames.length <= before) break;
+    }
+  } finally {
+    if (token === state.matchesRangeToken) state.matchesRangeLoading = false;
+  }
+}
+
 /** 战绩列表上方的汇总：只统计当前已加载、非重开的对局 */
 function matchListSummary(games) {
   const played = (games ?? []).filter((game) => !(game.tags ?? []).includes('重开'));
@@ -2664,6 +2722,7 @@ function renderMatchesView(games, title, showScore) {
   els.matchTabs.classList.add('hidden');
   els.myMatchesTabs?.classList.add('hidden');
   els.matchesTitle.textContent = title;
+  updateMatchesRangeTabs(games.length > 0);
   renderMatchesSummary(showScore ? games : []);
   els.matchesList.className = 'match-list';
   els.matchesList.innerHTML = games.length
@@ -2876,7 +2935,8 @@ function renderPlayerMatches() {
   const page = state.playerMatches;
   if (!page) return;
   const scrollTop = els.matchesList.scrollTop;
-  renderMatchesView(page.games, page.title, true);
+  const games = applyMatchRange(page.games);
+  renderMatchesView(games, page.title, true);
   els.matchesList.scrollTop = scrollTop;
   state.currentView = renderPlayerMatches;
   setMatchesRefresh(
@@ -2890,6 +2950,14 @@ function renderPlayerMatches() {
     els.matchesList.insertAdjacentHTML(
       'beforeend',
       '<div class="archive-more"><span>正在读取更早的战绩…</span></div>',
+    );
+    return;
+  }
+  const range = state.matchesRange;
+  if (range > 0 && games.length >= range) {
+    els.matchesList.insertAdjacentHTML(
+      'beforeend',
+      `<div class="archive-more"><span>已显示最近 ${range} 场</span></div>`,
     );
     return;
   }
@@ -2952,6 +3020,8 @@ function openMatches(player, context) {
   state.matchRequestToken += 1;
   const token = state.matchRequestToken;
   state.modeRecord = null;
+  state.matchesRangeToken += 1;
+  state.matchesRangeLoading = false;
 
   // 在某一局详情里点玩家卡片时，把当前详情压栈，返回时回到原页签
   const inDetail =
@@ -2992,7 +3062,7 @@ function openMatches(player, context) {
     page.title = playerMatchesTitle(player, record);
     els.matchesTitle.textContent = page.title;
   });
-  void loadPlayerMatchesPage();
+  void loadPlayerMatchesPage().then(() => fillMatchRange());
 }
 
 function goMatchesBack() {
@@ -3075,7 +3145,7 @@ function updateMyMatchesTabs(visible) {
 }
 
 function renderMyMatches() {
-  const games = filteredMyGames();
+  const games = applyMatchRange(filteredMyGames());
   const filter = state.championFilter;
   const modeStats = modeRecordText(state.modeRecord);
   const local = winRecord(games);
@@ -3101,8 +3171,10 @@ function renderMyMatches() {
     openMyMatches({ keepFilter: true, keepMode: true, preserveNavigation: true }),
   );
 
+  const range = state.matchesRange;
+  const rangeReached = range > 0 && games.length >= range;
   const archiveRemaining = Math.max(0, state.archiveTotal - state.archiveLoaded);
-  const hasMore = !state.lcuExhausted || archiveRemaining > 0;
+  const hasMore = !rangeReached && (!state.lcuExhausted || archiveRemaining > 0);
   if (!games.length) {
     const empty = els.matchesList.querySelector('.search-status');
     if (empty) {
@@ -3114,7 +3186,12 @@ function renderMyMatches() {
         : `没有找到${subject}的战绩`;
     }
   }
-  if (hasMore) {
+  if (rangeReached) {
+    els.matchesList.insertAdjacentHTML(
+      'beforeend',
+      `<div class="archive-more"><span>已显示最近 ${range} 场</span></div>`,
+    );
+  } else if (hasMore) {
     const hint =
       archiveRemaining > 0 ? `（本地存档还有 ${archiveRemaining} 场）` : '';
     els.matchesList.insertAdjacentHTML(
@@ -3307,6 +3384,8 @@ async function openMyMatches(options = {}) {
   const token = state.matchRequestToken;
   state.matchDetail = null;
   state.playerMatches = null;
+  state.matchesRangeToken += 1;
+  state.matchesRangeLoading = false;
   state.myGames = [];
   state.myLcuOffset = 0;
   state.lcuExhausted = false;
@@ -3420,6 +3499,7 @@ async function openMyMatches(options = {}) {
   }
 
   renderMyMatches();
+  void fillMatchRange();
   if (lcuError) {
     els.notice.textContent = `客户端战绩读取失败，已显示历史存档：${lcuError}`;
     els.notice.classList.remove('hidden');
@@ -3484,6 +3564,7 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
   state.matchDetail = detail;
   state.matchTab = tab;
   els.matchesSummary?.classList.add('hidden');
+  els.matchesRangeTabs?.classList.add('hidden');
   state.currentView = () => renderMatchDetailView(detail, tab);
   // 用点击时的当前页签，保证在「近期战绩」里更新后不会跳回「本局详情」
   setMatchesRefresh(() =>
@@ -3597,6 +3678,7 @@ function closeMatches() {
   state.matchRequestToken += 1;
   state.matchDetail = null;
   state.playerMatches = null;
+  state.matchesRangeToken += 1;
   state.backStack = [];
   state.backScrollStack = [];
   state.currentView = null;
@@ -3614,6 +3696,7 @@ function closeMatches() {
   els.matchesList.replaceChildren();
   els.matchTabs.classList.add('hidden');
   els.matchesSummary?.classList.add('hidden');
+  els.matchesRangeTabs?.classList.add('hidden');
   clearMatchFlags();
   els.matchesAi.classList.add('hidden');
   els.matchesBack.classList.add('hidden');
@@ -4111,6 +4194,21 @@ els.myMatchesTabs.addEventListener('click', (event) => {
   state.myMatchesMode = mode;
   updateMyMatchesTabs(true);
   void openMyMatches({ keepFilter: true, keepMode: true, preserveNavigation: true });
+});
+els.matchesRangeTabs.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-match-range]');
+  if (!button) return;
+  const range = Number(button.dataset.matchRange) || 0;
+  if (range === state.matchesRange) return;
+  state.matchesRange = range;
+  updateMatchesRangeTabs(true);
+  if (state.playerMatches) {
+    renderPlayerMatches();
+    void fillMatchRange();
+  } else if (state.currentView === renderMyMatches) {
+    renderMyMatches();
+    void fillMatchRange();
+  }
 });
 els.championRanking.addEventListener('click', () => void openChampionRanking());
 els.championRankingClose.addEventListener('click', closeChampionRanking);

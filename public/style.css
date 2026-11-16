@@ -791,6 +791,17 @@ body::before {
   border-bottom-color: #5eead4;
 }
 
+/* 战绩列表的范围页签：近 50 / 100 / 200 / 全部 */
+.match-tabs.range-tabs {
+  padding-top: 3px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.match-tabs.range-tabs .tab {
+  padding: 5px 10px 7px;
+  font-size: 11.5px;
+}
+
 /* ----------------------------- AI 复盘 ----------------------------- */
 
 .ai-btn {
