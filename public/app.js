@@ -3967,9 +3967,6 @@ els.timeStatsTabs.addEventListener('click', (event) => {
   updateTimeStatsTabs();
   void loadTimeStats();
 });
-els.timeStatsModal.addEventListener('click', (event) => {
-  if (event.target === els.timeStatsModal) closeTimeStats();
-});
 els.timeStatsDimension.addEventListener('change', () => {
   const dimension = els.timeStatsDimension.value;
   if (!TIME_STATS_DIMENSION_LABELS[dimension]) return;
@@ -3994,9 +3991,6 @@ els.championRankingSort.addEventListener('change', () => {
   if (!CHAMPION_RANKING_SORT_LABELS[sort]) return;
   state.championRankingSort = sort;
   renderChampionRanking(state.championRankingData, state.championRankingMode);
-});
-els.championRankingModal.addEventListener('click', (event) => {
-  if (event.target === els.championRankingModal) closeChampionRanking();
 });
 els.championRankingList.addEventListener('click', (event) => {
   const row = event.target.closest('[data-champion-id]');
@@ -4032,9 +4026,6 @@ els.aiTabs.addEventListener('click', (event) => {
 els.aiRerun.addEventListener('click', () => {
   if (state.ai?.kind === 'live') void runLiveAiAnalysis({ force: true });
   else void runAiAnalysis({ force: true });
-});
-els.aiModal.addEventListener('click', (event) => {
-  if (event.target === els.aiModal) hideAiView();
 });
 els.matchesRefresh.addEventListener('click', () => void refreshMatchesView());
 els.matchesBack.addEventListener('click', () => {
