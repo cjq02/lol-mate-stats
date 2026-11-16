@@ -64,7 +64,6 @@ const els = {
   timeStatsClose: document.getElementById('time-stats-close'),
   latestMatch: document.getElementById('latest-match'),
   liveAi: document.getElementById('live-ai'),
-  clearCache: document.getElementById('clear-cache'),
 };
 
 const PHASE_LABELS = {
@@ -1390,30 +1389,6 @@ async function refresh() {
   }
 }
 
-async function clearCache() {
-  if (els.clearCache.disabled) return;
-  els.clearCache.disabled = true;
-  els.notice.classList.add('hidden');
-  try {
-    const response = await fetch('/api/cache/clear', { method: 'POST' });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.ok === false) {
-      throw new Error(payload?.error ?? `HTTP ${response.status}`);
-    }
-    els.notice.textContent = '战绩缓存已清空，下次读取会重新拉取';
-    els.notice.classList.remove('hidden');
-    setTimeout(() => els.notice.classList.add('hidden'), 5000);
-  } catch (error) {
-    els.notice.textContent = `清缓存失败：${
-      error instanceof Error ? error.message : String(error)
-    }`;
-    els.notice.classList.remove('hidden');
-    setTimeout(() => els.notice.classList.add('hidden'), 8000);
-  } finally {
-    els.clearCache.disabled = false;
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* 玩家查询                                                            */
 /* ------------------------------------------------------------------ */
@@ -2547,6 +2522,14 @@ function updateMatchesBackButton() {
   els.matchesBack.classList.toggle('hidden', state.backStack.length === 0);
 }
 
+/** 切换战绩弹窗宽度：列表视图用较宽的一档，本局详情用最宽的一档 */
+function setMatchesCardWidth(width) {
+  const card = els.matchesModal.querySelector('.modal-card');
+  if (!card) return;
+  card.classList.toggle('match-list-card', width === 'list');
+  card.classList.toggle('wide', width === 'wide');
+}
+
 /** 战绩列表上方的汇总：只统计当前已加载、非重开的对局 */
 function matchListSummary(games) {
   const played = (games ?? []).filter((game) => !(game.tags ?? []).includes('重开'));
@@ -2677,7 +2660,7 @@ function renderMatchesView(games, title, showScore) {
   clearMatchFlags();
   els.matchesAi.classList.add('hidden');
   els.matchesModal.classList.remove('hidden');
-  els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
+  setMatchesCardWidth('list');
   els.matchTabs.classList.add('hidden');
   els.myMatchesTabs?.classList.add('hidden');
   els.matchesTitle.textContent = title;
@@ -3335,7 +3318,7 @@ async function openMyMatches(options = {}) {
   state.matchTab = 'scoreboard';
   const filter = state.championFilter;
   els.matchesModal.classList.remove('hidden');
-  els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
+  setMatchesCardWidth('list');
   updateMatchesBackButton();
   els.matchesTitle.textContent = filter ? championFilterTitle(filter) : '我的最近战绩';
   updateMyMatchesTabs(!filter);
@@ -3507,7 +3490,7 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
     openMatchDetail(detail.gameId, { push: false, tab: state.matchTab, force: true }),
   );
   els.matchesModal.classList.remove('hidden');
-  els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
+  setMatchesCardWidth('wide');
   els.matchTabs.classList.remove('hidden');
   els.matchesAi.classList.remove('hidden');
   setAiButton(Boolean(state.ai?.running));
@@ -3532,7 +3515,7 @@ async function openMatchDetail(gameId, options = {}) {
   }
 
   els.matchesModal.classList.remove('hidden');
-  els.matchesModal.querySelector('.modal-card')?.classList.add('wide');
+  setMatchesCardWidth('wide');
   els.matchTabs.classList.add('hidden');
   els.myMatchesTabs?.classList.add('hidden');
   resetAiView();
@@ -3635,7 +3618,7 @@ function closeMatches() {
   els.matchesAi.classList.add('hidden');
   els.matchesBack.classList.add('hidden');
   setMatchesRefresh(null);
-  els.matchesModal.querySelector('.modal-card')?.classList.remove('wide');
+  setMatchesCardWidth('');
 }
 
 function rankingClass(rank) {
@@ -4198,7 +4181,6 @@ els.championRankingList.addEventListener('click', (event) => {
   });
 });
 els.latestMatch.addEventListener('click', () => void openLatestMatch());
-els.clearCache.addEventListener('click', () => void clearCache());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
 els.matchesClose.addEventListener('click', closeMatches);

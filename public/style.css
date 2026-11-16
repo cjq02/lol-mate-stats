@@ -1605,6 +1605,10 @@ body::before {
   width: min(1520px, 96vw);
 }
 
+.modal-card.match-list-card {
+  width: min(1180px, 96vw);
+}
+
 .match-cards {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
