@@ -334,18 +334,18 @@ const TIME_STATS_SCORE_TONES = [
   { min: -Infinity, className: 'avg-low', color: '#ff4d6d' },
 ];
 
-/** 评分排名徽标按名次取色，名次越靠前越亮 */
+/** 评分排名徽标按名次取色，名次越靠前越亮；相邻名次尽量拉开色相 */
 const RANK_COLORS = [
-  '#ffd166',
-  '#d7e3ff',
-  '#ff9f66',
-  '#5eead4',
-  '#38bdf8',
-  '#a3e635',
-  '#ffe14d',
-  '#ffb020',
-  '#ff7a45',
-  '#ff4d6d',
+  '#ffd166', // 1 金
+  '#cbd5e1', // 2 银
+  '#f97316', // 3 铜
+  '#a3e635', // 4 青柠
+  '#34d399', // 5 绿
+  '#22d3ee', // 6 青
+  '#60a5fa', // 7 蓝
+  '#818cf8', // 8 靛
+  '#c084fc', // 9 紫
+  '#fb7185', // 10 玫红
 ];
 
 function rankColor(rank) {
