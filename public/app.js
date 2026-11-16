@@ -37,6 +37,7 @@ const els = {
   matchMeta: document.getElementById('match-meta'),
   matchProgress: document.getElementById('match-progress'),
   matchSummary: document.getElementById('match-summary'),
+  matchesSummary: document.getElementById('matches-summary'),
   matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
   aiModalTitle: document.getElementById('ai-modal-title'),
@@ -1454,6 +1455,7 @@ function beginMatchesLoading(text) {
   stopLoadingTimer();
   const started = Date.now();
   state.loadingProgress = null;
+  els.matchesSummary?.classList.add('hidden');
   els.matchesList.className = 'match-list';
   els.matchesList.innerHTML = `<div class="search-status"><span class="spinner"></span><span class="match-loading">${escapeHtml(
     text,
@@ -2545,6 +2547,127 @@ function updateMatchesBackButton() {
   els.matchesBack.classList.toggle('hidden', state.backStack.length === 0);
 }
 
+/** 战绩列表上方的汇总：只统计当前已加载、非重开的对局 */
+function matchListSummary(games) {
+  const played = (games ?? []).filter((game) => !(game.tags ?? []).includes('重开'));
+  if (!played.length) return null;
+
+  let scoreSum = 0;
+  let scoreCount = 0;
+  let best = null;
+  let worst = null;
+  let rankSum = 0;
+  let rankCount = 0;
+  let bestRank = null;
+  let mvp = 0;
+  let svp = 0;
+  let bad = 0;
+  let afk = 0;
+
+  for (const game of played) {
+    const score = Number(game.score);
+    if (Number.isFinite(score)) {
+      scoreSum += score;
+      scoreCount += 1;
+      if (best === null || score > best) best = score;
+      if (worst === null || score < worst) worst = score;
+    }
+
+    const rank = Number(game.rank);
+    if (Number.isFinite(rank) && rank > 0) {
+      rankSum += rank;
+      rankCount += 1;
+      if (bestRank === null || rank < bestRank) bestRank = rank;
+    }
+
+    const tags = game.tags ?? [];
+    if (tags.includes('MVP')) mvp += 1;
+    if (tags.includes('SVP')) svp += 1;
+    if (tags.some((tag) => /^自己(小坑|坑|巨坑)$/.test(tag))) bad += 1;
+    if (tags.includes('自己逃跑')) afk += 1;
+  }
+
+  return {
+    games: played.length,
+    record: winRecord(played),
+    avgScore: scoreCount ? scoreSum / scoreCount : null,
+    best,
+    worst,
+    avgRank: rankCount ? rankSum / rankCount : null,
+    bestRank,
+    mvp,
+    svp,
+    bad,
+    afk,
+  };
+}
+
+/** 汇总里的评分最多保留 1 位小数，整数不补 .0 */
+function summaryScore(value) {
+  if (!Number.isFinite(Number(value))) return '-';
+  const number = Number(value);
+  return Number.isInteger(number) ? String(number) : number.toFixed(1);
+}
+
+function renderMatchesSummary(games) {
+  if (!els.matchesSummary) return;
+  const summary = matchListSummary(games);
+  if (!summary) {
+    els.matchesSummary.innerHTML = '';
+    els.matchesSummary.classList.add('hidden');
+    return;
+  }
+
+  const winRate = summary.record.winRate;
+  const winTone = winRate === null ? '' : winRate >= 0.5 ? ' win' : ' loss';
+  const scoreColor =
+    summary.avgScore === null ? '' : ` style="color:${ratingColor(summary.avgScore, null)}"`;
+  const scoreSub =
+    summary.best === null
+      ? '暂无评分'
+      : `最高 ${summaryScore(summary.best)} · 最低 ${summaryScore(summary.worst)}`;
+  const rankSub =
+    summary.bestRank === null ? '暂无排名' : `最好 #${summary.bestRank}`;
+  const cells = [
+    `<div class="summary-cell">
+      <span class="summary-label">场次</span>
+      <b class="summary-value">${summary.games}</b>
+      <span class="summary-sub">当前已加载 · 重开不计</span>
+    </div>`,
+    `<div class="summary-cell">
+      <span class="summary-label">胜率</span>
+      <b class="summary-value${winTone}">${winRatePct(winRate)}</b>
+      <span class="summary-sub">${summary.record.wins}胜${summary.record.losses}负</span>
+    </div>`,
+    `<div class="summary-cell">
+      <span class="summary-label">平均评分</span>
+      <b class="summary-value"${scoreColor}>${
+        summary.avgScore === null ? '-' : summary.avgScore.toFixed(1)
+      }</b>
+      <span class="summary-sub">${scoreSub}</span>
+    </div>`,
+    `<div class="summary-cell">
+      <span class="summary-label">平均排名</span>
+      <b class="summary-value">${
+        summary.avgRank === null ? '-' : `第 ${summary.avgRank.toFixed(1)} 名`
+      }</b>
+      <span class="summary-sub">${rankSub}</span>
+    </div>`,
+    `<div class="summary-cell">
+      <span class="summary-label">MVP / SVP</span>
+      <b class="summary-value">${summary.mvp} / ${summary.svp}</b>
+      <span class="summary-sub">最佳次数</span>
+    </div>`,
+    `<div class="summary-cell">
+      <span class="summary-label">坑场次</span>
+      <b class="summary-value${summary.bad ? ' loss' : ''}">${summary.bad}</b>
+      <span class="summary-sub">${summary.afk ? `逃跑 ${summary.afk} 场` : '无逃跑'}</span>
+    </div>`,
+  ];
+  els.matchesSummary.innerHTML = `<div class="matches-summary-grid">${cells.join('')}</div>`;
+  els.matchesSummary.classList.remove('hidden');
+}
+
 function renderMatchesView(games, title, showScore) {
   stopLoadingTimer();
   setMatchProgress('');
@@ -2558,6 +2681,7 @@ function renderMatchesView(games, title, showScore) {
   els.matchTabs.classList.add('hidden');
   els.myMatchesTabs?.classList.add('hidden');
   els.matchesTitle.textContent = title;
+  renderMatchesSummary(showScore ? games : []);
   els.matchesList.className = 'match-list';
   els.matchesList.innerHTML = games.length
     ? games.map((game) => matchRow(game, showScore)).join('')
@@ -3376,6 +3500,7 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
   stopLoadingTimer();
   state.matchDetail = detail;
   state.matchTab = tab;
+  els.matchesSummary?.classList.add('hidden');
   state.currentView = () => renderMatchDetailView(detail, tab);
   // 用点击时的当前页签，保证在「近期战绩」里更新后不会跳回「本局详情」
   setMatchesRefresh(() =>
@@ -3505,6 +3630,7 @@ function closeMatches() {
   els.matchesModal.classList.add('hidden');
   els.matchesList.replaceChildren();
   els.matchTabs.classList.add('hidden');
+  els.matchesSummary?.classList.add('hidden');
   clearMatchFlags();
   els.matchesAi.classList.add('hidden');
   els.matchesBack.classList.add('hidden');
