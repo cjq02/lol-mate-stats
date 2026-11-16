@@ -37,6 +37,7 @@ const els = {
   matchMeta: document.getElementById('match-meta'),
   matchProgress: document.getElementById('match-progress'),
   matchSummary: document.getElementById('match-summary'),
+  matchRanking: document.getElementById('match-ranking'),
   matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
   aiModalTitle: document.getElementById('ai-modal-title'),
@@ -2052,6 +2053,58 @@ function renderMatchFlags(detail) {
   els.matchFlags.classList.toggle('hidden', parts.length === 0);
 }
 
+/** 本局 10 名玩家的评分排名，放在卡片上方，不占卡片高度 */
+function renderMatchRanking(detail) {
+  if (!els.matchRanking) return;
+  const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
+  const scored = scoreboard
+    .filter((row) => Number.isFinite(Number(row.score)))
+    .map((row) => ({ row, score: Math.round(Number(row.score)) }))
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length < 2) {
+    clearMatchRanking();
+    return;
+  }
+
+  const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
+  let lastScore = null;
+  let lastRank = 0;
+  const items = scored
+    .map(({ row, score }, index) => {
+      const rank = score === lastScore ? lastRank : index + 1;
+      lastScore = score;
+      lastRank = rank;
+      const bestTag = row.tags?.find((tag) => tag === 'MVP' || tag === 'SVP');
+      const isSelf = Boolean(row.puuid && selfPuuid && row.puuid === selfPuuid);
+      const color = ratingColor(score, row);
+      const name = String(row.name ?? '').replace(/#.*$/, '') || '未知召唤师';
+      const title = `第 ${rank} 名 · ${row.name ?? '未知召唤师'} · 评分 ${score}${
+        bestTag ? ` · ${bestTag}` : ''
+      }`;
+      return `<li class="match-rank-item${row.isEnemy ? ' enemy' : ''}${
+        isSelf ? ' is-self' : ''
+      }${bestTag === 'MVP' ? ' is-mvp' : bestTag === 'SVP' ? ' is-svp' : ''}" style="--rank-color:${color}" title="${escapeHtml(
+        title,
+      )}">
+      <span class="match-rank-no">${rank}</span>
+      ${iconHtml(champPath(row.championId), row.championName ?? '?', 'sm', title)}
+      <span class="match-rank-name">${escapeHtml(name)}</span>
+      <b class="match-rank-score">${score}</b>
+    </li>`;
+    })
+    .join('');
+
+  els.matchRanking.innerHTML = `<span class="match-ranking-label">评分排名 · ${scored.length} 人</span><ol class="match-ranking-list">${items}</ol>`;
+  els.matchRanking.classList.remove('hidden');
+}
+
+function clearMatchRanking() {
+  if (!els.matchRanking) return;
+  els.matchRanking.innerHTML = '';
+  els.matchRanking.classList.add('hidden');
+}
+
 function renderMatchSummary(detail) {
   if (!els.matchSummary) return;
   const scoreboard = Array.isArray(detail.scoreboard) ? detail.scoreboard : [];
@@ -2138,6 +2191,7 @@ function clearMatchSummary() {
 function clearMatchFlags() {
   els.matchFlags.innerHTML = '';
   els.matchFlags.classList.add('hidden');
+  clearMatchRanking();
   clearMatchSummary();
 }
 
@@ -3330,6 +3384,7 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
     detail.tags?.length ? ` · ${matchFlagsHtml(detail.tags)}` : ''
   }`;
   renderMatchFlags(detail);
+  renderMatchRanking(detail);
   renderMatchSummary(detail);
   updateMatchesBackButton();
   renderMatchTab(tab);
