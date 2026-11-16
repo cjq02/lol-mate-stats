@@ -3104,21 +3104,21 @@ body::before {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 7px;
 }
 
 .game-row .rank {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .game-row .pts {
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--muted);
-  min-width: 24px;
+  min-width: 26px;
   text-align: right;
 }
 
