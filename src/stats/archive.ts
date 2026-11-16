@@ -717,6 +717,8 @@ export interface ChampionScoreSummary {
   avgScore: number;
   bestScore: number;
   worstScore: number;
+  /** 平均单场排名（把双方 10 人放在一起算） */
+  avgRank: number;
   /** 综合熟练度 0-100（场次经验 + 表现分 × 样本置信度） */
   proficiency: number;
 }
@@ -745,17 +747,25 @@ export async function getPlayerChampionScores(
   if (modeFilter) conditions.push(modeFilter);
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT CASE WHEN p.champion_id >= 60000 THEN p.champion_id - 60000 ELSE p.champion_id END AS champion_id,
-              MAX(p.champion_name) AS champion_name,
+      `SELECT CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END AS champion_id,
+              MAX(r.champion_name) AS champion_name,
               COUNT(*) AS games,
-              COALESCE(SUM(p.win = 1), 0) AS wins,
-              AVG(p.score) AS avg_score,
-              MAX(p.score) AS best_score,
-              MIN(p.score) AS worst_score
-       FROM match_participants p
-       JOIN matches m ON m.game_id = p.game_id
-       WHERE ${conditions.join(' AND ')}
-       GROUP BY CASE WHEN p.champion_id >= 60000 THEN p.champion_id - 60000 ELSE p.champion_id END
+              COALESCE(SUM(r.win = 1), 0) AS wins,
+              AVG(r.score) AS avg_score,
+              MAX(r.score) AS best_score,
+              MIN(r.score) AS worst_score,
+              AVG(r.game_rank) AS avg_rank
+       FROM (
+         SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win,
+                1 + COUNT(q.game_id) AS game_rank
+         FROM match_participants p
+         JOIN matches m ON m.game_id = p.game_id
+         LEFT JOIN match_participants q
+           ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
+         WHERE ${conditions.join(' AND ')}
+         GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
+       ) r
+       GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END
        HAVING games >= ?
        ORDER BY avg_score DESC, games DESC`,
       [...params, threshold],
@@ -775,6 +785,7 @@ export async function getPlayerChampionScores(
         avgScore,
         bestScore,
         worstScore: Number(row.worst_score) || 0,
+        avgRank: Number(row.avg_rank) || 0,
         proficiency: championProficiency({ games, winRate, avgScore, bestScore }),
       };
     });

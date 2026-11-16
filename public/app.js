@@ -3778,11 +3778,19 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           )}</span></small>
         </span>
         <span class="champion-rank-stats">
-          <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(
-            avg,
-            1,
-          )}</span>
-          <small>平均分</small>
+          <span class="champion-rank-stat">
+            <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(
+              avg,
+              1,
+            )}</span>
+            <small>平均分</small>
+          </span>
+          <span class="champion-rank-stat">
+            <b class="champion-rank-avg" title="该英雄所有场次中，平均每局在双方有评分玩家中的排名">${
+              Number(item.avgRank) > 0 ? num(item.avgRank, 1) : '-'
+            }</b>
+            <small>平均排名</small>
+          </span>
         </span>
         <span class="champion-rank-extra">
           <span>最高 <b>${num(item.bestScore, 0)}</b></span>
