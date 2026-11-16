@@ -334,6 +334,25 @@ const TIME_STATS_SCORE_TONES = [
   { min: -Infinity, className: 'avg-low', color: '#ff4d6d' },
 ];
 
+/** 评分排名徽标按名次取色，名次越靠前越亮 */
+const RANK_COLORS = [
+  '#ffd166',
+  '#d7e3ff',
+  '#ff9f66',
+  '#5eead4',
+  '#38bdf8',
+  '#a3e635',
+  '#ffe14d',
+  '#ffb020',
+  '#ff7a45',
+  '#ff4d6d',
+];
+
+function rankColor(rank) {
+  const index = Math.min(Math.max(Number(rank) || 1, 1), RANK_COLORS.length) - 1;
+  return RANK_COLORS[index];
+}
+
 function ratingColor(rating, stats) {
   if (rating === null || rating === undefined) return '#5b6b8c';
   if (isInactiveKda(stats)) return '#7c8aa5';
@@ -750,7 +769,7 @@ function buildCard(player, isLocal, options = {}) {
   const rank = Number.isFinite(options.rank) ? options.rank : null;
   const rankBadge =
     rank !== null
-      ? `<span class="ring-rank" style="--rank-color:${color}" title="本局评分排名第 ${rank}${
+      ? `<span class="ring-rank" style="--rank-color:${rankColor(rank)}" title="本局评分排名第 ${rank}${
           options.rankTotal ? ` / ${options.rankTotal}` : ''
         }">#${rank}</span>`
       : '';
