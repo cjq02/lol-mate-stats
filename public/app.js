@@ -230,7 +230,7 @@ const state = {
   championFilter: null,
   /** “我的战绩”当前模式页签：all / SR / ARAM / ARENA */
   myMatchesMode: 'ARAM',
-  /** 战绩列表当前显示范围：50 / 100 / 200 / 0（全部） */
+  /** 战绩列表当前显示范围：10 / 20 / 50 / 100 / 200 / 0（全部） */
   matchesRange: 50,
   matchesRangeLoading: false,
   matchesRangeToken: 0,
@@ -2541,7 +2541,7 @@ function applyMatchRange(games) {
   return range > 0 ? (games ?? []).slice(0, range) : games ?? [];
 }
 
-/** 同步「近 50 / 100 / 200 / 全部」页签的显示与选中状态 */
+/** 同步「近 10 / 20 / 50 / 100 / 200 / 全部」页签的显示与选中状态 */
 function updateMatchesRangeTabs(visible) {
   if (!els.matchesRangeTabs) return;
   els.matchesRangeTabs.classList.toggle('hidden', !visible);

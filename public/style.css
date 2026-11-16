@@ -791,7 +791,7 @@ body::before {
   border-bottom-color: #5eead4;
 }
 
-/* 战绩列表的范围页签：近 50 / 100 / 200 / 全部 */
+/* 战绩列表的范围页签：近 10 / 20 / 50 / 100 / 200 / 全部 */
 .match-tabs.range-tabs {
   padding-top: 3px;
   background: rgba(255, 255, 255, 0.012);
