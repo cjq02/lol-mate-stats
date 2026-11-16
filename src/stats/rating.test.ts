@@ -673,7 +673,7 @@ test('坦克高承伤和参团时不再被输出位稳压', () => {
       role: 'carry' as const,
       deaths: 8,
     },
-  ]);
+  ].map((input, index) => ({ ...input, teamId: index < 5 ? 100 : 200 })));
   assert.ok(
     scores[0]! >= scores[3]!,
     `坦克 ${scores[0]} 不应低于提莫 ${scores[3]}（全部：${scores.join(',')}）`,
@@ -694,9 +694,33 @@ test('参团和输出同时垫底时按减分制判坑', () => {
     { kda: 3.2, killParticipation: 0.593, damageShare: 0.125, tankShare: 0.289, healShare: 0.298, role: 'fighter' as const },
     { kda: 6.0, killParticipation: 0.333, damageShare: 0.065, tankShare: 0.08, healShare: 0.083, role: 'carry' as const },
     { kda: 4.0, killParticipation: 0.741, damageShare: 0.346, tankShare: 0.211, healShare: 0.099, role: 'carry' as const },
-  ]);
+  ].map((input, index) => ({ ...input, teamId: index < 5 ? 100 : 200 })));
   assert.ok(scores[3]! < 30, `螳螂=${scores[3]}`);
   assert.equal(badLevelOfScore(scores[3]), 'bad');
+});
+
+test('评分百分位只在本队 5 人内比较', () => {
+  const team = (teamId: number, bonus: number) =>
+    Array.from({ length: 5 }, (_, index) => ({
+      kda: 1 + index + bonus,
+      killParticipation: 0.4 + index * 0.08 + bonus * 0.05,
+      damageShare: 0.1 + index * 0.03 + bonus * 0.05,
+      tankShare: 0.1 + index * 0.02 + bonus * 0.05,
+      healShare: 0.05 + index * 0.02 + bonus * 0.05,
+      teamId,
+    }));
+  // 两队内部排序完全一样，只是 B 队整体数值更高：
+  // 按队伍比较时，对应位置的百分位和评分应完全相同。
+  const scores = percentileScores([...team(100, 0), ...team(200, 3)]);
+  assert.ok(
+    Math.abs(scores[0]! - scores[5]!) < 1e-9,
+    `A 队最弱 ${scores[0]} 应等于 B 队最弱 ${scores[5]}`,
+  );
+  assert.ok(
+    Math.abs(scores[4]! - scores[9]!) < 1e-9,
+    `A 队最强 ${scores[4]} 应等于 B 队最强 ${scores[9]}`,
+  );
+  assert.ok(scores[4]! > scores[0]!, `队伍内最强应高于最弱：${scores.join(',')}`);
 });
 
 test('解析 Live Client Data 的装备对象', () => {

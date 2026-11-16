@@ -343,22 +343,25 @@ export function computeMatchScores(
   game: RawGame,
   championMap: Map<number, ChampionSummary>,
 ): Map<number, number> {
-  const bases = (game.participants ?? [])
-    .map((participant) => analyzeBase(game, participant, championMap))
-    .filter((base): base is BaseAnalysis => base !== null);
+  const entries: Array<{ participant: RawParticipant; base: BaseAnalysis }> = [];
+  for (const participant of game.participants ?? []) {
+    const base = analyzeBase(game, participant, championMap);
+    if (base) entries.push({ participant, base });
+  }
   const scores = percentileScores(
-    bases.map((base) => ({
+    entries.map(({ participant, base }) => ({
       kda: base.kdaRaw,
       killParticipation: base.killParticipationRaw,
       damageShare: base.damageShareRaw,
       tankShare: base.tankShareRaw,
       healShare: base.healShareRaw,
       role: championRole(base.championId),
+      teamId: toNumber(participant.teamId),
       deaths: base.deaths,
     })),
   );
   const result = new Map<number, number>();
-  bases.forEach((base, index) => {
+  entries.forEach(({ base }, index) => {
     result.set(base.participantId, scores[index] ?? 0);
   });
   return result;
