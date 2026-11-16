@@ -144,14 +144,14 @@ interface RoleWeights {
  * 分英雄类型的权重：
  * - carry（法师/ADC/刺客）：输出权重最高
  * - support（软辅/治疗）：治疗和参团权重更高，输出权重降低
- * - tank（坦克/硬辅）：承伤权重最高
+ * - tank（坦克/硬辅）：承伤和参团权重最高，输出权重最低
  * - fighter（战士）：输出和承伤均衡
  * 总权重都保持在约 16.7，避免不同定位之间整体分数漂移。
  */
 const ROLE_WEIGHTS: Record<ChampionRole, RoleWeights> = {
   carry: { kda: 5.4, kp: 1.2, damage: 7.8, taken: 2.3, heal: 0.01 },
   support: { kda: 5.0, kp: 3.5, damage: 3.0, taken: 3.5, heal: 1.7 },
-  tank: { kda: 4.0, kp: 2.5, damage: 3.5, taken: 6.0, heal: 0.7 },
+  tank: { kda: 2.8, kp: 3.2, damage: 2.0, taken: 7.8, heal: 0.9 },
   fighter: { kda: 4.8, kp: 2.2, damage: 5.0, taken: 4.5, heal: 0.2 },
   default: { kda: 5.3987, kp: 1.2844, damage: 6.7913, taken: 3.2165, heal: 0.0214 },
 };

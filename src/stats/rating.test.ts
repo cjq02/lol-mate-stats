@@ -4,7 +4,7 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, summarize } from './rating.js';
+import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
@@ -568,6 +568,115 @@ test('分英雄类型权重：软辅高治疗吃香，法师高输出吃香', ()
   assert.ok(
     supportScores[0]! > carryScores[0]!,
     `support=${supportScores[0]} carry=${carryScores[0]}`,
+  );
+});
+
+test('各英雄类型评分权重总和保持一致', () => {
+  for (const role of ['carry', 'support', 'tank', 'fighter', 'default'] as const) {
+    const weights = roleScoreWeights(role);
+    const sum = Object.values(weights).reduce((total, value) => total + value, 0);
+    assert.ok(Math.abs(sum - 16.7) < 0.02, `${role} 权重之和为 ${sum}`);
+  }
+});
+
+test('坦克高承伤和参团时不再被输出位稳压', () => {
+  // 2026-11-16 极地大乱斗真实数据：慎（坦克）承伤 32.7% / 参团 74.6% / 治疗 31.8%，
+  // 提莫（输出）输出 22.3% / KDA 3.15，但承伤只有 15.8%。调整后坦克不应再被压一头。
+  const scores = percentileScores([
+    {
+      kda: 2.93,
+      killParticipation: 0.746,
+      damageShare: 0.192,
+      tankShare: 0.327,
+      healShare: 0.318,
+      role: 'tank' as const,
+      deaths: 15,
+    },
+    {
+      kda: 2.89,
+      killParticipation: 0.441,
+      damageShare: 0.131,
+      tankShare: 0.18,
+      healShare: 0.126,
+      role: 'carry' as const,
+      deaths: 9,
+    },
+    {
+      kda: 3.55,
+      killParticipation: 0.661,
+      damageShare: 0.252,
+      tankShare: 0.153,
+      healShare: 0.296,
+      role: 'carry' as const,
+      deaths: 11,
+    },
+    {
+      kda: 3.15,
+      killParticipation: 0.695,
+      damageShare: 0.223,
+      tankShare: 0.158,
+      healShare: 0.021,
+      role: 'carry' as const,
+      deaths: 13,
+    },
+    {
+      kda: 2.33,
+      killParticipation: 0.593,
+      damageShare: 0.202,
+      tankShare: 0.182,
+      healShare: 0.239,
+      role: 'carry' as const,
+      deaths: 15,
+    },
+    {
+      kda: 4.33,
+      killParticipation: 0.619,
+      damageShare: 0.218,
+      tankShare: 0.41,
+      healShare: 0.682,
+      role: 'tank' as const,
+      deaths: 9,
+    },
+    {
+      kda: 3,
+      killParticipation: 0.571,
+      damageShare: 0.214,
+      tankShare: 0.145,
+      healShare: 0.095,
+      role: 'carry' as const,
+      deaths: 12,
+    },
+    {
+      kda: 2.25,
+      killParticipation: 0.571,
+      damageShare: 0.172,
+      tankShare: 0.177,
+      healShare: 0.121,
+      role: 'carry' as const,
+      deaths: 16,
+    },
+    {
+      kda: 2.71,
+      killParticipation: 0.603,
+      damageShare: 0.194,
+      tankShare: 0.152,
+      healShare: 0.034,
+      role: 'carry' as const,
+      deaths: 14,
+    },
+    {
+      kda: 5.75,
+      killParticipation: 0.73,
+      damageShare: 0.202,
+      tankShare: 0.116,
+      healShare: 0.068,
+      role: 'carry' as const,
+      deaths: 8,
+    },
+  ]);
+  assert.ok(
+    scores[0]! >= scores[3]!,
+    `坦克 ${scores[0]} 不应低于提莫 ${scores[3]}（全部：${scores.join(',')}）`,
   );
 });
 
