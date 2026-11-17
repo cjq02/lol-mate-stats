@@ -13,7 +13,7 @@ import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
 import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
-import { currentQueueGroup, gameQueueGroup, modeFromQueue } from './constants.js';
+import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
@@ -500,6 +500,13 @@ test('队列/模式分组', () => {
   assert.equal(currentQueueGroup(450, 'ARAM'), 'aram');
   assert.equal(gameQueueGroup(450, 'ARAM'), 'aram');
   assert.equal(gameQueueGroup(420, 'MID'), 'solo');
+  assert.equal(queueName(890), '人机（中等）');
+  assert.equal(queueName(480), '快速模式');
+  assert.equal(queueName(3140), '训练模式');
+  assert.equal(queueGroupName('ranked'), '排位');
+  assert.equal(queueGroupName('bot'), '人机');
+  assert.equal(queueGroupName('swift'), '快速模式');
+  assert.equal(queueGroupName('practice'), '训练模式');
 });
 
 test('单场坑的程度分档', () => {

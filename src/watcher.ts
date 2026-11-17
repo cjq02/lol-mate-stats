@@ -910,6 +910,7 @@ export class LiveSource implements DataSource {
     queueId: number | undefined,
     mode: GameModeKey | undefined,
     championId?: number,
+    groupOverride?: string,
   ): Promise<{
     puuid: string;
     group: string;
@@ -918,7 +919,8 @@ export class LiveSource implements DataSource {
   }> {
     const id = await this.resolveArchivePuuid(puuid);
     const hasContext = queueId !== undefined || mode !== undefined;
-    const group = hasContext ? currentQueueGroup(queueId, mode) : undefined;
+    const group =
+      groupOverride ?? (hasContext ? currentQueueGroup(queueId, mode) : undefined);
     const groupName = !group
       ? '全部模式'
       : group === 'sr'

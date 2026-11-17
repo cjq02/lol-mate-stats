@@ -562,6 +562,12 @@ export interface PlayerWinRecord {
   solo: 'm.queue_id = 420',
   flex: 'm.queue_id = 440',
   normal: 'm.queue_id IN (400, 430)',
+  ranked: 'm.queue_id IN (420, 440)',
+  bot:
+    'm.queue_id IN (800, 801, 810, 820, 830, 831, 832, 840, 841, 842, ' +
+    '850, 851, 852, 860, 861, 862, 865, 870, 880, 890, 891, 893, 894)',
+  swift: 'm.queue_id = 480',
+  practice: "(m.queue_id = 3140 OR m.game_mode = 'PRACTICETOOL')",
   sr:
     "(m.queue_id NOT IN (450, 720, 1700, 1710, 420, 440, 400, 430) " +
     "AND COALESCE(p.`position`, '') NOT IN ('ARAM', 'ARENA'))",

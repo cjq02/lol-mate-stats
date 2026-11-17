@@ -6,10 +6,21 @@ export const QUEUE_NAMES: Record<number, string> = {
   430: '匹配模式',
   440: '灵活排位',
   450: '极地大乱斗',
+  480: '快速模式',
   490: '快速匹配',
   700: '斗魂竞技场',
   720: '大乱斗克隆',
-  890: '快速模式',
+  800: '人机',
+  801: '人机',
+  810: '人机（入门）',
+  820: '人机（新手）',
+  830: '人机（入门）',
+  840: '人机（新手）',
+  850: '人机（中等）',
+  860: '人机（大乱斗）',
+  870: '人机（入门）',
+  880: '人机（新手）',
+  890: '人机（中等）',
   900: '无限火力',
   1020: '克隆大作战',
   1300: '极限闪击',
@@ -18,6 +29,7 @@ export const QUEUE_NAMES: Record<number, string> = {
   1710: '斗魂竞技场',
   1900: '无限乱斗',
   2000: '新手教程',
+  3140: '训练模式',
 };
 
 export function queueName(queueId: number | undefined): string {
@@ -100,6 +112,10 @@ export function queueGroupName(group: string, queueId?: number): string {
   if (group === 'solo') return '单双排';
   if (group === 'flex') return '灵活排位';
   if (group === 'normal') return '匹配模式';
+  if (group === 'ranked') return '排位';
+  if (group === 'bot') return '人机';
+  if (group === 'swift') return '快速模式';
+  if (group === 'practice') return '训练模式';
   return queueName(queueId) === '未知模式' ? '召唤师峡谷' : queueName(queueId);
 }
 

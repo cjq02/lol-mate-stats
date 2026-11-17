@@ -67,6 +67,7 @@ export interface DataSource {
     queueId: number | undefined,
     mode: GameModeKey | undefined,
     championId?: number,
+    group?: string,
   ): Promise<{
     puuid: string;
     group: string;

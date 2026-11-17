@@ -542,7 +542,7 @@ async function handleRequest(
     const rawGroup = url.searchParams.get('group')?.trim();
     const group =
       rawGroup &&
-      ['aram', 'arena', 'solo', 'flex', 'normal', 'sr'].includes(rawGroup)
+      ['aram', 'arena', 'solo', 'flex', 'normal', 'ranked', 'bot', 'swift', 'practice', 'sr'].includes(rawGroup)
         ? rawGroup
         : undefined;
     // 游标分页：用上一页最后一局的时间 + gameId 继续往前翻，避免大 offset
@@ -606,11 +606,23 @@ async function handleRequest(
     const rawMode = url.searchParams.get('mode');
     const mode: GameModeKey | undefined =
       rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    const rawGroup = url.searchParams.get('group')?.trim();
+    const group =
+      rawGroup &&
+      ['aram', 'arena', 'solo', 'flex', 'normal', 'ranked', 'bot', 'swift', 'practice', 'sr'].includes(rawGroup)
+        ? rawGroup
+        : undefined;
     const rawChampionId = Number(url.searchParams.get('championId') ?? 0);
     const championId =
       Number.isFinite(rawChampionId) && rawChampionId > 0 ? rawChampionId : undefined;
     try {
-      const data = await source.getArchivedWinRecord(puuid, queueId, mode, championId);
+      const data = await source.getArchivedWinRecord(
+        puuid,
+        queueId,
+        mode,
+        championId,
+        group,
+      );
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
       sendJson(res, 502, {
