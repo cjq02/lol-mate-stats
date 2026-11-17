@@ -3726,28 +3726,34 @@ function timelineVersusHtml(player, timeline) {
       enemy,
       kills: count(player.killedChampions, enemy.championId),
       assists: count(player.assistedChampions, enemy.championId),
-      deaths: count(player.killedBy, enemy.championId),
+      killedMe: count(player.killedBy, enemy.championId),
+      assistedMe: count(player.assistedBy, enemy.championId),
     }))
     .sort(
       (a, b) =>
-        b.kills + b.assists + b.deaths - (a.kills + a.assists + a.deaths) ||
+        b.kills +
+          b.assists +
+          b.killedMe +
+          b.assistedMe -
+          (a.kills + a.assists + a.killedMe + a.assistedMe) ||
         a.enemy.championId - b.enemy.championId,
     )
-    .map(({ enemy, kills, assists, deaths }) => {
+    .map(({ enemy, kills, assists, killedMe, assistedMe }) => {
       const label = enemy.championName ?? `#${enemy.championId}`;
       return `<div class="timeline-versus-row">
         <span class="timeline-versus-champ" title="${escapeHtml(label)}">${timelineChampionIcon(
           enemy.participantId,
           playersById,
         )}</span>
-        <span class="timeline-versus-stat"><small>击杀</small><b>${kills}</b></span>
-        <span class="timeline-versus-stat"><small>助攻</small><b>${assists}</b></span>
-        <span class="timeline-versus-stat"><small>被其击杀</small><b>${deaths}</b></span>
+        <span class="timeline-versus-stat"><small>击杀我</small><b>${killedMe}</b></span>
+        <span class="timeline-versus-stat"><small>助攻杀我</small><b>${assistedMe}</b></span>
+        <span class="timeline-versus-stat"><small>我击杀</small><b>${kills}</b></span>
+        <span class="timeline-versus-stat"><small>我助攻</small><b>${assists}</b></span>
       </div>`;
     })
     .join('');
   return `<div class="timeline-versus">
-    <div class="timeline-versus-head"><span>对方英雄</span><span>我击杀</span><span>我助攻</span><span>被其击杀</span></div>
+    <div class="timeline-versus-head"><span>对方英雄</span><span>击杀我</span><span>助攻杀我</span><span>我击杀</span><span>我助攻</span></div>
     ${rows}
   </div>`;
 }

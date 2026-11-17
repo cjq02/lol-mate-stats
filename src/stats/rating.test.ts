@@ -2239,7 +2239,7 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
             timestamp: 150_000,
             killerId: 2,
             victimId: 1,
-            assistingParticipantIds: [],
+            assistingParticipantIds: [3],
           },
           { type: 'CHAMPION_KILL', timestamp: 200_000, killerId: 1, victimId: 2 },
           {
@@ -2254,7 +2254,7 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
             timestamp: 250_000,
             killerId: 2,
             victimId: 1,
-            assistingParticipantIds: [],
+            assistingParticipantIds: [3],
           },
           // 同一事件在不同帧重复出现时只算一次
           {
@@ -2262,7 +2262,7 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
             timestamp: 150_000,
             killerId: 2,
             victimId: 1,
-            assistingParticipantIds: [],
+            assistingParticipantIds: [3],
           },
         ],
       },
@@ -2329,6 +2329,9 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
   assert.equal(self.damageTaken, 15_000);
   assert.deepEqual(self.killedBy, [
     { championId: 64, championName: '盲僧', count: 2 },
+  ]);
+  assert.deepEqual(self.assistedBy, [
+    { championId: 99, championName: '拉克丝', count: 2 },
   ]);
   assert.deepEqual(self.killedChampions, [
     { championId: 64, championName: '盲僧', count: 2 },

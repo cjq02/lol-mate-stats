@@ -335,6 +335,11 @@ export function parseMatchTimeline(
     return {
       ...meta,
       killedBy: countChampions(deaths.map((event) => toNumber(event.killerId))),
+      assistedBy: countChampions(
+        deaths.flatMap((event) =>
+          (event.assistingParticipantIds ?? []).map((id) => toNumber(id)),
+        ),
+      ),
       killedChampions: countChampions(
         kills.map((event) => toNumber(event.victimId)),
       ),
