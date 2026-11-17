@@ -4,6 +4,7 @@ import type {
   GameModeKey,
   MatchDetail,
   MatchSummary,
+  MatchTimeline,
   PlayerReport,
   Snapshot,
   SummonerInfo,
@@ -88,5 +89,9 @@ export interface DataSource {
     onProgress?: (done: number, total: number, name: string) => void,
     options?: { force?: boolean; onScoreboard?: (detail: MatchDetail) => void },
   ): Promise<MatchDetail>;
+  /** 本局时间线：按阵亡切分每条命；第一次读客户端，之后走 MySQL 存档 */
+  getMatchTimeline?(
+    gameId: number,
+  ): Promise<{ timeline: MatchTimeline; cached: boolean }>;
   stop(): void | Promise<void>;
 }

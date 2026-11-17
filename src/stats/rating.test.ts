@@ -11,6 +11,7 @@ import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
 import { premadeSizesByPuuid, premadeSizesFromGames } from './premade.js';
+import { estimateRespawnMs, parseMatchTimeline } from './timeline.js';
 import { isNewFinishedGame } from '../watcher.js';
 
 let passed = 0;
@@ -1931,6 +1932,180 @@ test('中段长时间没有成长会判为疑似挂机', () => {
     },
   });
   assert.equal(isAfkLike(game), true);
+});
+
+console.log('match timeline');
+test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () => {
+  const game: RawGame = {
+    gameId: 42,
+    gameDuration: 300,
+    participants: [
+      {
+        participantId: 1,
+        teamId: 100,
+        championId: 103,
+        stats: {
+          kills: 2,
+          deaths: 2,
+          assists: 0,
+          totalDamageDealtToChampions: 20_000,
+          totalDamageTaken: 15_000,
+        },
+      },
+      {
+        participantId: 2,
+        teamId: 200,
+        championId: 64,
+        stats: {
+          kills: 2,
+          deaths: 2,
+          assists: 0,
+          totalDamageDealtToChampions: 18_000,
+          totalDamageTaken: 22_000,
+        },
+      },
+    ],
+    participantIdentities: [
+      { participantId: 1, player: { puuid: 'self', gameName: '我', tagLine: '0001' } },
+      { participantId: 2, player: { puuid: 'enemy', gameName: '对手', tagLine: '0002' } },
+    ],
+  };
+  const frame = (timestamp: number, cs: number, gold: number, level: number) => ({
+    timestamp,
+    participantFrames: {
+      '1': {
+        participantId: 1,
+        minionsKilled: cs,
+        jungleMinionsKilled: 0,
+        totalGold: gold,
+        level,
+      },
+    },
+  });
+  const raw = {
+    frames: [
+      frame(60_000, 10, 1_000, 3),
+      frame(120_000, 20, 2_000, 4),
+      frame(180_000, 30, 3_000, 5),
+      frame(240_000, 40, 4_000, 6),
+      {
+        ...frame(300_000, 50, 5_000, 7),
+        events: [
+          { type: 'CHAMPION_KILL', timestamp: 70_000, killerId: 1, victimId: 2 },
+          {
+            type: 'CHAMPION_KILL',
+            timestamp: 150_000,
+            killerId: 2,
+            victimId: 1,
+            assistingParticipantIds: [],
+          },
+          { type: 'CHAMPION_KILL', timestamp: 200_000, killerId: 1, victimId: 2 },
+          {
+            type: 'CHAMPION_KILL',
+            timestamp: 250_000,
+            killerId: 2,
+            victimId: 1,
+            assistingParticipantIds: [],
+          },
+          // 同一事件在不同帧重复出现时只算一次
+          {
+            type: 'CHAMPION_KILL',
+            timestamp: 150_000,
+            killerId: 2,
+            victimId: 1,
+            assistingParticipantIds: [],
+          },
+        ],
+      },
+    ],
+  };
+
+  const timeline = parseMatchTimeline(
+    game,
+    raw,
+    new Map([
+      [103, '九尾妖狐'],
+      [64, '盲僧'],
+    ]),
+  );
+  const self = timeline.players.find((player) => player.puuid === 'self');
+  assert.ok(self, '应该解析出自我的时间线');
+  assert.equal(self.championName, '九尾妖狐');
+  assert.equal(timeline.durationMs, 300_000);
+  assert.equal(self.lives.length, 3, '两次阵亡应切出三条命');
+  assert.deepEqual(
+    self.lives.map((life) => [life.startMs, life.endMs]),
+    [
+      [0, 150_000],
+      [162_000, 250_000],
+      [266_000, 300_000],
+    ],
+  );
+  assert.equal(self.lives[0].cs, 25);
+  assert.equal(self.lives[0].gold, 2_500);
+  assert.equal(self.lives[0].kills, 1);
+  assert.equal(self.lives[0].level, 4);
+  assert.equal(self.lives[0].death?.killerName, '对手#0002');
+  assert.equal(self.lives[1].respawnMs, 12_000);
+  assert.equal(self.lives[1].cs, 15);
+  assert.equal(self.lives[1].gold, 1_467);
+  assert.equal(self.lives[1].level, 6);
+  assert.equal(self.lives[2].respawnMs, 16_000);
+  assert.equal(self.lives[2].aliveMs, 34_000);
+  assert.equal(self.lives[2].death, undefined);
+  assert.equal(self.damage, 20_000);
+  assert.equal(self.damageTaken, 15_000);
+});
+
+test('没有阵亡时只生成一条存活到结束的时间线', () => {
+  const game: RawGame = {
+    gameId: 43,
+    gameDuration: 120,
+    participants: [
+      {
+        participantId: 1,
+        teamId: 100,
+        championId: 103,
+        stats: { kills: 0, deaths: 0, assists: 2 },
+      },
+    ],
+    participantIdentities: [
+      { participantId: 1, player: { puuid: 'self', gameName: '我', tagLine: '0001' } },
+    ],
+  };
+  const timeline = parseMatchTimeline(game, {
+    frames: [
+      {
+        timestamp: 60_000,
+        participantFrames: {
+          '1': { participantId: 1, minionsKilled: 5, totalGold: 500, level: 2 },
+        },
+      },
+      {
+        timestamp: 120_000,
+        participantFrames: {
+          '1': { participantId: 1, minionsKilled: 10, totalGold: 1_000, level: 3 },
+        },
+      },
+    ],
+  });
+  const self = timeline.players[0];
+  assert.ok(self);
+  assert.equal(self.lives.length, 1);
+  assert.equal(self.lives[0].startMs, 0);
+  assert.equal(self.lives[0].endMs, 120_000);
+  assert.equal(self.lives[0].cs, 10);
+  assert.equal(self.lives[0].gold, 1_000);
+  assert.equal(self.lives[0].death, undefined);
+});
+
+test('复活等待按等级估算，并随游戏时间放大', () => {
+  assert.equal(estimateRespawnMs(1, 60_000), 10_000);
+  assert.equal(estimateRespawnMs(4, 150_000), 12_000);
+  assert.ok(
+    estimateRespawnMs(13, 1_800_000) > estimateRespawnMs(13, 600_000),
+    '30 分钟后的复活等待应更长',
+  );
 });
 
 console.log(`\n${passed} 项测试全部通过`);

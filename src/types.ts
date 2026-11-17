@@ -129,6 +129,41 @@ export interface RawGame {
   [key: string]: unknown;
 }
 
+/** LCU 对局时间线里的一个事件（只保留切分每条命用得到的字段） */
+export interface RawGameTimelineEvent {
+  type?: string;
+  timestamp?: number;
+  killerId?: number;
+  victimId?: number;
+  assistingParticipantIds?: number[];
+  position?: { x?: number; y?: number };
+  [key: string]: unknown;
+}
+
+/** LCU 对局时间线里某位玩家的分钟快照 */
+export interface RawTimelineParticipantFrame {
+  participantId?: number;
+  currentGold?: number;
+  totalGold?: number;
+  level?: number;
+  xp?: number;
+  minionsKilled?: number;
+  jungleMinionsKilled?: number;
+  position?: { x?: number; y?: number };
+  [key: string]: unknown;
+}
+
+export interface RawGameTimelineFrame {
+  timestamp?: number;
+  participantFrames?: Record<string, RawTimelineParticipantFrame>;
+  events?: RawGameTimelineEvent[];
+}
+
+/** LCU /lol-match-history/v1/game-timelines/{gameId} 的返回结构 */
+export interface RawGameTimeline {
+  frames?: RawGameTimelineFrame[];
+}
+
 export type Lane =
   | 'TOP'
   | 'JUNGLE'
@@ -628,6 +663,61 @@ export interface MatchDetail {
   afkPlayers?: MatchAfkPlayer[];
   /** 本局表现明显偏差的具体玩家 */
   badPlayers?: MatchAfkPlayer[];
+}
+
+/** 一次阵亡信息（时间线里用来结束一条命） */
+export interface MatchTimelineDeath {
+  timestampMs: number;
+  killerId?: number;
+  killerName?: string;
+  assistIds: number[];
+  assistNames: string[];
+  position?: { x: number; y: number };
+}
+
+/** 从复活（或开局）到死亡的一段时间线 */
+export interface MatchTimelineLife {
+  index: number;
+  /** 统计区间起点：开局为 0，之后为上一处阵亡 + 估算的复活等待 */
+  startMs: number;
+  endMs: number;
+  /** 估算的复活等待时间，开局为 0 */
+  respawnMs: number;
+  /** endMs - startMs */
+  aliveMs: number;
+  kills: number;
+  assists: number;
+  /** 本段时间内新增的补刀 */
+  cs: number;
+  /** 本段时间内新增的金币 */
+  gold: number;
+  /** 本段结束时的等级（最后一条命为对局结束时的等级） */
+  level?: number;
+  /** 最后一条命存活到对局结束时没有值 */
+  death?: MatchTimelineDeath;
+}
+
+export interface MatchTimelinePlayer {
+  participantId: number;
+  puuid?: string;
+  name: string;
+  championId: number;
+  championName?: string;
+  teamId: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  /** 整局总伤害（官方只提供整局，不能拆分到每条命） */
+  damage: number;
+  /** 整局总承伤 */
+  damageTaken: number;
+  lives: MatchTimelineLife[];
+}
+
+export interface MatchTimeline {
+  gameId: number;
+  durationMs: number;
+  players: MatchTimelinePlayer[];
 }
 
 export interface LiveGameData {

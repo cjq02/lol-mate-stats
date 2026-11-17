@@ -639,6 +639,32 @@ async function handleRequest(
     return;
   }
 
+  const matchTimelineRoute = /^\/api\/match\/(\d+)\/timeline$/.exec(url.pathname);
+  if (method === 'GET' && matchTimelineRoute) {
+    if (!source.getMatchTimeline) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持查看对局时间线' });
+      return;
+    }
+    const gameId = Number(matchTimelineRoute[1]);
+    const started = Date.now();
+    try {
+      const result = await source.getMatchTimeline(gameId);
+      sendJson(res, 200, { ok: true, ...result });
+      logTag(
+        'api',
+        `读取对局 ${gameId} 时间线完成（${result.cached ? '本地存档' : '实时读取'}，${(
+          (Date.now() - started) /
+          1000
+        ).toFixed(1)}s）`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logTag('api', `读取对局 ${gameId} 时间线失败：${message}`);
+      sendJson(res, 502, { ok: false, error: message });
+    }
+    return;
+  }
+
   const matchStreamRoute = /^\/api\/match\/(\d+)\/stream$/.exec(url.pathname);
   if (method === 'GET' && matchStreamRoute) {
     if (!source.getMatchDetail) {

@@ -85,6 +85,14 @@
             <h2 id="matches-title">近期战绩</h2>
             <div class="modal-actions">
               <button
+                id="matches-timeline"
+                class="btn timeline-btn hidden"
+                type="button"
+                title="查看本局每条命的时间线"
+              >
+                ⏱ 时间线
+              </button>
+              <button
                 id="matches-ai"
                 class="btn ai-btn hidden"
                 type="button"
@@ -121,6 +129,26 @@
           <div id="match-summary" class="match-summary hidden"></div>
           <div id="match-flags" class="match-flags hidden"></div>
           <div id="matches-list" class="match-list"></div>
+        </div>
+      </div>
+
+      <div
+        id="timeline-modal"
+        class="modal timeline-modal hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="timeline-title"
+      >
+        <div class="modal-card timeline-card">
+          <div class="modal-head">
+            <h2 id="timeline-title">本局时间线</h2>
+            <div class="modal-actions">
+              <span id="timeline-meta" class="timeline-meta"></span>
+              <button id="timeline-close" class="btn" type="button">关闭</button>
+            </div>
+          </div>
+          <div id="timeline-summary" class="timeline-summary"></div>
+          <div id="timeline-list" class="timeline-list" aria-live="polite"></div>
         </div>
       </div>
 

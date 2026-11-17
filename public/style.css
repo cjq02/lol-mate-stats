@@ -818,6 +818,17 @@ body::before {
 
 /* ----------------------------- AI 复盘 ----------------------------- */
 
+.timeline-btn {
+  border-color: rgba(139, 184, 255, 0.3);
+  background: rgba(139, 184, 255, 0.08);
+  color: #dbe6ff;
+}
+
+.timeline-btn:hover {
+  border-color: rgba(139, 184, 255, 0.55);
+  background: rgba(139, 184, 255, 0.14);
+}
+
 .ai-btn {
   border-color: rgba(94, 234, 212, 0.32);
   background: linear-gradient(135deg, rgba(94, 234, 212, 0.14), rgba(73, 122, 255, 0.18));
@@ -1632,6 +1643,246 @@ body::before {
 
 .modal-card.match-list-card {
   width: min(1180px, 96vw);
+}
+
+/* ---------------------------- 对局时间线 ---------------------------- */
+
+.timeline-modal {
+  z-index: 70;
+  padding: 2.5vh 1vw;
+}
+
+.timeline-card {
+  width: min(1080px, 96vw);
+  height: min(88vh, 920px);
+}
+
+.timeline-meta {
+  font-size: 11px;
+  color: var(--muted-2);
+  white-space: nowrap;
+}
+
+.timeline-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.timeline-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.timeline-summary-item small {
+  font-size: 10.5px;
+  color: var(--muted-2);
+}
+
+.timeline-summary-item b {
+  font-size: 16px;
+  color: #e6eeff;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 20px 20px;
+}
+
+.timeline-lives {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timeline-life {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.timeline-life-axis {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.timeline-life-axis::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: -6px;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(139, 184, 255, 0.35), rgba(139, 184, 255, 0.08));
+}
+
+.timeline-life:last-child .timeline-life-axis::before {
+  display: none;
+}
+
+.timeline-dot {
+  position: relative;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  margin-top: 16px;
+  border-radius: 50%;
+  background: #6ea8ff;
+  box-shadow: 0 0 10px rgba(110, 168, 255, 0.5);
+}
+
+.timeline-life.dead .timeline-dot {
+  background: #ff7d95;
+  box-shadow: 0 0 10px rgba(255, 125, 149, 0.5);
+}
+
+.timeline-life.alive .timeline-dot {
+  background: #5eead4;
+  box-shadow: 0 0 10px rgba(94, 234, 212, 0.5);
+}
+
+.timeline-life-card {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.024);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.timeline-life-card:hover {
+  border-color: var(--line-strong);
+  background: rgba(110, 180, 255, 0.06);
+}
+
+.timeline-life-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.timeline-life-index {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #dbe6ff;
+}
+
+.timeline-life-range {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-life-respawn {
+  font-size: 10.5px;
+  color: var(--muted-2);
+}
+
+.timeline-life-alive {
+  margin-left: auto;
+  font-size: 11px;
+  color: #8ee6c8;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-life-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.timeline-life-stats b {
+  color: #e6eeff;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-kda {
+  padding: 2px 8px;
+  border-radius: 7px;
+  background: rgba(110, 168, 255, 0.1);
+  color: #cfe0ff;
+}
+
+.timeline-kda b {
+  color: #fff;
+  font-size: 13px;
+}
+
+.timeline-life-death {
+  margin-top: 7px;
+  font-size: 11.5px;
+  color: var(--muted-2);
+}
+
+.timeline-life-end.dead {
+  color: #ffb3c1;
+}
+
+.timeline-life-end.ok {
+  color: #8ee6c8;
+}
+
+.timeline-life-end b {
+  color: #ffd0d9;
+}
+
+.timeline-note {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-top: 1px dashed var(--line);
+  color: var(--muted-2);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.timeline-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.timeline-status.error {
+  color: #ff9db1;
+}
+
+@media (max-width: 760px) {
+  .timeline-card {
+    width: 100%;
+    height: 92vh;
+  }
+
+  .timeline-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px 12px;
+  }
+
+  .timeline-list {
+    padding: 12px;
+  }
+
+  .timeline-life-alive {
+    margin-left: 0;
+  }
 }
 
 .match-cards {

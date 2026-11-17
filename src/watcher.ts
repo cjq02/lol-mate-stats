@@ -11,8 +11,10 @@ import type {
   LiveEvent,
   MatchDetail,
   MatchSummary,
+  MatchTimeline,
   PlayerReport,
   RawGame,
+  RawGameTimeline,
   RawParticipant,
   RawStats,
   Snapshot,
@@ -57,8 +59,15 @@ import {
 } from './stats/flags.js';
 import { gradeOf } from './stats/rating.js';
 import { premadeSizesByPuuid } from './stats/premade.js';
+import { parseMatchTimeline } from './stats/timeline.js';
 import { summarizeMatchSummaries, type TimeStatsSummary } from './stats/time-stats.js';
-import { linkLiveAnalysisToGameByTime, getSavedMatchDetail, saveMatchDetail } from './stats/store.js';
+import {
+  getSavedMatchTimeline,
+  linkLiveAnalysisToGameByTime,
+  getSavedMatchDetail,
+  saveMatchDetail,
+  saveMatchTimeline,
+} from './stats/store.js';
 import { nowIso, logTag, mapLimit, sleep, toNumber } from './util.js';
 
 export interface LiveSourceOptions {
@@ -730,6 +739,56 @@ export class LiveSource implements DataSource {
       );
       throw error;
     }
+  }
+
+  /**
+   * 读取并解析本局时间线：按阵亡切分每条命。
+   * 第一次从客户端读取后写入 MySQL，之后优先命中存档，客户端关闭也能看。
+   */
+  async getMatchTimeline(
+    gameId: number,
+  ): Promise<{ timeline: MatchTimeline; cached: boolean }> {
+    const cached = await getSavedMatchTimeline(gameId);
+    if (cached) {
+      logTag('match', `[${gameId}] 命中本局时间线缓存`);
+      return { timeline: cached, cached: true };
+    }
+
+    const api = await this.ensureApi();
+    if (!api) throw new ClientNotFoundError('未检测到正在运行的英雄联盟客户端');
+
+    logTag('match', `[${gameId}] 读取本局时间线…`);
+    const game = await api.getGame(gameId);
+    let raw: RawGameTimeline;
+    try {
+      raw = await api.getGameTimeline(gameId);
+    } catch {
+      throw new Error('客户端没有返回这局的时间线（对局过旧或数据已清理）');
+    }
+    if (!raw.frames?.length) {
+      throw new Error('这局的时间线为空（对局过旧或数据已清理）');
+    }
+
+    const championMap = await api
+      .getChampionMap()
+      .catch(() => new Map<number, ChampionSummary>());
+    const championNames = new Map<number, string>();
+    for (const [championId, champion] of championMap) {
+      championNames.set(championId, champion.name);
+    }
+
+    const timeline = parseMatchTimeline(game, raw, championNames);
+    if (!timeline.gameId) timeline.gameId = gameId;
+    if (!timeline.players.length) {
+      throw new Error('这局的时间线没有玩家数据（对局过旧或数据已清理）');
+    }
+
+    await saveMatchTimeline(timeline);
+    logTag(
+      'match',
+      `[${gameId}] 本局时间线读取完成：${timeline.players.length} 人，已写入存档`,
+    );
+    return { timeline, cached: false };
   }
 
   /** 读取或补算“我的战绩”每场的评分，并用完整对局补算坑/逃跑标记 */

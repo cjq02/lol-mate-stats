@@ -6,6 +6,7 @@ import type {
   LobbyMember,
   RankInfo,
   RawGame,
+  RawGameTimeline,
   SummonerInfo,
 } from '../types.js';
 import { LcuError, LcuHttp } from './http.js';
@@ -114,6 +115,14 @@ export class LcuApi {
 
   getGame(gameId: number): Promise<RawGame> {
     return this.http.get<RawGame>(`/lol-match-history/v1/games/${gameId}`, 20_000);
+  }
+
+  /** 对局时间线：每分钟帧 + 击杀/推塔等事件，用于按阵亡切分“每条命” */
+  getGameTimeline(gameId: number): Promise<RawGameTimeline> {
+    return this.http.get<RawGameTimeline>(
+      `/lol-match-history/v1/game-timelines/${gameId}`,
+      20_000,
+    );
   }
 
   /** 结算界面的数据块：比战绩列表更新更快，用于刚结束的对局 */

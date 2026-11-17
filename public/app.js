@@ -32,6 +32,13 @@ const els = {
   matchesBack: document.getElementById('matches-back'),
   matchesRefresh: document.getElementById('matches-refresh'),
   matchesAi: document.getElementById('matches-ai'),
+  matchesTimeline: document.getElementById('matches-timeline'),
+  timelineModal: document.getElementById('timeline-modal'),
+  timelineTitle: document.getElementById('timeline-title'),
+  timelineMeta: document.getElementById('timeline-meta'),
+  timelineSummary: document.getElementById('timeline-summary'),
+  timelineList: document.getElementById('timeline-list'),
+  timelineClose: document.getElementById('timeline-close'),
   matchTabs: document.getElementById('match-tabs'),
   myMatchesTabs: document.getElementById('my-matches-tabs'),
   matchMeta: document.getElementById('match-meta'),
@@ -224,6 +231,9 @@ const state = {
   loadingProgress: null,
   matchDetail: null,
   matchTab: 'scoreboard',
+  /** 本局时间线：{ gameId, data, cached } */
+  timeline: null,
+  timelineToken: 0,
   /** “我的战绩”当前模式的总胜负（来自历史存档） */
   modeRecord: null,
   /** 非空时“我的战绩”只显示该英雄的对局 */
@@ -2796,8 +2806,10 @@ function renderMatchesView(games, title, showScore) {
   state.matchDetail = null;
   state.matchTab = 'scoreboard';
   resetAiView();
+  closeMatchTimeline();
   clearMatchFlags();
   els.matchesAi.classList.add('hidden');
+  els.matchesTimeline.classList.add('hidden');
   els.matchesModal.classList.remove('hidden');
   setMatchesCardWidth('list');
   els.matchTabs.classList.add('hidden');
@@ -3640,6 +3652,203 @@ async function openLatestMatch() {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* 本局时间线                                                          */
+/* ------------------------------------------------------------------ */
+
+function timelineGoldText(value) {
+  const number = Math.round(Number(value) || 0);
+  if (Math.abs(number) >= 1000) return `${(number / 1000).toFixed(1)}k`;
+  return String(number);
+}
+
+function timelinePlayerFor(detail, timeline) {
+  const players = Array.isArray(timeline?.players) ? timeline.players : [];
+  const selfPuuid = detail?.selfPuuid ?? state.selfPuuid;
+  if (selfPuuid) {
+    const own = players.find((player) => player.puuid && player.puuid === selfPuuid);
+    if (own) return own;
+    const self = (detail?.scoreboard ?? []).find((player) => player.puuid === selfPuuid);
+    if (self) {
+      const matched = players.find(
+        (player) =>
+          Number(player.championId) === Number(self.championId) &&
+          String(player.name) === String(self.name),
+      );
+      if (matched) return matched;
+    }
+  }
+  return players[0];
+}
+
+/** 同步「时间线」按钮：demo 模式或没有本人数据时隐藏 */
+function updateTimelineButton(detail) {
+  const available =
+    state.snapshot?.mode !== 'demo' &&
+    Boolean(detail && (detail.selfPuuid || state.selfPuuid));
+  els.matchesTimeline.classList.toggle('hidden', !available);
+}
+
+function closeMatchTimeline() {
+  state.timelineToken += 1;
+  els.timelineModal.classList.add('hidden');
+}
+
+function timelineLifeHtml(life) {
+  const death = life.death;
+  const start = Number(life.startMs) || 0;
+  const end = Number(life.endMs) || 0;
+  const alive = Number(life.aliveMs) || 0;
+  const respawn = Number(life.respawnMs) || 0;
+  const approximate = respawn > 0 ? '约 ' : '';
+  const index = Number(life.index) || 1;
+  const killCount = Number(life.kills) || 0;
+  const assistCount = Number(life.assists) || 0;
+  const stats = [
+    `<span class="timeline-kda"><b>${killCount}</b> / <b>${death ? 1 : 0}</b> / <b>${assistCount}</b></span>`,
+    `<span>补刀 <b>+${Number(life.cs) || 0}</b></span>`,
+    `<span>经济 <b>+${timelineGoldText(life.gold)}</b></span>`,
+    life.level ? `<span>Lv <b>${Number(life.level)}</b></span>` : '',
+  ].join('');
+  let deathLine = '<span class="timeline-life-end ok">存活到对局结束</span>';
+  if (death) {
+    const killer = death.killerName
+      ? `被 <b>${escapeHtml(death.killerName)}</b> 击杀`
+      : '阵亡';
+    const assist =
+      Array.isArray(death.assistNames) && death.assistNames.length
+        ? ` · 助攻 ${death.assistNames.map((name) => escapeHtml(name)).join('、')}`
+        : '';
+    deathLine = `<span class="timeline-life-end dead">${killer}${assist}</span>`;
+  }
+  const respawnHint =
+    respawn > 0
+      ? `<span class="timeline-life-respawn">复活约 ${Math.round(respawn / 1000)} 秒</span>`
+      : '';
+  return `<div class="timeline-life ${death ? 'dead' : 'alive'}">
+    <div class="timeline-life-axis"><span class="timeline-dot"></span></div>
+    <div class="timeline-life-card">
+      <div class="timeline-life-head">
+        <span class="timeline-life-index">第 ${index} 条命</span>
+        <span class="timeline-life-range">${approximate}${gameClock(
+          start / 1000,
+        )} – ${gameClock(end / 1000)}</span>
+        ${respawnHint}
+        <span class="timeline-life-alive">存活 ${gameClock(alive / 1000)}</span>
+      </div>
+      <div class="timeline-life-stats">${stats}</div>
+      <div class="timeline-life-death">${deathLine}</div>
+    </div>
+  </div>`;
+}
+
+function renderTimeline(timeline, detail, cached) {
+  const player = timelinePlayerFor(detail, timeline);
+  if (!player) {
+    els.timelineList.innerHTML =
+      '<div class="timeline-status error">时间线里没有找到你的数据</div>';
+    return;
+  }
+  const lives = Array.isArray(player.lives) ? player.lives : [];
+  const durationMs = Number(timeline.durationMs) || 0;
+  els.timelineTitle.textContent = `本局时间线 · ${player.championName ?? '我的对局'}`;
+  els.timelineMeta.textContent = `${gameClock(durationMs / 1000)} · ${
+    lives.length
+  } 条命 · ${cached ? '本地存档' : '实时读取'}`;
+
+  const aliveList = lives.map((life) => Number(life.aliveMs) || 0);
+  const longest = aliveList.length ? Math.max(...aliveList) : 0;
+  const average = aliveList.length
+    ? Math.round(aliveList.reduce((sum, value) => sum + value, 0) / aliveList.length)
+    : 0;
+  const totalCs = lives.reduce((sum, life) => sum + (Number(life.cs) || 0), 0);
+  const totalGold = lives.reduce((sum, life) => sum + (Number(life.gold) || 0), 0);
+  const summary = [
+    ['条命', String(lives.length)],
+    ['KDA', `${Number(player.kills) || 0} / ${Number(player.deaths) || 0} / ${Number(player.assists) || 0}`],
+    ['最长存活', gameClock(longest / 1000)],
+    ['平均存活', gameClock(average / 1000)],
+    ['补刀', `+${totalCs}`],
+    ['经济', `+${timelineGoldText(totalGold)}`],
+    ['整局伤害', timelineGoldText(player.damage)],
+    ['整局承伤', timelineGoldText(player.damageTaken)],
+  ];
+  els.timelineSummary.innerHTML = summary
+    .map(
+      ([label, value]) =>
+        `<div class="timeline-summary-item"><small>${label}</small><b>${value}</b></div>`,
+    )
+    .join('');
+
+  const perLifeDamage = lives.length
+    ? Math.round((Number(player.damage) || 0) / lives.length)
+    : 0;
+  const perLifeTaken = lives.length
+    ? Math.round((Number(player.damageTaken) || 0) / lives.length)
+    : 0;
+  els.timelineList.innerHTML = lives.length
+    ? `<div class="timeline-lives">${lives
+        .map((life) => timelineLifeHtml(life))
+        .join('')}</div>` +
+      `<div class="timeline-note">整局造成 ${timelineGoldText(
+        player.damage,
+      )} 伤害 / 承受 ${timelineGoldText(
+        player.damageTaken,
+      )} 伤害；按 ${lives.length} 条命平均约 ${timelineGoldText(
+        perLifeDamage,
+      )} / ${timelineGoldText(
+        perLifeTaken,
+      )}。官方接口不提供每条命的伤害拆分，复活时间按等级估算，分钟级快照会有少量误差。</div>`
+    : '<div class="timeline-status">这局没有解析出存活时间段</div>';
+}
+
+async function openMatchTimeline() {
+  const detail = state.matchDetail;
+  if (!detail) return;
+  const gameId = Number(detail.gameId);
+  if (!Number.isFinite(gameId) || gameId <= 0) return;
+
+  if (state.timeline?.gameId === gameId && state.timeline.data) {
+    renderTimeline(state.timeline.data, detail, state.timeline.cached);
+    els.timelineModal.classList.remove('hidden');
+    return;
+  }
+
+  const token = state.timelineToken + 1;
+  state.timelineToken = token;
+  els.timelineModal.classList.remove('hidden');
+  els.timelineTitle.textContent = '本局时间线';
+  els.timelineMeta.textContent = '';
+  els.timelineSummary.innerHTML = '';
+  els.timelineList.innerHTML =
+    '<div class="timeline-status"><span class="spinner"></span>正在读取本局时间线…</div>';
+
+  try {
+    const response = await fetch(`/api/match/${gameId}/timeline`, {
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    if (token !== state.timelineToken) return;
+    if (state.matchDetail?.gameId !== gameId) return;
+    state.timeline = {
+      gameId,
+      data: payload.timeline,
+      cached: Boolean(payload.cached),
+    };
+    renderTimeline(payload.timeline, detail, Boolean(payload.cached));
+  } catch (error) {
+    if (token !== state.timelineToken) return;
+    els.timelineMeta.textContent = '';
+    els.timelineSummary.innerHTML = '';
+    els.timelineList.innerHTML = `<div class="timeline-status error">读取时间线失败：${escapeHtml(
+      error instanceof Error ? error.message : String(error),
+    )}</div>`;
+  }
+}
+
 function renderMatchDetailView(detail, tab = 'scoreboard') {
   stopLoadingTimer();
   state.matchDetail = detail;
@@ -3655,6 +3864,7 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
   setMatchesCardWidth('wide');
   els.matchTabs.classList.remove('hidden');
   els.matchesAi.classList.remove('hidden');
+  updateTimelineButton(detail);
   setAiButton(Boolean(state.ai?.running));
   els.matchesTitle.innerHTML = `${escapeHtml(detail.queueName ?? '对局')} · ${escapeHtml(
     formatGameTime(detail.gameCreation),
@@ -3681,8 +3891,10 @@ async function openMatchDetail(gameId, options = {}) {
   els.matchTabs.classList.add('hidden');
   els.myMatchesTabs?.classList.add('hidden');
   resetAiView();
+  closeMatchTimeline();
   clearMatchFlags();
   els.matchesAi.classList.add('hidden');
+  els.matchesTimeline.classList.add('hidden');
   els.matchesTitle.textContent = '对局详情';
   updateMatchesBackButton();
   setMatchesRefresh(null);
@@ -3740,6 +3952,7 @@ async function openMatchDetail(gameId, options = {}) {
     els.matchTabs.classList.add('hidden');
     clearMatchFlags();
     els.matchesAi.classList.add('hidden');
+    els.matchesTimeline.classList.add('hidden');
     els.matchesList.className = 'match-list';
     els.matchesList.innerHTML = `<div class="search-status error">读取失败：${escapeHtml(
       error instanceof Error ? error.message : String(error),
@@ -3773,6 +3986,8 @@ function closeMatches() {
   state.archiveTotal = 0;
   state.archiveCursor = null;
   resetAiView();
+  closeMatchTimeline();
+  state.timeline = null;
   els.matchesModal.classList.add('hidden');
   els.matchesList.replaceChildren();
   els.matchTabs.classList.add('hidden');
@@ -3780,6 +3995,7 @@ function closeMatches() {
   els.matchesRangeTabs?.classList.add('hidden');
   clearMatchFlags();
   els.matchesAi.classList.add('hidden');
+  els.matchesTimeline.classList.add('hidden');
   els.matchesBack.classList.add('hidden');
   setMatchesRefresh(null);
   setMatchesCardWidth('');
@@ -4371,7 +4587,9 @@ els.latestMatch.addEventListener('click', () => void openLatestMatch());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));
 els.searchClose.addEventListener('click', closeSearch);
 els.matchesClose.addEventListener('click', closeMatches);
+els.matchesTimeline.addEventListener('click', () => void openMatchTimeline());
 els.matchesAi.addEventListener('click', () => void runAiAnalysis());
+els.timelineClose.addEventListener('click', closeMatchTimeline);
 els.liveAi.addEventListener('click', () => void runLiveAiAnalysis());
 els.aiClose.addEventListener('click', hideAiView);
 els.aiTabs.addEventListener('click', (event) => {
@@ -4428,6 +4646,10 @@ els.matchTabs.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !els.timelineModal.classList.contains('hidden')) {
+    closeMatchTimeline();
+    return;
+  }
   if (event.key === 'Escape' && !els.timeStatsModal.classList.contains('hidden')) {
     closeTimeStats();
     return;

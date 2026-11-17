@@ -8,7 +8,7 @@ import mysql, {
   type ResultSetHeader,
   type RowDataPacket,
 } from 'mysql2/promise';
-import type { MatchDetail } from '../types.js';
+import type { MatchDetail, MatchTimeline } from '../types.js';
 import { logTag } from '../util.js';
 
 /** Windows 的“文档”目录（可能被重定向到 E 盘） */
@@ -386,6 +386,13 @@ async function ensureSchema(db: Pool): Promise<void> {
        PRIMARY KEY (game_id),
        KEY idx_match_details_at (at)
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS match_timelines (
+       game_id BIGINT UNSIGNED NOT NULL,
+       at BIGINT NOT NULL,
+       payload LONGTEXT NOT NULL,
+       PRIMARY KEY (game_id)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   ];
 
   for (const statement of statements) await db.query(statement);
@@ -703,6 +710,55 @@ export async function saveMatchDetail(detail: MatchDetail): Promise<void> {
         detail.gameId,
         Date.now(),
         JSON.stringify({ version: MATCH_DETAIL_CACHE_VERSION, detail }),
+      ],
+    );
+  } catch {
+    /* 缓存写入失败不影响本次返回 */
+  }
+}
+
+/** 对局时间线缓存版本：解析口径变化时递增，旧缓存自动失效 */
+const MATCH_TIMELINE_CACHE_VERSION = 2;
+
+/** 读取已保存的对局时间线（按阵亡切分好的每条命） */
+export async function getSavedMatchTimeline(
+  gameId: number,
+): Promise<MatchTimeline | undefined> {
+  const db = await getDb();
+  if (!db || !gameId) return undefined;
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      'SELECT payload FROM match_timelines WHERE game_id = ?',
+      [gameId],
+    );
+    const row = rows[0];
+    if (!row) return undefined;
+    const parsed = JSON.parse(String(row.payload ?? '')) as {
+      version?: number;
+      timeline?: MatchTimeline;
+    };
+    if (parsed?.version !== MATCH_TIMELINE_CACHE_VERSION || !parsed.timeline) {
+      return undefined;
+    }
+    return parsed.timeline;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 保存对局时间线，供客户端关闭后继续查看 */
+export async function saveMatchTimeline(timeline: MatchTimeline): Promise<void> {
+  const db = await getDb();
+  if (!db || !timeline?.gameId) return;
+  try {
+    await db.query<ResultSetHeader>(
+      `INSERT INTO match_timelines (game_id, at, payload)
+       VALUES (?, ?, ?) AS new
+       ON DUPLICATE KEY UPDATE at = new.at, payload = new.payload`,
+      [
+        timeline.gameId,
+        Date.now(),
+        JSON.stringify({ version: MATCH_TIMELINE_CACHE_VERSION, timeline }),
       ],
     );
   } catch {
