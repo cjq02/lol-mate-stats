@@ -2303,6 +2303,26 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
   assert.equal(self.lives[2].respawnMs, 16_000);
   assert.equal(self.lives[2].aliveMs, 34_000);
   assert.equal(self.lives[2].death, undefined);
+  assert.deepEqual(
+    self.lives[0].events?.map((event) => [
+      event.type,
+      event.timestampMs,
+      event.championName,
+    ]),
+    [['kill', 70_000, '盲僧']],
+  );
+  assert.deepEqual(
+    self.lives[1].events?.map((event) => [
+      event.type,
+      event.timestampMs,
+      event.championName,
+    ]),
+    [
+      ['kill', 200_000, '盲僧'],
+      ['assist', 220_000, '拉克丝'],
+    ],
+  );
+  assert.equal(self.lives[1].events?.[1]?.killerChampionName, '盲僧');
   assert.equal(self.damage, 20_000);
   assert.equal(self.damageTaken, 15_000);
   assert.deepEqual(self.killedBy, [

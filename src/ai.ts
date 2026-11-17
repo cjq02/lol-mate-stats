@@ -5,6 +5,7 @@ import type {
   MatchDetail,
   MatchScoreboardPlayer,
   MatchTimeline,
+  MatchTimelinePlayer,
   PlayerReport,
   Snapshot,
 } from './types.js';
@@ -198,24 +199,53 @@ function lifeTimelineText(timeline?: MatchTimeline, selfPuuid?: string): string 
         }`
       : '存活到结束';
     const respawn = life.respawnMs > 0 ? `，复活约 ${fix(life.respawnMs / 1000)}s` : '';
+    const details = (life.events ?? [])
+      .slice(0, 8)
+      .map(
+        (event) =>
+          `${event.type === 'kill' ? '击杀' : '助攻'}${event.championName ?? ''}@${eventClock(
+            event.timestampMs / 1000,
+          )}`,
+      )
+      .join('、');
     return `- 第 ${life.index} 条 ${eventClock(life.startMs / 1000)}-${eventClock(
       life.endMs / 1000,
     )}（存活 ${eventClock(life.aliveMs / 1000)}${respawn}）：击杀 ${fix(
       life.kills,
     )}/死亡 ${death ? 1 : 0}/助攻 ${fix(life.assists)}，补刀 +${fix(
       life.cs,
-    )}，金币 +${fix(life.gold)}，等级 ${fix(life.level ?? 0)}，${deathText}`;
+    )}，金币 +${fix(life.gold)}，等级 ${fix(life.level ?? 0)}，${deathText}${
+      details ? `；${details}` : ''
+    }`;
   });
-  return [
-    `【我的每条命时间线】共 ${player.lives.length} 条命；击杀我的英雄 ${
-      player.killedBy?.length ?? 0
-    } 个、我击杀的英雄 ${player.killedChampions?.length ?? 0} 个、我助攻的英雄 ${
-      player.assistedChampions?.length ?? 0
-    } 个；整局伤害 ${fix(player.damage)}、承伤 ${fix(
+  const countAgainst = (
+    list: MatchTimelinePlayer['killedChampions'],
+    championId: number,
+  ): number =>
+    (list ?? [])
+      .filter((item) => Number(item.championId) === Number(championId))
+      .reduce((sum, item) => sum + (Number(item.count) || 0), 0);
+  const versus = timeline.players
+    .filter((item) => Number(item.teamId) !== Number(player.teamId))
+    .map((enemy) => {
+      const kills = countAgainst(player.killedChampions, enemy.championId);
+      const assists = countAgainst(player.assistedChampions, enemy.championId);
+      const deaths = countAgainst(player.killedBy, enemy.championId);
+      if (!kills && !assists && !deaths) return '';
+      return `${enemy.championName ?? '敌方'} 击杀${kills}/助攻${assists}/被击杀${deaths}`;
+    })
+    .filter(Boolean)
+    .join('；');
+  const header = [
+    `【我的每条命时间线】共 ${player.lives.length} 条命`,
+    versus ? `对位：${versus}` : '',
+    `整局伤害 ${fix(player.damage)}、承伤 ${fix(
       player.damageTaken,
-    )}（官方接口没有每条命伤害，禁止编造）。`,
-    ...lines,
-  ].join('\n');
+    )}（官方接口没有每条命伤害，禁止编造）`,
+  ]
+    .filter(Boolean)
+    .join('；');
+  return [header, ...lines].join('\n');
 }
 
 function kdaText(row: MatchScoreboardPlayer): string {

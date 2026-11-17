@@ -707,6 +707,20 @@ export interface MatchTimelineDeath {
   position?: { x: number; y: number };
 }
 
+/** 一条命里的击杀/助攻事件 */
+export interface MatchTimelineEvent {
+  type: 'kill' | 'assist';
+  timestampMs: number;
+  /** 被击杀的敌方英雄 */
+  participantId: number;
+  championId: number;
+  championName?: string;
+  /** 助攻时，完成击杀的队友 */
+  killerParticipantId?: number;
+  killerChampionId?: number;
+  killerChampionName?: string;
+}
+
 /** 从复活（或开局）到死亡的一段时间线 */
 export interface MatchTimelineLife {
   index: number;
@@ -725,6 +739,8 @@ export interface MatchTimelineLife {
   gold: number;
   /** 本段结束时的等级（最后一条命为对局结束时的等级） */
   level?: number;
+  /** 本命期间的击杀和助攻明细 */
+  events?: MatchTimelineEvent[];
   /** 最后一条命存活到对局结束时没有值 */
   death?: MatchTimelineDeath;
 }

@@ -2,6 +2,7 @@ import type {
   MatchTimeline,
   MatchTimelineChampionCount,
   MatchTimelineDeath,
+  MatchTimelineEvent,
   MatchTimelineLife,
   MatchTimelinePlayer,
   RawGame,
@@ -186,6 +187,28 @@ function deathInfo(
   };
 }
 
+/** 把击杀/助攻事件转成时间线里可展示的目标英雄 */
+function lifeEventInfo(
+  event: RawGameTimelineEvent,
+  type: 'kill' | 'assist',
+  playersById: Map<number, PlayerMeta>,
+): MatchTimelineEvent {
+  const victimId = toNumber(event.victimId);
+  const victim = playersById.get(victimId);
+  const killerId = type === 'assist' ? toNumber(event.killerId) || undefined : undefined;
+  const killer = killerId ? playersById.get(killerId) : undefined;
+  return {
+    type,
+    timestampMs: Math.round(toNumber(event.timestamp)),
+    participantId: victimId,
+    championId: victim?.championId ?? 0,
+    championName: victim?.championName,
+    killerParticipantId: killerId,
+    killerChampionId: killer?.championId,
+    killerChampionName: killer?.championName,
+  };
+}
+
 function buildLives(
   deaths: RawGameTimelineEvent[],
   kills: RawGameTimelineEvent[],
@@ -205,28 +228,32 @@ function buildLives(
     const endSnap = sampleAt(samples, end);
     const level = nearestLevel(samples, end) ?? lastLevel;
     lastLevel = level;
-    // 阵亡后到复活之间仍可能拿到助攻，算进刚结束的这条命，避免和整局 KDA 对不上
     const respawnAfter = death ? estimateRespawnMs(level, end) : 0;
     const assistEnd = Math.min(durationMs, end + respawnAfter);
-    const killCount = kills.filter((event) => {
+    const lifeKills = kills.filter((event) => {
       const t = toNumber(event.timestamp);
       return t >= start && t < end;
-    }).length;
-    const assistCount = assists.filter((event) => {
+    });
+    const lifeAssists = assists.filter((event) => {
       const t = toNumber(event.timestamp);
       return t >= start && t < assistEnd;
-    }).length;
+    });
+    const events: MatchTimelineEvent[] = [
+      ...lifeKills.map((event) => lifeEventInfo(event, 'kill', playersById)),
+      ...lifeAssists.map((event) => lifeEventInfo(event, 'assist', playersById)),
+    ].sort((a, b) => a.timestampMs - b.timestampMs);
     lives.push({
       index: lives.length + 1,
       startMs: Math.round(start),
       endMs: Math.round(end),
       respawnMs: Math.round(respawnMs),
       aliveMs: Math.max(0, Math.round(end - start)),
-      kills: killCount,
-      assists: assistCount,
+      kills: lifeKills.length,
+      assists: lifeAssists.length,
       cs: Math.max(0, Math.round(endSnap.cs - startSnap.cs)),
       gold: Math.max(0, Math.round(endSnap.gold - startSnap.gold)),
       level,
+      events,
       death: death ? deathInfo(death, playersById) : undefined,
     });
   };

@@ -718,7 +718,7 @@ export async function saveMatchDetail(detail: MatchDetail): Promise<void> {
 }
 
 /** 对局时间线缓存版本：解析口径变化时递增，旧缓存自动失效 */
-const MATCH_TIMELINE_CACHE_VERSION = 3;
+const MATCH_TIMELINE_CACHE_VERSION = 4;
 
 /** 读取已保存的对局时间线（按阵亡切分好的每条命） */
 export async function getSavedMatchTimeline(
