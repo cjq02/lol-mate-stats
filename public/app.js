@@ -3721,7 +3721,7 @@ function timelineVersusHtml(player, timeline) {
     (Array.isArray(list) ? list : [])
       .filter((item) => Number(item.championId) === Number(championId))
       .reduce((sum, item) => sum + (Number(item.count) || 0), 0);
-  const rows = enemies
+  const columns = enemies
     .map((enemy) => ({
       enemy,
       kills: count(player.killedChampions, enemy.championId),
@@ -3737,24 +3737,33 @@ function timelineVersusHtml(player, timeline) {
           b.assistedMe -
           (a.kills + a.assists + a.killedMe + a.assistedMe) ||
         a.enemy.championId - b.enemy.championId,
-    )
-    .map(({ enemy, kills, assists, killedMe, assistedMe }) => {
+    );
+  const head = columns
+    .map(({ enemy }) => {
       const label = enemy.championName ?? `#${enemy.championId}`;
-      return `<div class="timeline-versus-row">
-        <span class="timeline-versus-champ" title="${escapeHtml(label)}">${timelineChampionIcon(
-          enemy.participantId,
-          playersById,
-        )}</span>
-        <span class="timeline-versus-stat"><small>击杀我</small><b>${killedMe}</b></span>
-        <span class="timeline-versus-stat"><small>助攻杀我</small><b>${assistedMe}</b></span>
-        <span class="timeline-versus-stat"><small>我击杀</small><b>${kills}</b></span>
-        <span class="timeline-versus-stat"><small>我助攻</small><b>${assists}</b></span>
-      </div>`;
+      return `<th title="${escapeHtml(label)}">${timelineChampionIcon(
+        enemy.participantId,
+        playersById,
+      )}</th>`;
     })
     .join('');
+  const row = (label, key, className) =>
+    `<tr class="${className}"><th>${label}</th>${columns
+      .map((column) => {
+        const value = Number(column[key]) || 0;
+        return `<td class="${value ? className : 'zero'}">${value}</td>`;
+      })
+      .join('')}</tr>`;
   return `<div class="timeline-versus">
-    <div class="timeline-versus-head"><span>对方英雄</span><span>击杀我</span><span>助攻杀我</span><span>我击杀</span><span>我助攻</span></div>
-    ${rows}
+    <table class="timeline-versus-table">
+      <thead><tr><th class="timeline-versus-corner">对方英雄</th>${head}</tr></thead>
+      <tbody>
+        ${row('击杀我', 'killedMe', 'neg')}
+        ${row('助攻杀我', 'assistedMe', 'neg-soft')}
+        ${row('我击杀', 'kills', 'pos')}
+        ${row('我助攻', 'assists', 'assist')}
+      </tbody>
+    </table>
   </div>`;
 }
 
