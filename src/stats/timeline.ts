@@ -1,5 +1,6 @@
 import type {
   MatchTimeline,
+  MatchTimelineChampionCount,
   MatchTimelineDeath,
   MatchTimelineLife,
   MatchTimelinePlayer,
@@ -281,8 +282,31 @@ export function parseMatchTimeline(
         .map((id) => toNumber(id))
         .includes(meta.participantId),
     );
+    const countChampions = (ids: number[]): MatchTimelineChampionCount[] => {
+      const counts = new Map<number, number>();
+      for (const id of ids) {
+        if (id > 0) counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+      return [...counts.entries()]
+        .map(([participantId, count]) => {
+          const target = playersById.get(participantId);
+          return {
+            championId: target?.championId ?? 0,
+            championName: target?.championName,
+            count,
+          };
+        })
+        .sort((a, b) => b.count - a.count || a.championId - b.championId);
+    };
     return {
       ...meta,
+      killedBy: countChampions(deaths.map((event) => toNumber(event.killerId))),
+      killedChampions: countChampions(
+        kills.map((event) => toNumber(event.victimId)),
+      ),
+      assistedChampions: countChampions(
+        assists.map((event) => toNumber(event.victimId)),
+      ),
       lives: buildLives(
         deaths,
         kills,

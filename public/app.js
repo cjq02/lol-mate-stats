@@ -3786,6 +3786,17 @@ function renderTimeline(timeline, detail, cached) {
     : 0;
   const totalCs = lives.reduce((sum, life) => sum + (Number(life.cs) || 0), 0);
   const totalGold = lives.reduce((sum, life) => sum + (Number(life.gold) || 0), 0);
+  const killedBy = Array.isArray(player.killedBy) ? player.killedBy : [];
+  const killedChampions = Array.isArray(player.killedChampions)
+    ? player.killedChampions
+    : [];
+  const assistedChampions = Array.isArray(player.assistedChampions)
+    ? player.assistedChampions
+    : [];
+  const championTitle = (items) =>
+    items
+      .map((item) => `${item.championName ?? `#${item.championId}`} ×${item.count}`)
+      .join('、');
   const summary = [
     ['条命', String(lives.length)],
     ['KDA', `${Number(player.kills) || 0} / ${Number(player.deaths) || 0} / ${Number(player.assists) || 0}`],
@@ -3795,11 +3806,16 @@ function renderTimeline(timeline, detail, cached) {
     ['经济', `+${timelineGoldText(totalGold)}`],
     ['整局伤害', timelineGoldText(player.damage)],
     ['整局承伤', timelineGoldText(player.damageTaken)],
+    ['击杀我的英雄', `${killedBy.length} 个`, championTitle(killedBy)],
+    ['我击杀的英雄', `${killedChampions.length} 个`, championTitle(killedChampions)],
+    ['我助攻的英雄', `${assistedChampions.length} 个`, championTitle(assistedChampions)],
   ];
   els.timelineSummary.innerHTML = summary
     .map(
-      ([label, value]) =>
-        `<div class="timeline-summary-item"><small>${label}</small><b>${value}</b></div>`,
+      ([label, value, title]) =>
+        `<div class="timeline-summary-item" title="${escapeHtml(
+          title ?? '',
+        )}"><small>${label}</small><b>${value}</b></div>`,
     )
     .join('');
 

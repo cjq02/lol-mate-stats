@@ -207,9 +207,13 @@ function lifeTimelineText(timeline?: MatchTimeline, selfPuuid?: string): string 
     )}，金币 +${fix(life.gold)}，等级 ${fix(life.level ?? 0)}，${deathText}`;
   });
   return [
-    `【我的每条命时间线】共 ${player.lives.length} 条命；整局伤害 ${fix(
-      player.damage,
-    )}、承伤 ${fix(player.damageTaken)}（官方接口没有每条命伤害，禁止编造）。`,
+    `【我的每条命时间线】共 ${player.lives.length} 条命；击杀我的英雄 ${
+      player.killedBy?.length ?? 0
+    } 个、我击杀的英雄 ${player.killedChampions?.length ?? 0} 个、我助攻的英雄 ${
+      player.assistedChampions?.length ?? 0
+    } 个；整局伤害 ${fix(player.damage)}、承伤 ${fix(
+      player.damageTaken,
+    )}（官方接口没有每条命伤害，禁止编造）。`,
     ...lines,
   ].join('\n');
 }

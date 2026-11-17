@@ -2199,10 +2199,17 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
           totalDamageTaken: 22_000,
         },
       },
+      {
+        participantId: 3,
+        teamId: 200,
+        championId: 99,
+        stats: { kills: 0, deaths: 1, assists: 0 },
+      },
     ],
     participantIdentities: [
       { participantId: 1, player: { puuid: 'self', gameName: '我', tagLine: '0001' } },
       { participantId: 2, player: { puuid: 'enemy', gameName: '对手', tagLine: '0002' } },
+      { participantId: 3, player: { puuid: 'enemy2', gameName: '对手二', tagLine: '0003' } },
     ],
   };
   const frame = (timestamp: number, cs: number, gold: number, level: number) => ({
@@ -2237,6 +2244,13 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
           { type: 'CHAMPION_KILL', timestamp: 200_000, killerId: 1, victimId: 2 },
           {
             type: 'CHAMPION_KILL',
+            timestamp: 220_000,
+            killerId: 2,
+            victimId: 3,
+            assistingParticipantIds: [1],
+          },
+          {
+            type: 'CHAMPION_KILL',
             timestamp: 250_000,
             killerId: 2,
             victimId: 1,
@@ -2261,6 +2275,7 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
     new Map([
       [103, '九尾妖狐'],
       [64, '盲僧'],
+      [99, '拉克丝'],
     ]),
   );
   const self = timeline.players.find((player) => player.puuid === 'self');
@@ -2290,6 +2305,15 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
   assert.equal(self.lives[2].death, undefined);
   assert.equal(self.damage, 20_000);
   assert.equal(self.damageTaken, 15_000);
+  assert.deepEqual(self.killedBy, [
+    { championId: 64, championName: '盲僧', count: 2 },
+  ]);
+  assert.deepEqual(self.killedChampions, [
+    { championId: 64, championName: '盲僧', count: 2 },
+  ]);
+  assert.deepEqual(self.assistedChampions, [
+    { championId: 99, championName: '拉克丝', count: 1 },
+  ]);
 });
 
 test('没有阵亡时只生成一条存活到结束的时间线', () => {

@@ -743,7 +743,19 @@ export interface MatchTimelinePlayer {
   damage: number;
   /** 整局总承伤 */
   damageTaken: number;
+  /** 击杀过我的英雄及次数（按英雄去重） */
+  killedBy?: MatchTimelineChampionCount[];
+  /** 我击杀过的英雄及次数（按英雄去重） */
+  killedChampions?: MatchTimelineChampionCount[];
+  /** 我助攻击杀过的英雄及次数（按英雄去重） */
+  assistedChampions?: MatchTimelineChampionCount[];
   lives: MatchTimelineLife[];
+}
+
+export interface MatchTimelineChampionCount {
+  championId: number;
+  championName?: string;
+  count: number;
 }
 
 export interface MatchTimeline {
