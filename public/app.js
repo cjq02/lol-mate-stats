@@ -3681,6 +3681,19 @@ function timelinePlayerFor(detail, timeline) {
   return players[0];
 }
 
+/** 时间线里的击杀者/助攻者只显示英雄头像，鼠标悬停再看英雄名 */
+function timelineChampionIcon(participantId, playersById) {
+  const player = playersById.get(Number(participantId));
+  if (!player) return '';
+  const label = player.championName ?? `玩家 ${participantId}`;
+  return `<span class="timeline-champ">${iconHtml(
+    player.championId ? champPath(player.championId) : null,
+    label,
+    'sm',
+    label,
+  )}</span>`;
+}
+
 /** 同步「时间线」按钮：demo 模式或没有本人数据时隐藏 */
 function updateTimelineButton(detail) {
   const available =
@@ -3694,7 +3707,7 @@ function closeMatchTimeline() {
   els.timelineModal.classList.add('hidden');
 }
 
-function timelineLifeHtml(life) {
+function timelineLifeHtml(life, playersById) {
   const death = life.death;
   const start = Number(life.startMs) || 0;
   const end = Number(life.endMs) || 0;
@@ -3712,13 +3725,17 @@ function timelineLifeHtml(life) {
   ].join('');
   let deathLine = '<span class="timeline-life-end ok">存活到对局结束</span>';
   if (death) {
-    const killer = death.killerName
-      ? `被 <b>${escapeHtml(death.killerName)}</b> 击杀`
-      : '阵亡';
-    const assist =
-      Array.isArray(death.assistNames) && death.assistNames.length
-        ? ` · 助攻 ${death.assistNames.map((name) => escapeHtml(name)).join('、')}`
-        : '';
+    const killerIcon = timelineChampionIcon(death.killerId, playersById);
+    const assistIcons = (death.assistIds ?? [])
+      .map((id) => timelineChampionIcon(id, playersById))
+      .filter(Boolean)
+      .join('');
+    const killer = killerIcon
+      ? `被 ${killerIcon} 击杀`
+      : death.killerName
+        ? `被 <b>${escapeHtml(death.killerName)}</b> 击杀`
+        : '阵亡';
+    const assist = assistIcons ? ` · 助攻 ${assistIcons}` : '';
     deathLine = `<span class="timeline-life-end dead">${killer}${assist}</span>`;
   }
   const respawnHint =
@@ -3750,6 +3767,12 @@ function renderTimeline(timeline, detail, cached) {
     return;
   }
   const lives = Array.isArray(player.lives) ? player.lives : [];
+  const playersById = new Map(
+    (Array.isArray(timeline.players) ? timeline.players : []).map((item) => [
+      Number(item.participantId),
+      item,
+    ]),
+  );
   const durationMs = Number(timeline.durationMs) || 0;
   els.timelineTitle.textContent = `本局时间线 · ${player.championName ?? '我的对局'}`;
   els.timelineMeta.textContent = `${gameClock(durationMs / 1000)} · ${
@@ -3788,7 +3811,7 @@ function renderTimeline(timeline, detail, cached) {
     : 0;
   els.timelineList.innerHTML = lives.length
     ? `<div class="timeline-lives">${lives
-        .map((life) => timelineLifeHtml(life))
+        .map((life) => timelineLifeHtml(life, playersById))
         .join('')}</div>` +
       `<div class="timeline-note">整局造成 ${timelineGoldText(
         player.damage,

@@ -1832,6 +1832,10 @@ body::before {
 }
 
 .timeline-life-end.dead {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
   color: #ffb3c1;
 }
 
@@ -1841,6 +1845,22 @@ body::before {
 
 .timeline-life-end b {
   color: #ffd0d9;
+}
+
+.timeline-champ {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.timeline-life-death .icon.sm {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.timeline-life-death .icon.sm .fb {
+  font-size: 9px;
 }
 
 .timeline-note {
