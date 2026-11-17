@@ -3736,10 +3736,10 @@ function timelineVersusHtml(player, timeline) {
     .map(({ enemy, kills, assists, deaths }) => {
       const label = enemy.championName ?? `#${enemy.championId}`;
       return `<div class="timeline-versus-row">
-        <span class="timeline-versus-champ">${timelineChampionIcon(
+        <span class="timeline-versus-champ" title="${escapeHtml(label)}">${timelineChampionIcon(
           enemy.participantId,
           playersById,
-        )}<span>${escapeHtml(label)}</span></span>
+        )}</span>
         <span class="timeline-versus-stat"><small>击杀</small><b>${kills}</b></span>
         <span class="timeline-versus-stat"><small>助攻</small><b>${assists}</b></span>
         <span class="timeline-versus-stat"><small>被其击杀</small><b>${deaths}</b></span>
@@ -3752,6 +3752,21 @@ function timelineVersusHtml(player, timeline) {
   </div>`;
 }
 
+/** “我”用带高亮描边的本人英雄头像 */
+function timelineSelfBadge(selfParticipantId, playersById) {
+  const player = playersById.get(Number(selfParticipantId));
+  const label = player?.championName ?? '我';
+  const icon = iconHtml(
+    player?.championId ? champPath(player.championId) : null,
+    label,
+    'sm',
+    `我 · ${label}`,
+  );
+  return `<span class="timeline-event-champ self" title="我 · ${escapeHtml(
+    label,
+  )}">${icon}</span>`;
+}
+
 function timelineEventChamp(participantId, championId, championName, playersById) {
   const player = participantId
     ? playersById.get(Number(participantId))
@@ -3760,9 +3775,7 @@ function timelineEventChamp(participantId, championId, championName, playersById
   const icon = participantId
     ? timelineChampionIcon(participantId, playersById)
     : iconHtml(championId ? champPath(championId) : null, label, 'sm', label);
-  return `<span class="timeline-event-champ">${icon}<span>${escapeHtml(
-    label,
-  )}</span></span>`;
+  return `<span class="timeline-event-champ" title="${escapeHtml(label)}">${icon}</span>`;
 }
 
 function timelineLifeHtml(life, playersById, selfParticipantId) {
@@ -3801,6 +3814,7 @@ function timelineLifeHtml(life, playersById, selfParticipantId) {
       ? `<span class="timeline-life-respawn">复活约 ${Math.round(respawn / 1000)} 秒</span>`
       : '';
   const events = Array.isArray(life.events) ? life.events : [];
+  const selfBadge = timelineSelfBadge(selfParticipantId, playersById);
   const eventsHtml = events.length
     ? `<div class="timeline-life-events">${events
         .map((event) => {
@@ -3834,7 +3848,7 @@ function timelineLifeHtml(life, playersById, selfParticipantId) {
             );
           if (event.type === 'kill') {
             const assisters = assistEntries.map(assistHtml).join('');
-            return `<span class="timeline-event kill"><em>${clock}</em>击杀 ${victim}${
+            return `<span class="timeline-event kill"><em>${clock}</em>${selfBadge} 击杀 ${victim}${
               assisters
                 ? ` <span class="timeline-event-assist">· 助攻 ${assisters}</span>`
                 : ''
@@ -3844,8 +3858,8 @@ function timelineLifeHtml(life, playersById, selfParticipantId) {
             (entry) => Number(entry.id) !== Number(selfParticipantId),
           );
           const meText = others.length
-            ? `我、${others.map(assistHtml).join('')}`
-            : '我';
+            ? `${selfBadge}${others.map(assistHtml).join('')}`
+            : selfBadge;
           const killer = timelineEventChamp(
             event.killerParticipantId,
             event.killerChampionId,

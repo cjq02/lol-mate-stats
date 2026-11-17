@@ -1744,21 +1744,12 @@ body::before {
 .timeline-versus-champ {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
-  font-size: 12px;
-  color: #dbe6ff;
-}
-
-.timeline-versus-champ > span:last-child {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .timeline-versus-champ .icon.sm {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 7px;
 }
 
@@ -1922,6 +1913,17 @@ body::before {
   gap: 3px;
 }
 
+.timeline-event-champ.self {
+  margin-right: 2px;
+}
+
+.timeline-event-champ.self .icon.sm {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px #f5c76a, 0 0 12px rgba(245, 199, 106, 0.45);
+}
+
 .timeline-event-assist {
   display: inline-flex;
   align-items: center;
@@ -1948,8 +1950,8 @@ body::before {
 }
 
 .timeline-event .icon.sm {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   border-radius: 5px;
 }
 
