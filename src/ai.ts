@@ -3,6 +3,7 @@ import type {
   LiveEvent,
   MatchDetail,
   MatchScoreboardPlayer,
+  MatchTimeline,
   PlayerReport,
   Snapshot,
 } from './types.js';
@@ -139,6 +140,44 @@ function timelineText(timeline?: GameTimeline): string {
       ? `；中段连续 ${fix(timeline.idleMinutes)} 分钟几乎没有经济/经验增长`
       : '';
   return `时间线：${parts.join('，')}${idle}`;
+}
+
+/** 把“每条命”时间线压缩成模型可读的几行，用于分析死亡节点和节奏 */
+function lifeTimelineText(timeline?: MatchTimeline, selfPuuid?: string): string {
+  if (!timeline?.players?.length) return '';
+  const player =
+    timeline.players.find((item) => item.puuid && item.puuid === selfPuuid) ??
+    timeline.players[0];
+  if (!player?.lives?.length) return '';
+  const playersById = new Map(
+    timeline.players.map((item) => [item.participantId, item]),
+  );
+  const lines = player.lives.slice(0, 20).map((life) => {
+    const death = life.death;
+    const killer = death?.killerId ? playersById.get(death.killerId) : undefined;
+    const assistNames = (death?.assistIds ?? [])
+      .map((id) => playersById.get(id)?.championName)
+      .filter((name): name is string => Boolean(name));
+    const deathText = death
+      ? `被${killer?.championName ?? '敌方'}击杀${
+          assistNames.length ? `（助攻 ${assistNames.join('、')}）` : ''
+        }`
+      : '存活到结束';
+    const respawn = life.respawnMs > 0 ? `，复活约 ${fix(life.respawnMs / 1000)}s` : '';
+    return `- 第 ${life.index} 条 ${eventClock(life.startMs / 1000)}-${eventClock(
+      life.endMs / 1000,
+    )}（存活 ${eventClock(life.aliveMs / 1000)}${respawn}）：击杀 ${fix(
+      life.kills,
+    )}/死亡 ${death ? 1 : 0}/助攻 ${fix(life.assists)}，补刀 +${fix(
+      life.cs,
+    )}，金币 +${fix(life.gold)}，等级 ${fix(life.level ?? 0)}，${deathText}`;
+  });
+  return [
+    `【我的每条命时间线】共 ${player.lives.length} 条命；整局伤害 ${fix(
+      player.damage,
+    )}、承伤 ${fix(player.damageTaken)}（官方接口没有每条命伤害，禁止编造）。`,
+    ...lines,
+  ].join('\n');
 }
 
 function kdaText(row: MatchScoreboardPlayer): string {
@@ -566,6 +605,7 @@ export function buildChampSelectAnalysisMessages(
 export function buildAnalysisMessages(
   detail: MatchDetail,
   itemName: (id: number) => string = () => '',
+  timeline?: MatchTimeline,
 ): ChatMessage[] {
   const rows = (detail.scoreboard ?? []).slice(0, 10);
   const self =
@@ -627,6 +667,7 @@ export function buildAnalysisMessages(
           itemName,
         )}`,
         timelineText(self.timeline),
+        lifeTimelineText(timeline, detail.selfPuuid ?? self.puuid),
       ]
         .filter(Boolean)
         .join('\n')
@@ -658,6 +699,7 @@ export function buildAnalysisMessages(
     modeRuleText(detail.gameMode),
     '装备和资源建议必须先核对模式可用性；如果本局出装包含该模式禁用或买不到的装备，直接指出。',
     '阵容里标了“开黑”的可以用于判断配合和针对优先级；标注“近期同队推断”的只能当参考，不要当成确定事实。',
+    '如果提供了「我的每条命时间线」，要结合每条命的存活时长、KDA、补刀/金币增量、等级和击杀者分析我的死亡节点、强势期与节奏问题；官方接口没有每条命伤害，严禁编造每条命伤害，只能引用整局伤害/承伤。',
     '使用 Markdown 排版：每个部分用 `## 1. 小标题` 开头；部分内用 `-` 分点，重点用 `**加粗**`；每个部分先给一句结论，再用 2-5 条短要点展开。不要使用 Markdown 表格。固定输出 7 个部分：',
     '1. 局势总览（2-3 句：胜负主因、双方阵容与关键差距、本局节奏）',
     '2. 胜负关键（3-4 条，每条带具体数字和英雄/位置）',

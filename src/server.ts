@@ -805,9 +805,14 @@ async function handleRequest(
           }
         },
       );
-      const items = await loadItemTable(source).catch(() => null);
+      const [items, timelineResult] = await Promise.all([
+        loadItemTable(source).catch(() => null),
+        source.getMatchTimeline
+          ? source.getMatchTimeline(gameId).catch(() => null)
+          : Promise.resolve(null),
+      ]);
       const itemName = (id: number): string => items?.[String(id)]?.name ?? '';
-      const messages = buildAnalysisMessages(detail, itemName);
+      const messages = buildAnalysisMessages(detail, itemName, timelineResult?.timeline);
 
       sendEvent({ type: 'status', text: '正在生成复盘分析…' });
       let content = '';

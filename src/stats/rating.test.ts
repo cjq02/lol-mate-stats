@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import type { AnalyzedGame, GameTimeline, Lane, MatchDetail, RawGame, Snapshot } from '../types.js';
+import type {
+  AnalyzedGame,
+  GameTimeline,
+  Lane,
+  MatchDetail,
+  MatchTimeline,
+  RawGame,
+  Snapshot,
+} from '../types.js';
 import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
@@ -960,6 +968,124 @@ test('赛后 AI 复盘同样校验大乱斗禁用装备', () => {
   assert.ok(text.includes('商店禁用装备'), text);
   assert.ok(text.includes('守护天使'), text);
   assert.ok(text.includes('先确认装备在当前模式可购买'), text);
+});
+
+test('赛后 AI 复盘会带上每条命时间线且不编造每命伤害', () => {
+  const detail = {
+    gameId: 2,
+    queueId: 420,
+    queueName: '单双排',
+    gameMode: 'SR',
+    gameCreation: 0,
+    gameDuration: 1200,
+    selfPuuid: 'me',
+    scoreboard: [
+      {
+        puuid: 'me',
+        championName: '格温',
+        teamId: 100,
+        isEnemy: false,
+        kills: 2,
+        deaths: 1,
+        assists: 3,
+        cs: 130,
+        gold: 10_000,
+        damage: 20_000,
+        damageTaken: 15_000,
+        vision: 10,
+        win: true,
+      },
+    ],
+    players: [],
+  } as unknown as MatchDetail;
+  const timeline = {
+    gameId: 2,
+    durationMs: 1_200_000,
+    players: [
+      {
+        participantId: 1,
+        puuid: 'me',
+        name: '我',
+        championId: 103,
+        championName: '格温',
+        teamId: 100,
+        kills: 2,
+        deaths: 1,
+        assists: 3,
+        damage: 20_000,
+        damageTaken: 15_000,
+        lives: [
+          {
+            index: 1,
+            startMs: 0,
+            endMs: 300_000,
+            respawnMs: 0,
+            aliveMs: 300_000,
+            kills: 1,
+            assists: 1,
+            cs: 30,
+            gold: 3_000,
+            level: 6,
+            death: {
+              timestampMs: 300_000,
+              killerId: 2,
+              killerName: '敌1#0001',
+              assistIds: [3],
+              assistNames: ['敌2#0002'],
+            },
+          },
+          {
+            index: 2,
+            startMs: 310_000,
+            endMs: 1_200_000,
+            respawnMs: 10_000,
+            aliveMs: 890_000,
+            kills: 1,
+            assists: 2,
+            cs: 100,
+            gold: 9_000,
+            level: 13,
+          },
+        ],
+      },
+      {
+        participantId: 2,
+        puuid: 'e1',
+        name: '敌人一',
+        championId: 64,
+        championName: '盲僧',
+        teamId: 200,
+        kills: 1,
+        deaths: 1,
+        assists: 0,
+        damage: 0,
+        damageTaken: 0,
+        lives: [],
+      },
+      {
+        participantId: 3,
+        puuid: 'e2',
+        name: '敌人二',
+        championId: 99,
+        championName: '拉克丝',
+        teamId: 200,
+        kills: 0,
+        deaths: 1,
+        assists: 1,
+        damage: 0,
+        damageTaken: 0,
+        lives: [],
+      },
+    ],
+  } as MatchTimeline;
+  const text = buildAnalysisMessages(detail, () => '', timeline)
+    .map((message) => message.content)
+    .join('\n');
+  assert.ok(text.includes('我的每条命时间线'), text);
+  assert.ok(text.includes('第 1 条'), text);
+  assert.ok(text.includes('被盲僧击杀'), text);
+  assert.ok(text.includes('助攻 拉克丝'), text);
+  assert.ok(text.includes('禁止编造'), '应明确禁止编造每条命伤害');
 });
 
 test('每队最佳：胜方 MVP、负方 SVP', () => {
