@@ -1711,11 +1711,13 @@ body::before {
 
 .timeline-lives {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 6px;
 }
 
 .timeline-versus {
+  flex: 0 0 auto;
   margin-bottom: 8px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -2004,6 +2006,7 @@ body::before {
 }
 
 .timeline-note {
+  flex: 0 0 auto;
   margin-top: 6px;
   padding: 10px 12px;
   border-top: 1px dashed var(--line);

@@ -3961,6 +3961,7 @@ function renderTimeline(timeline, detail, cached) {
         perLifeTaken,
       )}。官方接口不提供每条命的伤害拆分，复活时间按等级估算，分钟级快照会有少量误差。</div>`
     : '<div class="timeline-status">这局没有解析出存活时间段</div>';
+  els.timelineList.scrollTop = 0;
 }
 
 async function openMatchTimeline() {
