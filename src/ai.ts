@@ -1,6 +1,7 @@
 import type {
   GameTimeline,
   LiveEvent,
+  LiveTimeline,
   MatchDetail,
   MatchScoreboardPlayer,
   MatchTimeline,
@@ -90,6 +91,7 @@ function modeRuleText(gameMode?: string): string {
     return [
       '【模式硬限制：极地大乱斗】',
       `- 商店禁用装备：${ARAM_DISABLED_ITEMS.join('、')}。任何情况下都不要推荐这些装备，尤其不要把“守护天使”当成大乱斗的复活甲。`,
+      '- 心之钢在极地大乱斗可以正常购买：敌方 3 个以上近战/多前排、且你能持续换血时优先考虑；敌方长手消耗多或爆发高时，先出日炎/兰顿等功能防装，不要硬叠。',
       '- 没有回城、真眼/控制守卫（饰品是魄罗佳肴），也没有小龙/大龙/峡谷先锋；不要建议回城补给、插眼反眼、打野、控线、分带或争夺这些资源。',
       '- 装备只能在死亡后或商店范围内购买/调整；给出装路线时要写清“第几次死亡 / 多少金币”的换装节点。',
       '- 只推荐当前版本大乱斗确实能买到的装备；不确定某件装备是否可用时直接说明，不要拿召唤师峡谷的装备硬凑。',
@@ -103,6 +105,38 @@ function modeRuleText(gameMode?: string): string {
     ].join('\n');
   }
   return '【装备可用性】推荐任何装备前都要先确认当前模式能买到、且未被禁用；无法确认时明确说明，不要编造装备名。';
+}
+
+/** 按敌方阵容给出装分支，避免所有对局都推荐同一套装备 */
+function itemBuildRuleText(): string {
+  return [
+    '【出装分支要求】不要只给一套固定出装。先判断敌方以 AD / AP / 混合伤害为主，是爆发还是持续输出，有几个前排，控制和射程如何，再给针对分支。',
+    '- 战士至少给两套：半肉（1-2 件输出 + 防装）和全肉/主坦（心之钢、日炎、兰顿、自然之力等），说明敌方什么阵容选哪套。',
+    '- 坦克至少给两套：心之钢成长流（适合近战多、需要持续换血、能安全叠层）和功能防装流（日炎/兰顿/自然之力/败魔，适合对面爆发高或需要立刻成型）。',
+    '- 针对装要具体：高 AD 爆发→兰顿之兆/冰霜之心/死亡之舞；高 AP 爆发→自然之力/振奋盔甲；高回复→荆棘之甲；高攻速→兰顿之兆/冰霜之心；多控制→水银鞋/玛莫提乌斯之噬。',
+    '- 坦克/战士常用可选项：心之钢、日炎圣盾、兰顿之兆、自然之力、荆棘之甲、冰霜之心、死亡之舞、斯特拉克的挑战护手、玛莫提乌斯之噬、水银鞋、铁板靴；按敌方伤害类型和爆发/持续程度取舍。',
+    '- 输出位面对 2 个以上突进/刺客时，至少给一件防御装替换方案；不要无脑全输出。',
+  ].join('\n');
+}
+
+/** 按英雄定位粗略统计阵容前排/输出，帮助模型选择半肉或全肉 */
+function teamCompositionText(rows: Array<{ championId?: number }>): string {
+  let tank = 0;
+  let fighter = 0;
+  let carry = 0;
+  let support = 0;
+  let other = 0;
+  for (const row of rows) {
+    const role = championRole(Number(row.championId) || 0);
+    if (role === 'tank') tank += 1;
+    else if (role === 'fighter') fighter += 1;
+    else if (role === 'support') support += 1;
+    else if (role === 'carry') carry += 1;
+    else other += 1;
+  }
+  return `前排 ${tank + fighter} 人（坦克 ${tank} / 战士 ${fighter}），输出核心 ${carry}，辅助 ${support}${
+    other ? `，其他 ${other}` : ''
+  }（按英雄定位估算）`;
 }
 
 function lane(position?: string): string {
@@ -322,6 +356,36 @@ function eventText(event: LiveEvent): string {
   }
 }
 
+/** 把对局中实时维护的“每条命”压缩成模型可读的几行 */
+function liveTimelineText(timeline?: LiveTimeline): string {
+  if (!timeline?.lives?.length) return '';
+  const lines = timeline.lives.slice(-12).map((life) => {
+    const death = life.death
+      ? `被${life.death.killerName ?? '敌方'}击杀${
+          life.death.assistNames.length
+            ? `（助攻 ${life.death.assistNames.join('、')}）`
+            : ''
+        }`
+      : life.deaths
+        ? '阵亡'
+        : '存活中';
+    const respawn = life.respawnMs > 0 ? `，复活约 ${fix(life.respawnMs / 1000)}s` : '';
+    return `- 第${life.index}条 ${eventClock(life.startMs / 1000)}-${eventClock(
+      life.endMs / 1000,
+    )}（存活 ${eventClock(life.aliveMs / 1000)}${respawn}）：K/D/A ${fix(
+      life.kills,
+    )}/${fix(life.deaths)}/${fix(life.assists)}，补刀 +${fix(life.cs)}，等级 ${fix(
+      life.level ?? 0,
+    )}，${death}`;
+  });
+  const status = timeline.dead
+    ? `当前阵亡，复活剩余 ${fix(timeline.respawnTimer ?? 0)}s`
+    : '当前存活';
+  return `【我的实时每条命】${status}；实时接口没有每条命伤害和经济，只有存活、KDA、补刀和等级\n${lines.join(
+    '\n',
+  )}`;
+}
+
 function rankText(report: PlayerReport | undefined): string {
   const rank = report?.rank;
   if (!rank) return '';
@@ -459,16 +523,19 @@ export function buildLiveAnalysisMessages(
     }；已进行 ${fix(gameMinutes, 1)} 分钟；我方 ${allies.length} 人 / 敌方 ${enemies.length} 人`,
     events ? `【本局事件】\n${events}` : '',
     `【我的英雄】${champion} / ${position}；${selfLine}`,
+    liveTimelineText(snapshot.liveTimeline),
     `【评分目标】类型：${ROLE_NAMES[role]}；权重（局内百分位）：${scoreWeightText(
       role,
     )}。${ROLE_SCORE_FOCUS[role]}`,
     rankingText ? `【当前局内排名】${rankingText}` : '',
-    '【实时限制】实时接口拿不到伤害、承伤、治疗总量，只能按经济、装备、等级、KDA、参团和阵容推断；赛后结算才看真实占比。',
+    '【实时限制】实时接口拿不到伤害、承伤、治疗总量，也拿不到每条命伤害/经济，只能按经济、装备、等级、KDA、参团、存活时间和阵容推断；赛后结算才看真实占比。',
     recentText(self),
     '【我方】',
     teamText(allies, true),
+    `【我方阵容构成】${teamCompositionText(allies)}`,
     '【敌方】',
     teamText(enemies, false),
+    `【敌方阵容构成】${teamCompositionText(enemies)}。请据此判断该走半肉还是全肉，并选择针对装。`,
     '【请分析】围绕我的评分权重和当前局内排名，告诉我这局最该补哪 2-3 项、具体差多少、怎么补；出装和打法都要服务于“赢下来 + 把评分打高”。请按系统要求输出 7 个部分。',
   ]
     .filter(Boolean)
@@ -480,7 +547,9 @@ export function buildLiveAnalysisMessages(
     '只根据我提供的本局数据与英雄知识分析，不要编造未提供的敌方装备、符文、召唤师技能、伤害数字或具体战斗过程。',
     '实时接口拿不到伤害、承伤、治疗总量；只能按经济、装备、等级、KDA、参团和阵容推断，并明确说明哪些是推断。',
     modeRuleText(snapshot.gameMode),
-    '装备和资源建议必须先核对模式可用性，再谈强度和评分收益。',
+    itemBuildRuleText(),
+    '如果提供了「我的实时每条命」，要结合死亡时间、存活时长和每条命 KDA/补刀判断我是否频繁被抓、越塔、站位过深或团战脱节；实时接口没有每条命伤害，禁止编造。',
+    '装备和资源建议必须先核对模式可用性，再根据敌方阵容给分支和针对装。',
     '大乱斗/竞技场模式不要用补刀、视野、分带等召唤师峡谷标准苛责；数据不足时直接说明。',
     '阵容里标了“开黑”的可以用于判断配合和针对优先级；标注“近期同队推断”的只能当参考，不要当成确定事实。',
     '每条建议都要说明它提升哪个评分项（KDA / 参团 / 输出占比 / 承伤占比 / 治疗占比），不能只写“多参团”。',
@@ -489,7 +558,7 @@ export function buildLiveAnalysisMessages(
     '使用 Markdown 排版：每个部分用 `## 1. 小标题` 开头；部分内用 `-` 分点，重点用 `**加粗**`；每个部分先给一句结论，再用 2-5 条短要点展开。不要使用 Markdown 表格。固定输出 7 个部分：',
     '1. 局势判断（3-4 句：当前优劣势、双方阵容强势期、经济/等级/装备差、本局胜负手）',
     '2. 我的评分提升重点（复述我的评分权重；对照当前局内排名，指出最该补的 2-3 项指标、具体差多少、怎么补）',
-    '3. 我的出装路线（核心装 2-3 件、鞋子、针对敌方关键英雄的防御/功能装、当前装备如何过渡、出装顺序和替换件；只列当前模式能买到且未被禁用的装备，优先能让我打出评分项的装备，至少列出 5 件）',
+    '3. 我的出装路线（核心装 2-3 件、鞋子、针对敌方关键英雄的防御/功能装、当前装备如何过渡、出装顺序和替换件；只列当前模式能买到且未被禁用的装备，至少列出 6 件，并明确给出半肉/全肉或输出/防装两套分支，说明敌方什么阵容选哪套）',
     '4. 技能加点与连招（主加/副加、关键连招、对线或团战释放顺序与时机）',
     '5. 对线与节奏（对线细节/刷野路线、推线或控线、回城时机、视野、资源目标；大乱斗只写站位、清线、送死时机和装备节点，不要写回城/视野/资源）',
     '6. 团战打法（站位、优先目标、开团/反打/保护；明确我该抢输出、承伤、治疗还是参团，如何少死）',
@@ -584,12 +653,13 @@ export function buildChampSelectAnalysisMessages(
     '如果当前英雄明显不适合我方阵容，直接指出缺什么，并给出 2-3 个备选英雄及理由；备选优先从我的常用英雄里选，超出英雄池时明确说明是通用建议。',
     modeRuleText(snapshot.gameMode),
     '装备、符文和召唤师技能建议必须先核对当前模式可用性；大乱斗不要推荐禁用装备，也不要写回城、插眼、分带和争夺小龙/大龙。',
+    '敌方阵容未知时，出装至少给对多 AD / 多 AP 两套通用分支，并说明进入游戏后看到敌方阵容时如何切换；不要只给一套固定顺序。',
     '不要建议秒选、抢位置、挂机或消极游戏；需要队友配合时给出礼貌、具体的沟通话术。',
     '使用 Markdown 排版：每个部分用 `## 1. 小标题` 开头；部分内用 `-` 分点，重点用 `**加粗**`；每个部分先给一句结论，再用 2-5 条短要点展开。不要使用 Markdown 表格。固定输出 6 个部分：',
     '1. 选人结论（留当前英雄还是换；大乱斗明确说留当前还是换替补；需要换时给出 2-3 个备选和理由）',
     '2. 阵容判断（我方已选英雄的伤害类型、前排、控制、开团和保护，缺什么；敌方未知）',
     '3. 我的评分目标（英雄类型权重；本局优先打 KDA / 参团 / 输出 / 承伤 / 治疗中的哪几项）',
-    '4. 符文、召唤师技能与出装（给出具体选择；只列当前模式能买到且未被禁用的装备，说明核心装、鞋子和针对装；至少列出 4 件）',
+    '4. 符文、召唤师技能与出装（给出具体选择；只列当前模式能买到且未被禁用的装备，说明核心装、鞋子和针对装；至少列出 5 件，并给对多 AD / 多 AP 两套分支）',
     '5. 开局计划（召唤师峡谷：一级团/对线或刷野路线、第一次回城、视野；大乱斗：出门装、第一波站位、清线和第一次死亡后的换装节点）',
     '6. 选人结束前 3-5 条可执行动作（换英雄、换符文、和队友沟通等，每条带理由和预期收益）',
     '要求：每个部分都要展开写，结合我方具体英雄和我的近期数据，总字数控制在 900-1300 字。',
@@ -685,8 +755,10 @@ export function buildAnalysisMessages(
     recentText(selfReport),
     '【我方】',
     teamText(myTeam, true),
+    `【我方阵容构成】${teamCompositionText(myTeam)}`,
     '【敌方】',
     teamText(enemyTeam, false),
+    `【敌方阵容构成】${teamCompositionText(enemyTeam)}。请据此判断半肉/全肉和针对装。`,
     '【请分析】请按系统要求输出 7 个部分，重点分析“我”；数据不足时直接说明，不要编造。',
   ]
     .filter(Boolean)
@@ -698,6 +770,7 @@ export function buildAnalysisMessages(
     '输出中文，分点清晰，必须引用具体数字；大乱斗/竞技场模式不要用补刀、视野苛责。',
     modeRuleText(detail.gameMode),
     '装备和资源建议必须先核对模式可用性；如果本局出装包含该模式禁用或买不到的装备，直接指出。',
+    itemBuildRuleText(),
     '阵容里标了“开黑”的可以用于判断配合和针对优先级；标注“近期同队推断”的只能当参考，不要当成确定事实。',
     '如果提供了「我的每条命时间线」，要结合每条命的存活时长、KDA、补刀/金币增量、等级和击杀者分析我的死亡节点、强势期与节奏问题；官方接口没有每条命伤害，严禁编造每条命伤害，只能引用整局伤害/承伤。',
     '使用 Markdown 排版：每个部分用 `## 1. 小标题` 开头；部分内用 `-` 分点，重点用 `**加粗**`；每个部分先给一句结论，再用 2-5 条短要点展开。不要使用 Markdown 表格。固定输出 7 个部分：',
@@ -705,7 +778,7 @@ export function buildAnalysisMessages(
     '2. 胜负关键（3-4 条，每条带具体数字和英雄/位置）',
     '3. 我的表现剖析（亮点 2-3 条 + 问题 2-3 条，带 KDA/伤害/参团/补刀/视野等数字）',
     '4. 队友与对手（分别点出 1-2 名关键玩家及其影响，不要只罗列数据）',
-    '5. 出装与资源复盘（先确认装备在当前模式可购买；当前出装是否合理、可替换装备、经济/资源节奏）',
+    '5. 出装与资源复盘（先确认装备在当前模式可购买；当前出装是否合理、可替换装备、经济/资源节奏；按敌方阵容给出半肉/全肉或输出/防装两套分支）',
     '6. 改进建议（4-5 条，覆盖对线/节奏/团战/出装/资源；大乱斗/竞技场不要写视野、分带和回城）',
     '7. 如果重来一次，最该改的一件事',
     '要求：每个部分都要展开写，不要只写一句话；总字数控制在 1200-1600 字。',

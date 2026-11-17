@@ -19,6 +19,7 @@ import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
 import { premadeSizesByPuuid, premadeSizesFromGames } from './premade.js';
+import { buildLiveTimeline } from './live-timeline.js';
 import { estimateRespawnMs, parseMatchTimeline } from './timeline.js';
 import { isNewFinishedGame } from '../watcher.js';
 
@@ -754,6 +755,41 @@ test('实时 AI 提示词包含装备、模式限制、符文、血量和事件'
     liveEvents: [
       { EventName: 'ChampionKill', EventTime: 100, KillerName: '我', VictimName: '敌人' },
     ],
+    liveTimeline: {
+      gameTimeMs: 300_000,
+      dead: false,
+      lives: [
+        {
+          index: 1,
+          startMs: 0,
+          endMs: 120_000,
+          aliveMs: 120_000,
+          respawnMs: 0,
+          kills: 1,
+          deaths: 1,
+          assists: 0,
+          cs: 20,
+          level: 4,
+          death: {
+            timestampMs: 120_000,
+            killerName: '敌人',
+            assistNames: [],
+          },
+        },
+        {
+          index: 2,
+          startMs: 132_000,
+          endMs: 300_000,
+          aliveMs: 168_000,
+          respawnMs: 12_000,
+          kills: 0,
+          deaths: 0,
+          assists: 2,
+          cs: 15,
+          level: 5,
+        },
+      ],
+    },
     localPlayer: {
       summonerId: 1,
       displayName: '我',
@@ -817,12 +853,23 @@ test('实时 AI 提示词包含装备、模式限制、符文、血量和事件'
   assert.ok(text.includes('权重（局内百分位）'), text);
   assert.ok(text.includes('输出占比权重最高'), text);
   assert.ok(text.includes('2. 我的评分提升重点'), text);
+  // 对局中 AI 要带上实时每条命时间线
+  assert.ok(text.includes('我的实时每条命'), text);
+  assert.ok(text.includes('第1条'), text);
+  assert.ok(text.includes('被敌人击杀'), text);
+  assert.ok(text.includes('复活约 12s'), text);
   // 大乱斗必须明确禁用装备和不能回城等硬规则，避免 AI 推荐守护天使
   assert.ok(text.includes('商店禁用装备'), text);
   assert.ok(text.includes('守护天使'), text);
   assert.ok(text.includes('黑暗封印'), text);
   assert.ok(text.includes('没有回城'), text);
   assert.ok(text.includes('只列当前模式能买到'), text);
+  // 出装要按敌方阵容给分支，并明确心之钢在大乱斗可用
+  assert.ok(text.includes('出装分支要求'), text);
+  assert.ok(text.includes('半肉'), text);
+  assert.ok(text.includes('全肉'), text);
+  assert.ok(text.includes('心之钢在极地大乱斗可以正常购买'), text);
+  assert.ok(text.includes('敌方阵容构成'), text);
 
   const srText = buildLiveAnalysisMessages(
     { ...snapshot, queueId: 420, gameMode: 'CLASSIC' } as unknown as Snapshot,
@@ -831,6 +878,7 @@ test('实时 AI 提示词包含装备、模式限制、符文、血量和事件'
     .map((message) => message.content)
     .join('\n');
   assert.ok(!srText.includes('守护天使'), srText);
+  assert.ok(!srText.includes('心之钢在极地大乱斗可以正常购买'), srText);
   assert.ok(srText.includes('【装备可用性】'), srText);
 });
 
@@ -2058,6 +2106,67 @@ test('中段长时间没有成长会判为疑似挂机', () => {
     },
   });
   assert.equal(isAfkLike(game), true);
+});
+
+test('实时时间线按死亡/复活切分每条命', () => {
+  const timeline = buildLiveTimeline(
+    [
+      { t: 0, cs: 0, level: 1, dead: false },
+      { t: 60, cs: 10, level: 3, dead: false },
+      { t: 120, cs: 20, level: 4, dead: true },
+      { t: 140, cs: 22, level: 4, dead: false },
+      { t: 200, cs: 40, level: 6, dead: false },
+    ],
+    [
+      {
+        EventName: 'ChampionKill',
+        EventTime: 100,
+        KillerName: '敌人',
+        VictimName: '我#0001',
+      },
+      {
+        EventName: 'ChampionKill',
+        EventTime: 90,
+        KillerName: '我#0001',
+        VictimName: '敌人',
+        Assisters: ['队友#0002'],
+      },
+    ],
+    { riotId: '我#0001', isDead: false },
+    200,
+  );
+  assert.equal(timeline.lives.length, 2, '一次阵亡 + 当前存活应切出两条命');
+  assert.equal(timeline.lives[0].startMs, 0);
+  assert.equal(timeline.lives[0].endMs, 100_000);
+  assert.equal(timeline.lives[0].kills, 1);
+  assert.equal(timeline.lives[0].deaths, 1);
+  assert.equal(timeline.lives[0].death?.killerName, '敌人');
+  assert.equal(timeline.lives[1].startMs, 140_000, '复活后应从第一次存活采样开始');
+  assert.equal(timeline.lives[1].respawnMs, 40_000);
+  assert.equal(timeline.lives[1].cs, 18);
+  assert.equal(timeline.lives[1].level, 6);
+  assert.equal(timeline.lives[1].deaths, 0);
+
+  const deadTimeline = buildLiveTimeline(
+    [
+      { t: 0, cs: 0, level: 1, dead: false },
+      { t: 60, cs: 10, level: 3, dead: false },
+      { t: 100, cs: 20, level: 4, dead: true },
+    ],
+    [
+      {
+        EventName: 'ChampionKill',
+        EventTime: 100,
+        KillerName: '敌人',
+        VictimName: '我#0001',
+      },
+    ],
+    { riotId: '我#0001', isDead: true, respawnTimer: 8 },
+    100,
+  );
+  assert.equal(deadTimeline.dead, true);
+  assert.equal(deadTimeline.respawnTimer, 8);
+  assert.equal(deadTimeline.lives.length, 1, '阵亡时不应再生成当前存活段');
 });
 
 console.log('match timeline');

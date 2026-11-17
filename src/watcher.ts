@@ -9,6 +9,8 @@ import type {
   GameModeKey,
   LcuConnection,
   LiveEvent,
+  LiveMember,
+  LiveTimeline,
   MatchDetail,
   MatchSummary,
   MatchTimeline,
@@ -59,6 +61,7 @@ import {
 } from './stats/flags.js';
 import { gradeOf } from './stats/rating.js';
 import { premadeSizesByPuuid } from './stats/premade.js';
+import { buildLiveTimeline, type LiveTimelineSample } from './stats/live-timeline.js';
 import { parseMatchTimeline } from './stats/timeline.js';
 import { summarizeMatchSummaries, type TimeStatsSummary } from './stats/time-stats.js';
 import {
@@ -180,6 +183,9 @@ export class LiveSource implements DataSource {
   /** 大乱斗可选英雄的缓存键，避免每轮 tick 都查数据库 */
   private aramOptionsKey = '';
   private aramRefreshInFlight = false;
+  /** 对局中实时时间线：当前会话和本人每分钟级的采样 */
+  private liveTimelineSession = '';
+  private liveTimelineSamples: LiveTimelineSample[] = [];
 
   constructor(options: LiveSourceOptions = {}) {
     this.options = {
@@ -1119,6 +1125,36 @@ export class LiveSource implements DataSource {
   }
 
   /**
+   * 对局中维护本人的“每条命”时间线：
+   * 击杀事件切分死亡/复活，3 秒轮询的补刀和等级提供每段增量。
+   */
+  private updateLiveTimeline(
+    sessionId: string,
+    gameTimeSeconds: number,
+    self: LiveMember | undefined,
+    events: LiveEvent[] | undefined,
+  ): LiveTimeline | undefined {
+    if (!self) return undefined;
+    if (this.liveTimelineSession !== sessionId) {
+      this.liveTimelineSession = sessionId;
+      this.liveTimelineSamples = [];
+    }
+
+    const now = Math.max(0, gameTimeSeconds);
+    const dead = Boolean(self.isDead);
+    const cs = toNumber(self.scores?.creepScore);
+    const level = toNumber(self.level);
+    const last = this.liveTimelineSamples[this.liveTimelineSamples.length - 1];
+    if (!last || now >= last.t + 1) {
+      this.liveTimelineSamples.push({ t: now, cs, level, dead });
+      if (this.liveTimelineSamples.length > 4000) {
+        this.liveTimelineSamples.splice(0, 1000);
+      }
+    }
+    return buildLiveTimeline(this.liveTimelineSamples, events, self, now);
+  }
+
+  /**
    * 游戏进行中：从 Live Client Data API 读取本局 10 名玩家，
    * 再结合 LCU 的历史战绩给出同样的评分卡片。
    */
@@ -1188,6 +1224,12 @@ export class LiveSource implements DataSource {
       gameMode,
       gameTime,
       liveEvents: liveEventList(game.events?.Events),
+      liveTimeline: this.updateLiveTimeline(
+        liveSessionId,
+        gameTime ?? 0,
+        self,
+        game.events?.Events,
+      ),
       collecting: this.snapshot.players.length === 0,
       message: this.snapshot.players.length ? undefined : '正在读取本局 10 名玩家的战绩…',
       error: undefined,

@@ -353,6 +353,38 @@ export interface RankInfo {
   losses: number;
 }
 
+/** 对局中实时维护的“每条命”时间线（只跟踪本人） */
+export interface LiveTimelineDeath {
+  timestampMs: number;
+  killerName?: string;
+  assistNames: string[];
+}
+
+export interface LiveTimelineLife {
+  index: number;
+  startMs: number;
+  endMs: number;
+  aliveMs: number;
+  /** 上一次阵亡到本次复活的等待时间，开局为 0 */
+  respawnMs: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  level?: number;
+  /** 当前这条命存活时没有值 */
+  death?: LiveTimelineDeath;
+}
+
+export interface LiveTimeline {
+  gameTimeMs: number;
+  lives: LiveTimelineLife[];
+  /** 当前是否处于阵亡状态 */
+  dead?: boolean;
+  /** 阵亡时剩余复活秒数 */
+  respawnTimer?: number;
+}
+
 /** 本局实时数据（来自 Live Client Data API） */
 export interface LiveStats {
   kills: number;
@@ -798,6 +830,8 @@ export interface Snapshot {
   liveSessionId?: string;
   /** 本局事件（击杀、推塔、小龙、大龙等），用于实时 AI */
   liveEvents?: LiveEvent[];
+  /** 本局实时的“每条命”时间线（只含本人） */
+  liveTimeline?: LiveTimeline;
   /** 大乱斗选人阶段的可选英雄（当前英雄 + 替补席） */
   aramChampions?: AramChampionOption[];
   localPlayer?: {
