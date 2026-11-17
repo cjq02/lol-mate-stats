@@ -1892,6 +1892,14 @@ test('近期摘要计算平均评分排名', () => {
   const noRank = summarize([makeGame(9, 'MID')]);
   assert.equal(noRank.avgRank, undefined);
   assert.equal(noRank.avgRankGames, undefined);
+
+  const mixed = summarize([
+    { ...makeGame(10, 'MID'), rank: 2, rankTotal: 10 },
+    makeGame(11, 'MID'),
+    { ...makeGame(12, 'MID'), rank: 4, rankTotal: 10 },
+  ]);
+  assert.equal(mixed.avgRank, 3, '只统计有名次的场次');
+  assert.equal(mixed.avgRankGames, 2);
 });
 
 console.log('timeline');

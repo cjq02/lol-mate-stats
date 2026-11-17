@@ -23,6 +23,7 @@ import {
   getPlayerBaselines,
   getPlayerChampionUsages,
   getPlayerRecentAnalyzedGames,
+  getPlayerMatchRanks,
   type PlayerHistorySample,
 } from './archive.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName } from './constants.js';
@@ -92,6 +93,8 @@ export class ReportCollector {
     { at: number; game: RawGame | null; ttlMs?: number }
   >();
   private readonly rankCache = new Map<string, { at: number; rank: RankInfo | null }>();
+  /** 补算近期对局平均排名的尝试时间，避免无法补齐时每 3 秒重复查库 */
+  private readonly recentRankAt = new Map<string, number>();
   /** 个人历史基线（每 5 分钟最多查一次） */
   private readonly baselineCache = new Map<
     string,
@@ -1116,6 +1119,41 @@ export class ReportCollector {
         this.championUsageCache.set(key, { at: now, usage: usages.get(key) });
       }
     }
+
+    // 旧报告缓存里的每局名次可能只有最新一场，打开卡片时按存档补算，
+    // 避免平均排名样本只有 1 场（战绩列表里明明有很多场）。
+    const rankTargets = targets.filter((report) => {
+      const games = report.games ?? [];
+      return games.some(
+        (game) => !game.tags?.includes('重开') && !(Number(game.rank) > 0),
+      );
+    });
+    await mapLimit(rankTargets, 5, async (report) => {
+      const puuid = report.puuid;
+      const games = report.games ?? [];
+      if (!puuid) return;
+      const missing = games
+        .filter((game) => !game.tags?.includes('重开') && !(Number(game.rank) > 0))
+        .map((game) => game.gameId)
+        .filter((gameId) => gameId > 0);
+      if (!missing.length) return;
+      const attemptKey = `${puuid}:${missing.join(',')}`;
+      const attemptedAt = this.recentRankAt.get(attemptKey);
+      if (attemptedAt && now - attemptedAt < TTL) return;
+      this.recentRankAt.set(attemptKey, now);
+
+      const ranks = await getPlayerMatchRanks(puuid, missing);
+      if (!ranks.size) return;
+      for (const game of games) {
+        const rank = ranks.get(game.gameId);
+        if (rank && !(Number(game.rank) > 0)) {
+          game.rank = rank.rank;
+          game.rankTotal = rank.total;
+        }
+      }
+      const enriched = withRecentAvgRank(report);
+      if (enriched !== report) report.recent = enriched.recent;
+    });
 
     for (const report of targets) {
       if (report.recent) {
