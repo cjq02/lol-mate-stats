@@ -2323,6 +2323,8 @@ test('对局时间线按阵亡切分每条命并计算补刀/金币增量', () =
     ],
   );
   assert.equal(self.lives[1].events?.[1]?.killerChampionName, '盲僧');
+  assert.deepEqual(self.lives[1].events?.[1]?.assistParticipantIds, [1]);
+  assert.deepEqual(self.lives[1].events?.[1]?.assistChampionNames, ['九尾妖狐']);
   assert.equal(self.damage, 20_000);
   assert.equal(self.damageTaken, 15_000);
   assert.deepEqual(self.killedBy, [

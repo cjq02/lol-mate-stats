@@ -3752,7 +3752,21 @@ function timelineVersusHtml(player, timeline) {
   </div>`;
 }
 
-function timelineLifeHtml(life, playersById) {  const death = life.death;
+function timelineEventChamp(participantId, championId, championName, playersById) {
+  const player = participantId
+    ? playersById.get(Number(participantId))
+    : undefined;
+  const label = championName || player?.championName || `#${championId || '?'}`;
+  const icon = participantId
+    ? timelineChampionIcon(participantId, playersById)
+    : iconHtml(championId ? champPath(championId) : null, label, 'sm', label);
+  return `<span class="timeline-event-champ">${icon}<span>${escapeHtml(
+    label,
+  )}</span></span>`;
+}
+
+function timelineLifeHtml(life, playersById, selfParticipantId) {
+  const death = life.death;
   const start = Number(life.startMs) || 0;
   const end = Number(life.endMs) || 0;
   const alive = Number(life.aliveMs) || 0;
@@ -3791,27 +3805,56 @@ function timelineLifeHtml(life, playersById) {  const death = life.death;
     ? `<div class="timeline-life-events">${events
         .map((event) => {
           const clock = gameClock((Number(event.timestampMs) || 0) / 1000);
+          const victim = timelineEventChamp(
+            event.participantId,
+            event.championId,
+            event.championName,
+            playersById,
+          );
+          const assistIds = Array.isArray(event.assistParticipantIds)
+            ? event.assistParticipantIds
+            : [];
+          const assistChampionIds = Array.isArray(event.assistChampionIds)
+            ? event.assistChampionIds
+            : [];
+          const assistNames = Array.isArray(event.assistChampionNames)
+            ? event.assistChampionNames
+            : [];
+          const assistEntries = assistIds.map((id, index) => ({
+            id,
+            championId: assistChampionIds[index],
+            name: assistNames[index],
+          }));
+          const assistHtml = (entry) =>
+            timelineEventChamp(
+              entry.id,
+              entry.championId,
+              entry.name,
+              playersById,
+            );
+          if (event.type === 'kill') {
+            const assisters = assistEntries.map(assistHtml).join('');
+            return `<span class="timeline-event kill"><em>${clock}</em>击杀 ${victim}${
+              assisters
+                ? ` <span class="timeline-event-assist">· 助攻 ${assisters}</span>`
+                : ''
+            }</span>`;
+          }
+          const others = assistEntries.filter(
+            (entry) => Number(entry.id) !== Number(selfParticipantId),
+          );
+          const meText = others.length
+            ? `我、${others.map(assistHtml).join('')}`
+            : '我';
+          const killer = timelineEventChamp(
+            event.killerParticipantId,
+            event.killerChampionId,
+            event.killerChampionName,
+            playersById,
+          );
           const label =
-            event.type === 'kill'
-              ? '击杀'
-              : Number(event.timestampMs) > end
-                ? '助攻（阵亡后）'
-                : '助攻';
-          const icon = event.participantId
-            ? timelineChampionIcon(event.participantId, playersById)
-            : iconHtml(
-                event.championId ? champPath(event.championId) : null,
-                event.championName ?? '',
-                'sm',
-                event.championName,
-              );
-          const title =
-            event.type === 'assist' && event.killerChampionName
-              ? ` title="协助 ${escapeHtml(event.killerChampionName)} 击杀"`
-              : '';
-          return `<span class="timeline-event ${event.type}"${title}><em>${clock}</em>${label} ${icon}<span>${escapeHtml(
-            event.championName ?? '敌方英雄',
-          )}</span></span>`;
+            Number(event.timestampMs) > end ? '助攻（阵亡后）' : '助攻';
+          return `<span class="timeline-event assist"><em>${clock}</em>${meText} ${label} ${killer} 击杀 ${victim}</span>`;
         })
         .join('')}</div>`
     : '';
@@ -3886,7 +3929,7 @@ function renderTimeline(timeline, detail, cached) {
   const versus = timelineVersusHtml(player, timeline);
   els.timelineList.innerHTML = lives.length
     ? `${versus}<div class="timeline-lives">${lives
-        .map((life) => timelineLifeHtml(life, playersById))
+        .map((life) => timelineLifeHtml(life, playersById, player.participantId))
         .join('')}</div>` +
       `<div class="timeline-note">整局造成 ${timelineGoldText(
         player.damage,

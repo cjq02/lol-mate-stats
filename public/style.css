@@ -1906,12 +1906,28 @@ body::before {
 .timeline-event {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 4px;
   padding: 2px 7px 2px 5px;
   border-radius: 7px;
   font-size: 11px;
   color: #cfe0ff;
   background: rgba(139, 184, 255, 0.09);
+}
+
+.timeline-event-champ {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.timeline-event-assist {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  color: var(--muted);
 }
 
 .timeline-event.kill {

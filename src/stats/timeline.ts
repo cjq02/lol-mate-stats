@@ -197,6 +197,10 @@ function lifeEventInfo(
   const victim = playersById.get(victimId);
   const killerId = type === 'assist' ? toNumber(event.killerId) || undefined : undefined;
   const killer = killerId ? playersById.get(killerId) : undefined;
+  const assistIds = (event.assistingParticipantIds ?? [])
+    .map((id) => toNumber(id))
+    .filter((id) => id > 0);
+  const assistPlayers = assistIds.map((id) => playersById.get(id));
   return {
     type,
     timestampMs: Math.round(toNumber(event.timestamp)),
@@ -206,6 +210,9 @@ function lifeEventInfo(
     killerParticipantId: killerId,
     killerChampionId: killer?.championId,
     killerChampionName: killer?.championName,
+    assistParticipantIds: assistIds,
+    assistChampionIds: assistPlayers.map((player) => player?.championId ?? 0),
+    assistChampionNames: assistPlayers.map((player) => player?.championName ?? ''),
   };
 }
 

@@ -719,6 +719,10 @@ export interface MatchTimelineEvent {
   killerParticipantId?: number;
   killerChampionId?: number;
   killerChampionName?: string;
+  /** 本次击杀/助攻的全部助攻者（含自己；展示时会排除自己） */
+  assistParticipantIds?: number[];
+  assistChampionIds?: number[];
+  assistChampionNames?: string[];
 }
 
 /** 从复活（或开局）到死亡的一段时间线 */
