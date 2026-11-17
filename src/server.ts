@@ -7,7 +7,7 @@ import {
 } from 'node:http';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
@@ -59,7 +59,10 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 const STATIC_FILES = new Set(['/', '/index.html', '/app.js', '/style.css']);
-const fileCache = new Map<string, { body: Buffer; type: string }>();
+const fileCache = new Map<
+  string,
+  { body: Buffer; type: string; mtimeMs: number; size: number }
+>();
 const assetCache = new Map<string, { at: number; result: { body: Buffer; contentType: string } }>();
 const ASSET_TTL = 60 * 60_000;
 /** 装备图标等静态资源落盘，客户端关闭后也能显示 */
@@ -1068,17 +1071,6 @@ async function prefetchItemIcons(source: DataSource, items: ItemTable): Promise<
 }
 
 async function serveStatic(pathname: string, res: ServerResponse): Promise<void> {
-  const cached = fileCache.get(pathname);
-  if (cached) {
-    res.writeHead(200, {
-      'Content-Type': cached.type,
-      'Content-Length': cached.body.byteLength,
-      'Cache-Control': 'no-cache',
-    });
-    res.end(cached.body);
-    return;
-  }
-
   const filePath = join(PUBLIC_DIR, pathname.replace(/^\//, ''));
   if (!filePath.startsWith(PUBLIC_DIR)) {
     res.writeHead(403).end('Forbidden');
@@ -1086,9 +1078,26 @@ async function serveStatic(pathname: string, res: ServerResponse): Promise<void>
   }
 
   try {
+    const info = await stat(filePath);
+    const cached = fileCache.get(pathname);
+    if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) {
+      res.writeHead(200, {
+        'Content-Type': cached.type,
+        'Content-Length': cached.body.byteLength,
+        'Cache-Control': 'no-cache',
+      });
+      res.end(cached.body);
+      return;
+    }
+
     const body = await readFile(filePath);
     const type = CONTENT_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
-    fileCache.set(pathname, { body, type });
+    fileCache.set(pathname, {
+      body,
+      type,
+      mtimeMs: info.mtimeMs,
+      size: info.size,
+    });
     res.writeHead(200, {
       'Content-Type': type,
       'Content-Length': body.byteLength,
