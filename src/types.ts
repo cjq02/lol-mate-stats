@@ -771,6 +771,10 @@ export interface MatchTimelinePlayer {
   killedChampions?: MatchTimelineChampionCount[];
   /** 我助攻击杀过的英雄及次数（按英雄去重） */
   assistedChampions?: MatchTimelineChampionCount[];
+  /** 存活期间累计没有补刀、也没有击杀/助攻/阵亡的时间（毫秒） */
+  idleAliveMs?: number;
+  /** 存活期间连续没有补刀、也没有击杀/助攻/阵亡的最长时间（毫秒） */
+  maxIdleMs?: number;
   lives: MatchTimelineLife[];
 }
 

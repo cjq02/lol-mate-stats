@@ -26,7 +26,7 @@ import {
 import { queueName } from './constants.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 import { championProficiency } from './proficiency.js';
-import { getDb, readMeta, withTransaction, writeMeta } from './store.js';
+import { getDb, getSavedMatchTimeline, readMeta, saveTimelineIdleStats, withTransaction, writeMeta } from './store.js';
 import { summarizeTimeStats, type TimeStatsSummary } from './time-stats.js';
 
 /** 长期保存的单场战绩（按玩家维度查询） */
@@ -137,6 +137,8 @@ interface ArchivedParticipant {
   vision: number;
   position: string | null;
   score: number | null;
+  /** 时间线里连续无成长的最长秒数，旧数据为 null */
+  idle_streak_seconds: number | null;
 }
 
 /** 从存档数据重新推断一场对局的坑/逃跑标签（以 puuid 的视角） */
@@ -181,6 +183,10 @@ function archivedGameTags(
     position: (participant.position as Lane | null) ?? undefined,
     damageTaken: participant.damage_taken,
     heal: participant.heal,
+    idleStreakSeconds:
+      participant.idle_streak_seconds === null
+        ? undefined
+        : participant.idle_streak_seconds,
   }));
   const statsByTeam = new Map<number, AfkRelativeStats[]>();
   gameParticipants.forEach((participant, index) => {
@@ -257,7 +263,7 @@ async function loadParticipantsByGame(
   if (!gameIds.length) return result;
   const placeholders = gameIds.map(() => '?').join(',');
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT game_id, puuid, team_id, win, kills, deaths, assists, cs, gold, damage, damage_taken, heal, vision, position, score
+    `SELECT game_id, puuid, team_id, win, kills, deaths, assists, cs, gold, damage, damage_taken, heal, vision, position, score, idle_streak_seconds
      FROM match_participants
      WHERE game_id IN (${placeholders})`,
     gameIds,
@@ -280,6 +286,10 @@ async function loadParticipantsByGame(
       vision: Number(row.vision),
       position: (row.position as string | null) ?? null,
       score: row.score === null ? null : Number(row.score),
+      idle_streak_seconds:
+        row.idle_streak_seconds === null || row.idle_streak_seconds === undefined
+          ? null
+          : Number(row.idle_streak_seconds),
     });
     result.set(gameId, list);
   }
@@ -453,7 +463,16 @@ export async function archiveGames(
       }
       return archived;
     });
-    if (done) for (const gameId of done) known.add(gameId);
+    if (done) {
+      for (const gameId of done) known.add(gameId);
+      // 如果时间线先于存档写入，补一次“无成长存活时长”，避免参与者行被重建后丢失
+      await Promise.all(
+        done.map(async (gameId) => {
+          const timeline = await getSavedMatchTimeline(gameId);
+          if (timeline) await saveTimelineIdleStats(timeline);
+        }),
+      );
+    }
   } catch {
     /* 写入失败时保留内存中的 known 不变，下次采集会重试 */
   }

@@ -284,6 +284,56 @@ function buildLives(
 }
 
 /**
+ * 统计存活期间“没有补刀、也没有击杀/助攻/阵亡”的时间，用于排除逃跑误判。
+ * 只看补刀和战斗事件：金币、经验和等级在大乱斗里即使挂机也会增长，不能当活动信号。
+ * 只统计活着的时间，阵亡和复活等待不会算进 idle。
+ */
+function measureIdleAlive(
+  samples: FrameSample[],
+  lives: MatchTimelineLife[],
+  eventTimes: number[],
+): { idleAliveMs: number; maxIdleMs: number } {
+  let idleAliveMs = 0;
+  let maxIdleMs = 0;
+  let streakMs = 0;
+  const events = [...eventTimes].sort((a, b) => a - b);
+
+  for (const life of lives) {
+    if (life.aliveMs <= 0) continue;
+    const points = [
+      life.startMs,
+      ...samples
+        .map((sample) => sample.t)
+        .filter((t) => t > life.startMs && t < life.endMs),
+      life.endMs,
+    ].sort((a, b) => a - b);
+
+    for (let index = 1; index < points.length; index += 1) {
+      const start = points[index - 1]!;
+      const end = points[index]!;
+      const span = end - start;
+      if (span <= 0) continue;
+      const from = sampleAt(samples, start);
+      const to = sampleAt(samples, end);
+      const fought = events.some((t) => t >= start && t <= end);
+      const active = fought || to.cs - from.cs > 0;
+      if (active) {
+        streakMs = 0;
+        continue;
+      }
+      idleAliveMs += span;
+      streakMs += span;
+      if (streakMs > maxIdleMs) maxIdleMs = streakMs;
+    }
+  }
+
+  return {
+    idleAliveMs: Math.round(idleAliveMs),
+    maxIdleMs: Math.round(maxIdleMs),
+  };
+}
+
+/**
  * 把 LCU 对局时间线解析成“每条命”：
  * 阵亡事件切分时间段，分钟快照提供补刀/金币增量，等级用于估算复活等待。
  * 官方时间线没有伤害字段，伤害/承伤只能保留整局总数。
@@ -332,6 +382,20 @@ export function parseMatchTimeline(
         })
         .sort((a, b) => b.count - a.count || a.championId - b.championId);
     };
+    const samples = buildSamples(frames, meta.participantId);
+    const lives = buildLives(
+      deaths,
+      kills,
+      assists,
+      samples,
+      durationMs,
+      playersById,
+    );
+    const idle = measureIdleAlive(samples, lives, [
+      ...deaths.map((event) => toNumber(event.timestamp)),
+      ...kills.map((event) => toNumber(event.timestamp)),
+      ...assists.map((event) => toNumber(event.timestamp)),
+    ]);
     return {
       ...meta,
       killedBy: countChampions(deaths.map((event) => toNumber(event.killerId))),
@@ -346,14 +410,9 @@ export function parseMatchTimeline(
       assistedChampions: countChampions(
         assists.map((event) => toNumber(event.victimId)),
       ),
-      lives: buildLives(
-        deaths,
-        kills,
-        assists,
-        buildSamples(frames, meta.participantId),
-        durationMs,
-        playersById,
-      ),
+      idleAliveMs: idle.idleAliveMs,
+      maxIdleMs: idle.maxIdleMs,
+      lives,
     };
   });
 

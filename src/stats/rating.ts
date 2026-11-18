@@ -443,7 +443,13 @@ export interface AfkRelativeStats extends AfkLikeStats {
   damageTaken?: number;
   /** 治疗量，用于识别有治疗行为的辅助 */
   heal?: number;
+  /** 时间线里连续没有补刀和战斗事件的最长秒数，来自 match_timelines */
+  idleStreakSeconds?: number;
 }
+
+/** 时间线显示每隔这么久就有补刀或战斗参与，就不再判逃跑 */
+export const AFK_IDLE_VETO_MINUTES = 5;
+export const AFK_IDLE_VETO_SECONDS = AFK_IDLE_VETO_MINUTES * 60;
 
 /**
  * “长时间挂机/逃跑”推断：
@@ -454,8 +460,16 @@ export function isAfkLikeRelative(
   player: AfkRelativeStats,
   team: AfkRelativeStats[],
 ): boolean {
-  if (isAfkLikeStats(player)) return true;
   if (player.durationMin < 8) return false;
+  // 时间线能证明每隔几分钟就有补刀或战斗参与时，说明玩家一直在打，
+  // 即使整局数据被阵亡或位置拖累，也只判坑、不判逃跑。
+  if (
+    player.idleStreakSeconds !== undefined &&
+    player.idleStreakSeconds < AFK_IDLE_VETO_SECONDS
+  ) {
+    return false;
+  }
+  if (isAfkLikeStats(player)) return true;
   const others = team.filter((item) => item !== player);
   if (!others.length) return false;
 

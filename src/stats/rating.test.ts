@@ -12,7 +12,7 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
+import { AFK_IDLE_VETO_SECONDS, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
@@ -1233,6 +1233,58 @@ test('真正没有参与对局的玩家仍判逃跑', () => {
   assert.equal(isAfkLikeRelative(afk, [afk, normal]), true);
 });
 
+test('时间线证明一直在补刀或参战时撤销逃跑判定', () => {
+  const player = {
+    durationMin: 20,
+    gold: 3000,
+    damage: 500,
+    cs: 0,
+    kills: 0,
+    deaths: 0,
+    assists: 0,
+    visionScore: 0,
+    position: 'MID' as Lane,
+    killParticipation: 0,
+    damageTaken: 1600,
+    heal: 0,
+  };
+  const normal = {
+    durationMin: 20,
+    gold: 12000,
+    damage: 25000,
+    cs: 150,
+    kills: 8,
+    deaths: 4,
+    assists: 6,
+    visionScore: 30,
+    position: 'MID' as Lane,
+    killParticipation: 0.5,
+    damageTaken: 20000,
+    heal: 1000,
+  };
+  assert.equal(
+    isAfkLikeRelative(
+      { ...player, idleStreakSeconds: AFK_IDLE_VETO_SECONDS - 60 },
+      [player, normal],
+    ),
+    false,
+    '时间线证明最多 4 分钟没有补刀或参战，应撤销逃跑判定',
+  );
+  assert.equal(
+    isAfkLikeRelative(
+      { ...player, idleStreakSeconds: AFK_IDLE_VETO_SECONDS + 60 },
+      [player, normal],
+    ),
+    true,
+    '连续 6 分钟没有补刀或参战时，时间线不能排除逃跑',
+  );
+  assert.equal(
+    isAfkLikeRelative({ ...player, idleStreakSeconds: 0 }, [player, normal]),
+    false,
+    '全程都有补刀或战斗参与时不应判逃跑',
+  );
+});
+
 test('极端低输出且高死亡的对局按巨坑封顶', () => {
   const scores = percentileScores([
     {
@@ -2388,6 +2440,63 @@ test('没有阵亡时只生成一条存活到结束的时间线', () => {
   assert.equal(self.lives[0].cs, 10);
   assert.equal(self.lives[0].gold, 1_000);
   assert.equal(self.lives[0].death, undefined);
+});
+
+test('时间线只统计存活期间无补刀和战斗的时间', () => {
+  const game: RawGame = {
+    gameId: 44,
+    gameDuration: 480,
+    participants: [
+      {
+        participantId: 1,
+        teamId: 100,
+        championId: 103,
+        stats: { kills: 0, deaths: 0, assists: 0 },
+      },
+      {
+        participantId: 2,
+        teamId: 100,
+        championId: 64,
+        stats: { kills: 0, deaths: 0, assists: 0 },
+      },
+    ],
+    participantIdentities: [
+      { participantId: 1, player: { puuid: 'idle', gameName: '挂机', tagLine: '0001' } },
+      { participantId: 2, player: { puuid: 'active', gameName: '活跃', tagLine: '0002' } },
+    ],
+  };
+  const frame = (timestamp: number, minute: number) => ({
+    timestamp,
+    participantFrames: {
+      '1': {
+        participantId: 1,
+        minionsKilled: minute <= 6 ? 0 : (minute - 6) * 5,
+        totalGold: minute <= 6 ? 500 : 500 + (minute - 6) * 300,
+        level: minute <= 6 ? 1 : 2,
+      },
+      '2': {
+        participantId: 2,
+        minionsKilled: minute * 5,
+        totalGold: minute * 300,
+        level: 1 + Math.floor(minute / 2),
+      },
+    },
+  });
+  const timeline = parseMatchTimeline(game, {
+    frames: Array.from({ length: 8 }, (_, index) =>
+      frame((index + 1) * 60_000, index + 1),
+    ),
+  });
+
+  const idle = timeline.players.find((player) => player.puuid === 'idle');
+  assert.ok(idle);
+  assert.equal(idle.maxIdleMs, 360_000, '前 6 分钟没有补刀和战斗应算作连续空闲');
+  assert.equal(idle.idleAliveMs, 360_000);
+
+  const active = timeline.players.find((player) => player.puuid === 'active');
+  assert.ok(active);
+  assert.equal(active.maxIdleMs, 0, '每分钟都有补刀时不应出现空闲');
+  assert.equal(active.idleAliveMs, 0);
 });
 
 test('复活等待按等级估算，并随游戏时间放大', () => {

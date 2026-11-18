@@ -121,7 +121,7 @@ async function connect(): Promise<Pool | undefined> {
 }
 
 /** 表结构版本：每次新增迁移递增，旧库启动时按顺序补齐 */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 interface SchemaMigration {
   version: number;
@@ -235,6 +235,22 @@ const SCHEMA_MIGRATIONS: SchemaMigration[] = [
            AND JSON_VALID(p.tags)
            AND JSON_CONTAINS(p.tags, JSON_QUOTE('重开'))`,
       );
+    },
+  },
+  {
+    version: 6,
+    describe: '时间线无成长存活时长',
+    up: async (db) => {
+      if (!(await hasColumn(db, 'match_participants', 'idle_alive_seconds'))) {
+        await db.query(
+          'ALTER TABLE match_participants ADD COLUMN idle_alive_seconds INT NULL',
+        );
+      }
+      if (!(await hasColumn(db, 'match_participants', 'idle_streak_seconds'))) {
+        await db.query(
+          'ALTER TABLE match_participants ADD COLUMN idle_streak_seconds INT NULL',
+        );
+      }
     },
   },
 ];
@@ -355,6 +371,8 @@ async function ensureSchema(db: Pool): Promise<void> {
        is_bot TINYINT NOT NULL DEFAULT 0,
        score DOUBLE NULL,
        tags VARCHAR(255) NULL,
+       idle_alive_seconds INT NULL,
+       idle_streak_seconds INT NULL,
        PRIMARY KEY (game_id, participant_id),
        KEY idx_mp_puuid (puuid)
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -764,4 +782,33 @@ export async function saveMatchTimeline(timeline: MatchTimeline): Promise<void> 
   } catch {
     /* 缓存写入失败不影响本次返回 */
   }
+  await saveTimelineIdleStats(timeline);
+}
+
+/**
+ * 把时间线里的“存活但没有补刀/战斗事件”的时长同步到参与者表。
+ * 历史战绩重新推断逃跑标签时可以直接读这两列，不再解析时间线 JSON。
+ */
+export async function saveTimelineIdleStats(timeline: MatchTimeline): Promise<void> {
+  const db = await getDb();
+  if (!db || !timeline?.gameId || !timeline.players?.length) return;
+  await Promise.all(
+    timeline.players.map((player) => {
+      if (!player.participantId) return Promise.resolve();
+      return db
+        .query(
+          `UPDATE match_participants
+           SET idle_alive_seconds = ?, idle_streak_seconds = ?
+           WHERE game_id = ? AND participant_id = ?`,
+          [
+            Math.max(0, Math.round((player.idleAliveMs ?? 0) / 1000)),
+            Math.max(0, Math.round((player.maxIdleMs ?? 0) / 1000)),
+            timeline.gameId,
+            player.participantId,
+          ],
+        )
+        .then(() => undefined)
+        .catch(() => undefined);
+    }),
+  );
 }
