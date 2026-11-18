@@ -805,7 +805,8 @@ export async function saveMatchTimeline(timeline: MatchTimeline): Promise<void> 
 
 /**
  * 把时间线里的“存活但没有补刀/战斗事件”和“原地不动”的时长同步到参与者表。
- * 历史战绩重新推断逃跑标签时可以直接读这几列，不再解析时间线 JSON。
+ * 优先按 puuid 匹配：结算数据和 game-timelines 的 participantId 偶尔会错位，
+ * 只按 participantId 写会把挂机时长记到另一个玩家身上。
  */
 export async function saveTimelineAfkStats(timeline: MatchTimeline): Promise<void> {
   const db = await getDb();
@@ -818,13 +819,15 @@ export async function saveTimelineAfkStats(timeline: MatchTimeline): Promise<voi
           `UPDATE match_participants
            SET idle_alive_seconds = ?, idle_streak_seconds = ?,
                stationary_alive_seconds = ?, stationary_streak_seconds = ?
-           WHERE game_id = ? AND participant_id = ?`,
+           WHERE game_id = ?
+             AND (puuid = ? OR (puuid IS NULL AND participant_id = ?))`,
           [
             Math.max(0, Math.round((player.idleAliveMs ?? 0) / 1000)),
             Math.max(0, Math.round((player.maxIdleMs ?? 0) / 1000)),
             Math.max(0, Math.round((player.stationaryAliveMs ?? 0) / 1000)),
             Math.max(0, Math.round((player.maxStationaryMs ?? 0) / 1000)),
             timeline.gameId,
+            player.puuid ?? null,
             player.participantId,
           ],
         )

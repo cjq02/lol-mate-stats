@@ -87,12 +87,30 @@ export function afkParticipantIds(
   const timelineById = new Map(
     (timeline?.players ?? []).map((player) => [Number(player.participantId), player]),
   );
+  const timelineByPuuid = new Map(
+    (timeline?.players ?? [])
+      .filter((player) => Boolean(player.puuid))
+      .map((player) => [player.puuid as string, player] as const),
+  );
+  const puuidByParticipantId = new Map<number, string>();
+  for (const identity of game.participantIdentities ?? []) {
+    const participantId = toNumber(identity.participantId);
+    const puuid = identity.player?.puuid;
+    if (participantId > 0 && typeof puuid === 'string' && puuid) {
+      puuidByParticipantId.set(participantId, puuid);
+    }
+  }
   const afkStatsByIndex: Array<AfkRelativeStats | undefined> = participants.map(
     (participant) => {
       const analyzed = analyzeParticipant(game, participant, championMap, scores);
       if (!analyzed) return undefined;
       const stats = participant.stats ?? {};
-      const timelinePlayer = timelineById.get(toNumber(participant.participantId));
+      const participantId = toNumber(participant.participantId);
+      const puuid = puuidByParticipantId.get(participantId);
+      // 结算数据和 game-timelines 的 participantId 偶尔会错位，优先按 puuid 找
+      const timelinePlayer =
+        (puuid ? timelineByPuuid.get(puuid) : undefined) ??
+        timelineById.get(participantId);
       return {
         durationMin: analyzed.durationMin,
         gold: analyzed.gold,

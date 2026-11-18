@@ -11,7 +11,7 @@ import type {
 import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
-import { badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
+import { afkParticipantIds, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
 import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
@@ -1326,6 +1326,93 @@ test('时间线显示长时间原地不动时判逃跑', () => {
     ),
     true,
     '原地不动满 3 分钟时即使前期有击杀助攻也判逃跑',
+  );
+});
+
+test('时间线与存档 participantId 错位时按 puuid 判断逃跑', () => {
+  const game: RawGame = {
+    gameId: 999,
+    queueId: 450,
+    gameDuration: 1200,
+    participants: [
+      {
+        participantId: 1,
+        teamId: 100,
+        championId: 103,
+        stats: {
+          win: true,
+          kills: 5,
+          deaths: 3,
+          assists: 10,
+          totalDamageDealtToChampions: 30000,
+          totalDamageTaken: 25000,
+          goldEarned: 13000,
+          totalMinionsKilled: 150,
+          visionScore: 20,
+          totalHeal: 1000,
+        },
+      },
+      {
+        participantId: 2,
+        teamId: 100,
+        championId: 64,
+        stats: {
+          win: true,
+          kills: 0,
+          deaths: 0,
+          assists: 0,
+          totalDamageDealtToChampions: 500,
+          totalDamageTaken: 800,
+          goldEarned: 4000,
+          totalMinionsKilled: 0,
+          visionScore: 0,
+          totalHeal: 0,
+        },
+      },
+    ],
+    participantIdentities: [
+      { participantId: 1, player: { puuid: 'normal', gameName: '正常', tagLine: '0001' } },
+      { participantId: 2, player: { puuid: 'afk', gameName: '挂机', tagLine: '0002' } },
+    ],
+  };
+  const timeline: MatchTimeline = {
+    gameId: 999,
+    durationMs: 1_200_000,
+    players: [
+      {
+        participantId: 1,
+        puuid: 'afk',
+        name: '挂机',
+        championId: 64,
+        teamId: 100,
+        kills: 0,
+        deaths: 0,
+        assists: 0,
+        damage: 500,
+        damageTaken: 800,
+        maxStationaryMs: 600_000,
+        lives: [],
+      },
+      {
+        participantId: 2,
+        puuid: 'normal',
+        name: '正常',
+        championId: 103,
+        teamId: 100,
+        kills: 5,
+        deaths: 3,
+        assists: 10,
+        damage: 30000,
+        damageTaken: 25000,
+        maxStationaryMs: 0,
+        lives: [],
+      },
+    ],
+  };
+  assert.deepEqual(
+    [...afkParticipantIds(game, new Map(), undefined, timeline)],
+    [2],
+    '应按 puuid 把挂机时长对应到参与者 2，而不是按错位的 participantId',
   );
 });
 
