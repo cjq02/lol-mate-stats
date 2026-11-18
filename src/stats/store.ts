@@ -782,10 +782,14 @@ export async function getSavedMatchTimeline(
   }
 }
 
-/** 保存对局时间线，供客户端关闭后继续查看 */
-export async function saveMatchTimeline(timeline: MatchTimeline): Promise<void> {
+/**
+ * 保存对局时间线，供客户端关闭后继续查看。
+ * 返回是否成功写入时间线；回填工具用它统计真实成功数。
+ */
+export async function saveMatchTimeline(timeline: MatchTimeline): Promise<boolean> {
   const db = await getDb();
-  if (!db || !timeline?.gameId) return;
+  if (!db || !timeline?.gameId) return false;
+  let saved = false;
   try {
     await db.query<ResultSetHeader>(
       `INSERT INTO match_timelines (game_id, at, payload)
@@ -797,10 +801,12 @@ export async function saveMatchTimeline(timeline: MatchTimeline): Promise<void> 
         JSON.stringify({ version: MATCH_TIMELINE_CACHE_VERSION, timeline }),
       ],
     );
+    saved = true;
   } catch {
     /* 缓存写入失败不影响本次返回 */
   }
   await saveTimelineAfkStats(timeline);
+  return saved;
 }
 
 /**

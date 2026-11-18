@@ -63,8 +63,10 @@ import { gradeOf } from './stats/rating.js';
 import { premadeSizesByPuuid } from './stats/premade.js';
 import { buildLiveTimeline, type LiveTimelineSample } from './stats/live-timeline.js';
 import { parseMatchTimeline } from './stats/timeline.js';
+import { backfillTimelines } from './stats/timeline-backfill.js';
 import { summarizeMatchSummaries, type TimeStatsSummary } from './stats/time-stats.js';
 import {
+  DB_CONFIGURED,
   getSavedMatchTimeline,
   linkLiveAnalysisToGameByTime,
   getSavedMatchDetail,
@@ -177,6 +179,8 @@ export class LiveSource implements DataSource {
   private gameEndBaseline = 0;
   private prewarmInFlight = false;
   private prewarmedGameId = 0;
+  /** 首次连上客户端后补齐最近缺失的时间线，只执行一次 */
+  private timelineBackfillStarted = false;
   private lastPhase = 'None';
   /** 记录“本局之前最新一局”的重试时间，避免对局开始时阻塞界面 */
   private inGameRecordAt = 0;
@@ -1571,6 +1575,7 @@ export class LiveSource implements DataSource {
         true,
       );
       this.attachEvents(connection);
+      this.startTimelineBackfill(api);
       void api
         .getRegion()
         .then((region) => {
@@ -1594,6 +1599,29 @@ export class LiveSource implements DataSource {
       });
       return undefined;
     }
+  }
+
+  /**
+   * 后台补齐最近缺失的时间线。新版本才有的挂机判断、每条命详情和 AI 复盘
+   * 都依赖时间线，历史对局打开得少时缺口会很大；这里每次启动最多补 100 场。
+   */
+  private startTimelineBackfill(api: LcuApi): void {
+    if (this.timelineBackfillStarted || !DB_CONFIGURED) return;
+    this.timelineBackfillStarted = true;
+    void backfillTimelines({
+      api,
+      limit: 100,
+      windowGames: 200,
+      concurrency: 2,
+      quiet: this.options.quiet,
+    }).catch((error) => {
+      if (!this.options.quiet) {
+        logTag(
+          'timeline',
+          `后台回填跳过：${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    });
   }
 
   private attachEvents(connection: LcuConnection): void {

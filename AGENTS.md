@@ -24,6 +24,7 @@
 | 单次输出当前对局 | `npm run once` |
 | 查询指定召唤师 | `npm run scan -- "名字#TAG"` |
 | 诊断环境 | `npm run doctor` |
+| 回填对局时间线 | `npm run db:backfill-timelines -- --limit 200` |
 | 重算历史评分 | `npm run db:recompute-scores` |
 
 提交前统一执行：`npm run typecheck && npm test`。`npm test` 只运行 `src/stats/rating.test.ts`，新增测试也加在这个文件。

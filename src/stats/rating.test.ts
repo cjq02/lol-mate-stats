@@ -2637,6 +2637,180 @@ test('时间线只统计存活期间无补刀和战斗的时间', () => {
   assert.equal(active.stationaryAliveMs, 0);
 });
 
+test('时间线空闲统计不包含阵亡和复活等待', () => {
+  const game: RawGame = {
+    gameId: 45,
+    gameDuration: 300,
+    participants: [
+      {
+        participantId: 1,
+        teamId: 100,
+        championId: 103,
+        stats: { kills: 0, deaths: 1, assists: 0 },
+      },
+      {
+        participantId: 2,
+        teamId: 200,
+        championId: 64,
+        stats: { kills: 1, deaths: 0, assists: 0 },
+      },
+    ],
+    participantIdentities: [
+      { participantId: 1, player: { puuid: 'idle-dead', gameName: '挂机', tagLine: '0001' } },
+      { participantId: 2, player: { puuid: 'killer', gameName: '击杀者', tagLine: '0002' } },
+    ],
+  };
+  const frame = (timestamp: number) => ({
+    timestamp,
+    participantFrames: {
+      '1': {
+        participantId: 1,
+        minionsKilled: 0,
+        jungleMinionsKilled: 0,
+        totalGold: 500 + timestamp / 1000,
+        level: 1,
+        position: { x: 1000, y: 1000 },
+      },
+      '2': {
+        participantId: 2,
+        minionsKilled: 0,
+        jungleMinionsKilled: 0,
+        totalGold: 500,
+        level: 1,
+        position: { x: 5000, y: 5000 },
+      },
+    },
+  });
+  const timeline = parseMatchTimeline(game, {
+    frames: [
+      {
+        ...frame(60_000),
+        events: [
+          { type: 'CHAMPION_KILL', timestamp: 60_000, killerId: 2, victimId: 1 },
+        ],
+      },
+      frame(120_000),
+      frame(180_000),
+      frame(240_000),
+      frame(300_000),
+    ],
+  });
+
+  const self = timeline.players.find((player) => player.puuid === 'idle-dead');
+  assert.ok(self);
+  assert.equal(self.lives.length, 2, '阵亡后应切出第二条命');
+  assert.equal(self.lives[1]?.startMs, 70_000, '1 级复活等待 10 秒');
+  assert.equal(
+    self.maxIdleMs,
+    230_000,
+    '只统计 70-300 秒的存活时间，60-70 秒的阵亡等待不应计入',
+  );
+  assert.equal(self.idleAliveMs, 230_000);
+  assert.equal(self.maxStationaryMs, 230_000);
+  assert.equal(self.lives[0]?.death?.killerName, '击杀者#0002');
+});
+
+test('时间线支持毫秒格式的 gameDuration', () => {
+  const game: RawGame = {
+    gameId: 46,
+    gameDuration: 300_000,
+    participants: [
+      {
+        participantId: 1,
+        teamId: 100,
+        championId: 103,
+        stats: { kills: 0, deaths: 0, assists: 0 },
+      },
+    ],
+    participantIdentities: [
+      { participantId: 1, player: { puuid: 'ms-duration', gameName: '毫秒', tagLine: '0001' } },
+    ],
+  };
+  const timeline = parseMatchTimeline(game, {
+    frames: [
+      {
+        timestamp: 60_000,
+        participantFrames: {
+          '1': { participantId: 1, minionsKilled: 5, totalGold: 500, level: 2 },
+        },
+      },
+      {
+        timestamp: 300_000,
+        participantFrames: {
+          '1': { participantId: 1, minionsKilled: 25, totalGold: 5_000, level: 9 },
+        },
+      },
+    ],
+  });
+  assert.equal(timeline.durationMs, 300_000, '300000 应视为毫秒，而不是再乘 1000');
+  assert.equal(timeline.players[0]?.lives[0]?.endMs, 300_000);
+});
+
+test('击杀事件也会重置空闲和原地不动计时', () => {
+  const game: RawGame = {
+    gameId: 47,
+    gameDuration: 240,
+    participants: [
+      {
+        participantId: 1,
+        teamId: 100,
+        championId: 103,
+        stats: { kills: 1, deaths: 0, assists: 0 },
+      },
+      {
+        participantId: 2,
+        teamId: 200,
+        championId: 64,
+        stats: { kills: 0, deaths: 1, assists: 0 },
+      },
+    ],
+    participantIdentities: [
+      { participantId: 1, player: { puuid: 'fighter', gameName: '参战者', tagLine: '0001' } },
+      { participantId: 2, player: { puuid: 'victim', gameName: '被击杀', tagLine: '0002' } },
+    ],
+  };
+  const frame = (timestamp: number) => ({
+    timestamp,
+    participantFrames: {
+      '1': {
+        participantId: 1,
+        minionsKilled: 0,
+        jungleMinionsKilled: 0,
+        totalGold: 500,
+        level: 1,
+        position: { x: 1000, y: 1000 },
+      },
+      '2': {
+        participantId: 2,
+        minionsKilled: 0,
+        jungleMinionsKilled: 0,
+        totalGold: 500,
+        level: 1,
+        position: { x: 5000, y: 5000 },
+      },
+    },
+  });
+  const timeline = parseMatchTimeline(game, {
+    frames: [
+      {
+        ...frame(60_000),
+        events: [
+          { type: 'CHAMPION_KILL', timestamp: 120_000, killerId: 1, victimId: 2 },
+        ],
+      },
+      frame(120_000),
+      frame(180_000),
+      frame(240_000),
+    ],
+  });
+
+  const self = timeline.players.find((player) => player.puuid === 'fighter');
+  assert.ok(self);
+  assert.equal(self.idleAliveMs, 120_000, '击杀前后两段各算一次空闲');
+  assert.equal(self.maxIdleMs, 60_000, '击杀应把连续空闲打断');
+  assert.equal(self.maxStationaryMs, 60_000, '击杀也应重置原地不动计时');
+});
+
 test('复活等待按等级估算，并随游戏时间放大', () => {
   assert.equal(estimateRespawnMs(1, 60_000), 10_000);
   assert.equal(estimateRespawnMs(4, 150_000), 12_000);

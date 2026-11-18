@@ -20,6 +20,7 @@
     "demo": "tsx --disable-warning=ExperimentalWarning src/index.ts demo",
     "doctor": "tsx --disable-warning=ExperimentalWarning src/index.ts doctor",
     "db:migrate": "tsx --disable-warning=ExperimentalWarning src/tools/migrate-sqlite-to-mysql.ts",
+    "db:backfill-timelines": "tsx --disable-warning=ExperimentalWarning src/tools/backfill-timelines.ts",
     "db:recompute-scores": "tsx --disable-warning=ExperimentalWarning src/tools/recompute-match-scores.ts",
     "analyze:zhangmeng": "node scripts/analyze-zhangmeng-score.mjs",
     "test": "tsx --disable-warning=ExperimentalWarning src/stats/rating.test.ts",
