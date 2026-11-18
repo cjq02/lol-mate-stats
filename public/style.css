@@ -3249,6 +3249,18 @@ body::before {
   letter-spacing: 0.08em;
 }
 
+/* 本局评分排名：1–10 名从金到石板灰，颜色和字重逐级变淡变细 */
+.rank-tone-1 { --rank-color: #ffd166; --rank-weight: 800; }
+.rank-tone-2 { --rank-color: #f4c46e; --rank-weight: 800; }
+.rank-tone-3 { --rank-color: #e4b47a; --rank-weight: 800; }
+.rank-tone-4 { --rank-color: #cfa78c; --rank-weight: 700; }
+.rank-tone-5 { --rank-color: #b8a79f; --rank-weight: 700; }
+.rank-tone-6 { --rank-color: #a2abb5; --rank-weight: 700; }
+.rank-tone-7 { --rank-color: #8c9dae; --rank-weight: 600; }
+.rank-tone-8 { --rank-color: #788ca0; --rank-weight: 600; }
+.rank-tone-9 { --rank-color: #657a91; --rank-weight: 500; }
+.rank-tone-10 { --rank-color: #536981; --rank-weight: 500; }
+
 /* 本局评分排名，叠在评分环左上角，不参与卡片布局 */
 .ring-rank {
   position: absolute;
@@ -3262,12 +3274,33 @@ body::before {
   padding: 0 6px;
   border-radius: 999px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: var(--rank-weight, 800);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: #08101f;
   background: var(--rank-color, #9aa8c7);
   box-shadow: 0 0 0 1px rgba(8, 16, 31, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* 名次越靠后，徽标从实心粗描边过渡到空心细描边 */
+.ring-rank.rank-tier-top {
+  box-shadow: 0 0 0 2px rgba(8, 16, 31, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.ring-rank.rank-tier-mid {
+  box-shadow: 0 0 0 1.5px rgba(8, 16, 31, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.ring-rank.rank-tier-low {
+  color: var(--rank-color, #9aa8c7);
+  background: color-mix(in srgb, var(--rank-color, #9aa8c7) 18%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--rank-color, #9aa8c7), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.ring-rank.rank-tier-min {
+  color: var(--rank-color, #9aa8c7);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--rank-color, #9aa8c7), 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 .ring.loading {
@@ -3823,7 +3856,7 @@ body::before {
   font-size: 21px;
   font-weight: 800;
   line-height: 1;
-  color: var(--avg-rank, #cfe7ff);
+  color: var(--rank-color, #cfe7ff);
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 14px rgba(125, 185, 255, 0.28);
 }
@@ -4018,7 +4051,8 @@ body::before {
 
 .game-row .rank {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--rank-weight, 800);
+  color: var(--rank-color, #9aa8c7);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

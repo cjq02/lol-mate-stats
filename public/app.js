@@ -368,23 +368,23 @@ const TIME_STATS_SCORE_TONES = [
   { min: -Infinity, className: 'avg-low', color: '#ff4d6d' },
 ];
 
-/** 评分排名徽标按名次取色，名次越靠前越亮；相邻名次尽量拉开色相 */
-const RANK_COLORS = [
-  '#ffd166', // 1 金
-  '#cbd5e1', // 2 银
-  '#f97316', // 3 铜
-  '#a3e635', // 4 青柠
-  '#34d399', // 5 绿
-  '#22d3ee', // 6 青
-  '#60a5fa', // 7 蓝
-  '#818cf8', // 8 靛
-  '#c084fc', // 9 紫
-  '#fb7185', // 10 玫红
+/** 评分排名徽标按名次取色：1–10 名从金到石板灰，颜色和字重逐级变淡变细 */
+const RANK_TIERS = [
+  'top', // 1
+  'top', // 2
+  'top', // 3
+  'mid', // 4
+  'mid', // 5
+  'mid', // 6
+  'low', // 7
+  'low', // 8
+  'min', // 9
+  'min', // 10
 ];
 
-function rankColor(rank) {
-  const index = Math.min(Math.max(Number(rank) || 1, 1), RANK_COLORS.length) - 1;
-  return RANK_COLORS[index];
+function rankClass(rank) {
+  const index = Math.min(Math.max(Number(rank) || 1, 1), RANK_TIERS.length);
+  return `rank-tone-${index} rank-tier-${RANK_TIERS[index - 1]}`;
 }
 
 function ratingColor(rating, stats) {
@@ -809,7 +809,7 @@ function buildCard(player, isLocal, options = {}) {
   const rank = Number.isFinite(options.rank) ? options.rank : null;
   const rankBadge =
     rank !== null
-      ? `<span class="ring-rank" style="--rank-color:${rankColor(rank)}" title="本局评分排名第 ${rank}${
+      ? `<span class="ring-rank ${rankClass(rank)}" title="本局评分排名第 ${rank}${
           options.rankTotal ? ` / ${options.rankTotal}` : ''
         }">#${rank}</span>`
       : '';
@@ -818,10 +818,10 @@ function buildCard(player, isLocal, options = {}) {
   const avgRank =
     Number.isFinite(avgRankValue) && avgRankValue > 0 ? avgRankValue : null;
   const avgRankGames = Number(player.recent?.avgRankGames) || 0;
-  const avgRankColor = avgRank !== null ? rankColor(Math.round(avgRank)) : null;
+  const avgRankTone = avgRank !== null ? rankClass(Math.round(avgRank)) : null;
   const avgRankLine =
     avgRank !== null
-      ? `<div class="avg-rank-line" style="--avg-rank:${avgRankColor}" title="最近 ${avgRankGames || '若干'} 场平均评分排名第 ${avgRank.toFixed(
+      ? `<div class="avg-rank-line ${avgRankTone}" title="最近 ${avgRankGames || '若干'} 场平均评分排名第 ${avgRank.toFixed(
           1,
         )} 名（双方 10 人）">
           <span class="avg-rank-label">平均排名</span>
@@ -2296,7 +2296,7 @@ function matchRow(game, showScore) {
   const rankHtml =
     rank === null
       ? ''
-      : `<span class="rank" style="color:${rankColor(rank)}" title="本局评分排名第 ${rank}${
+      : `<span class="rank ${rankClass(rank)}" title="本局评分排名第 ${rank}${
           rankTotal ? ` / ${rankTotal}` : ''
         }">#${rank}</span>`;
   const tags = game.tags ?? [];
@@ -2517,7 +2517,7 @@ function miniRadarSvg(series) {
         Math.cos(point) > 0.25 ? 'start' : Math.cos(point) < -0.25 ? 'end' : 'middle';
       const firstDy =
         Math.sin(point) < -0.6 ? '-1.05em' : Math.sin(point) > 0.6 ? '-0.15em' : '-0.35em';
-      const rankClass =
+      const labelTone =
         metric.rank === 1
           ? 'rank-1'
           : metric.rank <= 3
@@ -2525,7 +2525,7 @@ function miniRadarSvg(series) {
             : metric.rank >= 8
               ? 'rank-low'
               : 'rank-mid';
-      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" class="radar-label ${rankClass}">
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" class="radar-label ${labelTone}">
         <tspan x="${x.toFixed(1)}" dy="${firstDy}">${metric.label}</tspan>
         <tspan x="${x.toFixed(1)}" dy="1.08em" class="radar-value">${metric.valueText}</tspan>
       </text>`;
