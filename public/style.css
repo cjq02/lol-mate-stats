@@ -2698,20 +2698,20 @@ body::before {
 
 .aram-head h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: 0.04em;
   color: #dbe6ff;
 }
 
 .aram-hint {
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--muted-2);
 }
 
 .aram-list {
   display: flex;
-  gap: 10px;
+  gap: 13px;
   overflow-x: auto;
   padding: 1px 1px 6px;
   scrollbar-width: thin;
@@ -2731,9 +2731,10 @@ body::before {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 13px;
-  border-radius: 12px;
+  gap: 13px;
+  min-width: 196px;
+  padding: 13px 18px;
+  border-radius: 15px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.025);
   color: inherit;
@@ -2756,27 +2757,27 @@ body::before {
 }
 
 .aram-champion .aram-champ-icon .icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 54px;
+  height: 54px;
+  border-radius: 11px;
 }
 
 .aram-champion .aram-champ-icon .icon .fb {
-  font-size: 15px;
+  font-size: 20px;
 }
 
 .aram-champ-main {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
 .aram-champ-name {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 16px;
   font-weight: 600;
   color: #dbe6ff;
   white-space: nowrap;
@@ -2785,9 +2786,9 @@ body::before {
 .aram-current,
 .aram-priority {
   font-style: normal;
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 1;
-  padding: 2px 5px;
+  padding: 3px 6px;
   border-radius: 999px;
 }
 
@@ -2805,7 +2806,7 @@ body::before {
 .aram-champ-stats {
   display: flex;
   align-items: baseline;
-  gap: 9px;
+  gap: 12px;
   white-space: nowrap;
 }
 
@@ -2813,17 +2814,17 @@ body::before {
   display: inline-flex;
   align-items: baseline;
   gap: 3px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted-2);
 }
 
 .aram-stat small {
-  font-size: 9.5px;
+  font-size: 11px;
   opacity: 0.75;
 }
 
 .aram-stat b {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 650;
   color: #c4d4ff;
 }
@@ -2834,7 +2835,7 @@ body::before {
 
 .aram-stat em {
   font-style: normal;
-  font-size: 10px;
+  font-size: 11.5px;
   opacity: 0.65;
 }
 
