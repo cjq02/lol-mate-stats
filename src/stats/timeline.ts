@@ -17,6 +17,8 @@ interface FrameSample {
   cs: number;
   gold: number;
   level?: number;
+  x?: number;
+  y?: number;
 }
 
 interface PlayerMeta {
@@ -40,6 +42,9 @@ interface PlayerMeta {
 const BASE_RESPAWN_SECONDS = [
   10, 10, 12, 12, 14, 16, 20, 25, 28, 32.5, 35, 37.5, 40, 42.5, 45, 47.5, 50, 52.5,
 ];
+
+/** 相邻分钟快照位移不超过该值时视为原地不动（地图坐标单位） */
+const STATIONARY_POSITION_EPSILON = 250;
 
 /** 估算复活等待：等级基础值 + 15 分钟后的游戏时间放大 */
 export function estimateRespawnMs(level: number, atMs: number): number {
@@ -102,6 +107,12 @@ function buildSamples(
       cs: toNumber(framePlayer.minionsKilled) + toNumber(framePlayer.jungleMinionsKilled),
       gold: toNumber(framePlayer.totalGold),
       level: toNumber(framePlayer.level) || undefined,
+      x: Number.isFinite(Number(framePlayer.position?.x))
+        ? Number(framePlayer.position?.x)
+        : undefined,
+      y: Number.isFinite(Number(framePlayer.position?.y))
+        ? Number(framePlayer.position?.y)
+        : undefined,
     });
   }
   return samples.sort((a, b) => a.t - b.t);
@@ -334,6 +345,64 @@ function measureIdleAlive(
 }
 
 /**
+ * 统计存活期间“原地不动、没有补刀和战斗事件”的时间。
+ * 大乱斗挂机也会持续获得金币和经验，所以这里用位置是否变化判断，
+ * 专门识别长时间停在基地/原地不动的挂机。阵亡和复活等待不计入。
+ */
+function measureStationaryAlive(
+  samples: FrameSample[],
+  lives: MatchTimelineLife[],
+  eventTimes: number[],
+): { stationaryAliveMs: number; maxStationaryMs: number } {
+  let stationaryAliveMs = 0;
+  let maxStationaryMs = 0;
+  const events = [...eventTimes].sort((a, b) => a - b);
+
+  for (const life of lives) {
+    if (life.aliveMs <= 0) continue;
+    const inside = samples.filter(
+      (sample) =>
+        sample.t > life.startMs &&
+        sample.t <= life.endMs &&
+        sample.x !== undefined &&
+        sample.y !== undefined,
+    );
+    let before: FrameSample | undefined;
+    for (const sample of samples) {
+      if (sample.t > life.startMs) break;
+      if (sample.x !== undefined && sample.y !== undefined) before = sample;
+    }
+    const points: FrameSample[] = before
+      ? [{ ...before, t: life.startMs }, ...inside]
+      : inside;
+    let streakMs = 0;
+    for (let index = 1; index < points.length; index += 1) {
+      const from = points[index - 1]!;
+      const to = points[index]!;
+      const span = to.t - from.t;
+      if (span <= 0) continue;
+      const moved =
+        Math.hypot(to.x! - from.x!, to.y! - from.y!) >
+        STATIONARY_POSITION_EPSILON;
+      const fought = events.some((t) => t >= from.t && t <= to.t);
+      const active = fought || to.cs - from.cs > 0 || moved;
+      if (active) {
+        streakMs = 0;
+        continue;
+      }
+      stationaryAliveMs += span;
+      streakMs += span;
+      if (streakMs > maxStationaryMs) maxStationaryMs = streakMs;
+    }
+  }
+
+  return {
+    stationaryAliveMs: Math.round(stationaryAliveMs),
+    maxStationaryMs: Math.round(maxStationaryMs),
+  };
+}
+
+/**
  * 把 LCU 对局时间线解析成“每条命”：
  * 阵亡事件切分时间段，分钟快照提供补刀/金币增量，等级用于估算复活等待。
  * 官方时间线没有伤害字段，伤害/承伤只能保留整局总数。
@@ -391,11 +460,13 @@ export function parseMatchTimeline(
       durationMs,
       playersById,
     );
-    const idle = measureIdleAlive(samples, lives, [
+    const eventTimes = [
       ...deaths.map((event) => toNumber(event.timestamp)),
       ...kills.map((event) => toNumber(event.timestamp)),
       ...assists.map((event) => toNumber(event.timestamp)),
-    ]);
+    ];
+    const idle = measureIdleAlive(samples, lives, eventTimes);
+    const stationary = measureStationaryAlive(samples, lives, eventTimes);
     return {
       ...meta,
       killedBy: countChampions(deaths.map((event) => toNumber(event.killerId))),
@@ -412,6 +483,8 @@ export function parseMatchTimeline(
       ),
       idleAliveMs: idle.idleAliveMs,
       maxIdleMs: idle.maxIdleMs,
+      stationaryAliveMs: stationary.stationaryAliveMs,
+      maxStationaryMs: stationary.maxStationaryMs,
       lives,
     };
   });

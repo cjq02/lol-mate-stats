@@ -1,4 +1,4 @@
-import type { BadLevel, RawGame } from '../types.js';
+import type { BadLevel, MatchTimeline, RawGame } from '../types.js';
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
 import { analyzeParticipant, computeMatchScores } from './analyze.js';
@@ -81,13 +81,18 @@ export function afkParticipantIds(
   game: RawGame,
   championMap: Map<number, ChampionSummary>,
   scores?: Map<number, number>,
+  timeline?: MatchTimeline,
 ): Set<number> {
   const participants = game.participants ?? [];
+  const timelineById = new Map(
+    (timeline?.players ?? []).map((player) => [Number(player.participantId), player]),
+  );
   const afkStatsByIndex: Array<AfkRelativeStats | undefined> = participants.map(
     (participant) => {
       const analyzed = analyzeParticipant(game, participant, championMap, scores);
       if (!analyzed) return undefined;
       const stats = participant.stats ?? {};
+      const timelinePlayer = timelineById.get(toNumber(participant.participantId));
       return {
         durationMin: analyzed.durationMin,
         gold: analyzed.gold,
@@ -102,6 +107,14 @@ export function afkParticipantIds(
         damageTaken: toNumber(stats.totalDamageTaken),
         heal: analyzed.heal,
         idleMinutes: analyzed.timeline?.idleMinutes,
+        idleStreakSeconds:
+          timelinePlayer?.maxIdleMs === undefined
+            ? undefined
+            : Math.round(timelinePlayer.maxIdleMs / 1000),
+        stationaryStreakSeconds:
+          timelinePlayer?.maxStationaryMs === undefined
+            ? undefined
+            : Math.round(timelinePlayer.maxStationaryMs / 1000),
       };
     },
   );
@@ -137,6 +150,7 @@ export function gameFlags(
   participantId: number | undefined,
   championMap: Map<number, ChampionSummary>,
   scores?: Map<number, number>,
+  timeline?: MatchTimeline,
 ): GameFlags {
   const remake = isRemakeGame(game);
   const participants = game.participants ?? [];
@@ -150,12 +164,11 @@ export function gameFlags(
   }
 
   const teamId = toNumber(self.teamId);
-  const afkIds = afkParticipantIds(game, championMap, scoreMap);
+  const afkIds = afkParticipantIds(game, championMap, scoreMap, timeline);
   const selfAfk = afkIds.has(toNumber(self.participantId));
-  const selfBad =
-    !remake && !selfAfk
-      ? badLevelOfScore(analyzeParticipant(game, self, championMap, scoreMap)?.score)
-      : undefined;
+  const selfBad = remake
+    ? undefined
+    : badLevelOfScore(analyzeParticipant(game, self, championMap, scoreMap)?.score);
   let teammateAfk = false;
   let opponentAfk = false;
   let teammateBad: BadLevel | undefined;
@@ -168,7 +181,6 @@ export function gameFlags(
     if (afkIds.has(otherId)) {
       if (isTeammate) teammateAfk = true;
       else opponentAfk = true;
-      continue;
     }
     if (remake) continue;
     const analyzed = analyzeParticipant(game, other, championMap, scoreMap);
@@ -178,10 +190,7 @@ export function gameFlags(
     else opponentBad = worseBadLevel(opponentBad, level);
   }
 
-  // 有队友/对手逃跑时不再叠加“坑”标签，避免同一局出现两种强判断
-  if (teammateAfk) teammateBad = undefined;
-  if (opponentAfk) opponentBad = undefined;
-
+  // 逃跑和坑可以同时存在：挂机的人整局数据通常也很差，两个标签都有信息量
   return { remake, teammateAfk, opponentAfk, selfAfk, selfBad, teammateBad, opponentBad };
 }
 
@@ -189,7 +198,7 @@ export function gameFlagTags(flags: GameFlags): string[] {
   const tags: string[] = [];
   if (flags.remake) tags.push('重开');
   if (flags.selfAfk) tags.push('自己逃跑');
-  else if (flags.selfBad) tags.push(`自己${badLevelLabel(flags.selfBad)}`);
+  if (flags.selfBad) tags.push(`自己${badLevelLabel(flags.selfBad)}`);
   if (flags.teammateAfk) tags.push('队友逃跑');
   if (flags.opponentAfk) tags.push('对手逃跑');
   if (flags.teammateBad) tags.push(`队友${badLevelLabel(flags.teammateBad)}`);

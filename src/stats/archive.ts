@@ -26,7 +26,7 @@ import {
 import { queueName } from './constants.js';
 import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 import { championProficiency } from './proficiency.js';
-import { getDb, getSavedMatchTimeline, readMeta, saveTimelineIdleStats, withTransaction, writeMeta } from './store.js';
+import { getDb, getSavedMatchTimeline, readMeta, saveTimelineAfkStats, withTransaction, writeMeta } from './store.js';
 import { summarizeTimeStats, type TimeStatsSummary } from './time-stats.js';
 
 /** 长期保存的单场战绩（按玩家维度查询） */
@@ -139,6 +139,8 @@ interface ArchivedParticipant {
   score: number | null;
   /** 时间线里连续无成长的最长秒数，旧数据为 null */
   idle_streak_seconds: number | null;
+  /** 时间线里连续原地不动的最长秒数，旧数据为 null */
+  stationary_streak_seconds: number | null;
 }
 
 /** 从存档数据重新推断一场对局的坑/逃跑标签（以 puuid 的视角） */
@@ -187,6 +189,10 @@ function archivedGameTags(
       participant.idle_streak_seconds === null
         ? undefined
         : participant.idle_streak_seconds,
+    stationaryStreakSeconds:
+      participant.stationary_streak_seconds === null
+        ? undefined
+        : participant.stationary_streak_seconds,
   }));
   const statsByTeam = new Map<number, AfkRelativeStats[]>();
   gameParticipants.forEach((participant, index) => {
@@ -216,12 +222,13 @@ function archivedGameTags(
     self && selfStats && isAfkLikeRelative(selfStats, statsByTeam.get(self.team_id) ?? []),
   );
   const selfBad =
-    !remake && !selfAfk && self
+    !remake && self
       ? badLevelOfScore(self.score === null ? undefined : Number(self.score))
       : undefined;
   if (selfAfk) {
     if (!tags.includes('自己逃跑')) tags.push('自己逃跑');
-  } else if (selfBad) {
+  }
+  if (selfBad) {
     tags.push(`自己${badLevelLabel(selfBad)}`);
   }
 
@@ -244,11 +251,11 @@ function archivedGameTags(
     return level;
   };
 
-  if (!remake && !teammateAfk) {
+  if (!remake) {
     const level = worstLevel('teammate');
     if (level) tags.push(`队友${badLevelLabel(level)}`);
   }
-  if (!remake && !opponentAfk) {
+  if (!remake) {
     const level = worstLevel('opponent');
     if (level) tags.push(`敌方${badLevelLabel(level)}`);
   }
@@ -263,7 +270,7 @@ async function loadParticipantsByGame(
   if (!gameIds.length) return result;
   const placeholders = gameIds.map(() => '?').join(',');
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT game_id, puuid, team_id, win, kills, deaths, assists, cs, gold, damage, damage_taken, heal, vision, position, score, idle_streak_seconds
+    `SELECT game_id, puuid, team_id, win, kills, deaths, assists, cs, gold, damage, damage_taken, heal, vision, position, score, idle_streak_seconds, stationary_streak_seconds
      FROM match_participants
      WHERE game_id IN (${placeholders})`,
     gameIds,
@@ -290,6 +297,11 @@ async function loadParticipantsByGame(
         row.idle_streak_seconds === null || row.idle_streak_seconds === undefined
           ? null
           : Number(row.idle_streak_seconds),
+      stationary_streak_seconds:
+        row.stationary_streak_seconds === null ||
+        row.stationary_streak_seconds === undefined
+          ? null
+          : Number(row.stationary_streak_seconds),
     });
     result.set(gameId, list);
   }
@@ -469,7 +481,7 @@ export async function archiveGames(
       await Promise.all(
         done.map(async (gameId) => {
           const timeline = await getSavedMatchTimeline(gameId);
-          if (timeline) await saveTimelineIdleStats(timeline);
+          if (timeline) await saveTimelineAfkStats(timeline);
         }),
       );
     }

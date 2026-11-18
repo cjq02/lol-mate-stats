@@ -445,11 +445,16 @@ export interface AfkRelativeStats extends AfkLikeStats {
   heal?: number;
   /** 时间线里连续没有补刀和战斗事件的最长秒数，来自 match_timelines */
   idleStreakSeconds?: number;
+  /** 时间线里连续原地不动、无补刀和战斗事件的最长秒数 */
+  stationaryStreakSeconds?: number;
 }
 
 /** 时间线显示每隔这么久就有补刀或战斗参与，就不再判逃跑 */
 export const AFK_IDLE_VETO_MINUTES = 5;
 export const AFK_IDLE_VETO_SECONDS = AFK_IDLE_VETO_MINUTES * 60;
+/** 存活期间连续原地不动超过这么久，直接判逃跑（典型基地挂机/掉线） */
+export const AFK_STATIONARY_MINUTES = 3;
+export const AFK_STATIONARY_SECONDS = AFK_STATIONARY_MINUTES * 60;
 
 /**
  * “长时间挂机/逃跑”推断：
@@ -461,6 +466,14 @@ export function isAfkLikeRelative(
   team: AfkRelativeStats[],
 ): boolean {
   if (player.durationMin < 8) return false;
+  // 时间线显示连续原地不动超过 3 分钟：典型基地挂机或掉线，
+  // 即使前期拿过击杀/助攻，也判逃跑。
+  if (
+    player.stationaryStreakSeconds !== undefined &&
+    player.stationaryStreakSeconds >= AFK_STATIONARY_SECONDS
+  ) {
+    return true;
+  }
   // 时间线能证明每隔几分钟就有补刀或战斗参与时，说明玩家一直在打，
   // 即使整局数据被阵亡或位置拖累，也只判坑、不判逃跑。
   if (

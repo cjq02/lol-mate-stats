@@ -12,7 +12,7 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { AFK_IDLE_VETO_SECONDS, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
+import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
@@ -545,7 +545,17 @@ test('自己坑/逃跑也会打标签', () => {
       selfAfk: true,
       selfBad: 'severe',
     }),
-    ['自己逃跑'],
+    ['自己逃跑', '自己巨坑'],
+  );
+  assert.deepEqual(
+    gameFlagTags({
+      remake: false,
+      teammateAfk: true,
+      opponentAfk: true,
+      teammateBad: 'severe',
+      opponentBad: 'mild',
+    }),
+    ['队友逃跑', '对手逃跑', '队友巨坑', '敌方小坑'],
   );
 });
 
@@ -1282,6 +1292,40 @@ test('时间线证明一直在补刀或参战时撤销逃跑判定', () => {
     isAfkLikeRelative({ ...player, idleStreakSeconds: 0 }, [player, normal]),
     false,
     '全程都有补刀或战斗参与时不应判逃跑',
+  );
+});
+
+test('时间线显示长时间原地不动时判逃跑', () => {
+  const active = {
+    durationMin: 19,
+    gold: 13000,
+    damage: 30000,
+    cs: 80,
+    kills: 10,
+    deaths: 8,
+    assists: 20,
+    visionScore: 20,
+    position: 'MID' as Lane,
+    killParticipation: 0.7,
+    damageTaken: 25000,
+    heal: 1000,
+  };
+  const normal = { ...active };
+  assert.equal(
+    isAfkLikeRelative(
+      { ...active, stationaryStreakSeconds: AFK_STATIONARY_SECONDS - 1 },
+      [active, normal],
+    ),
+    false,
+    '原地不动不到 3 分钟时仍按原有规则判断',
+  );
+  assert.equal(
+    isAfkLikeRelative(
+      { ...active, stationaryStreakSeconds: AFK_STATIONARY_SECONDS },
+      [active, normal],
+    ),
+    true,
+    '原地不动满 3 分钟时即使前期有击杀助攻也判逃跑',
   );
 });
 
@@ -2473,12 +2517,15 @@ test('时间线只统计存活期间无补刀和战斗的时间', () => {
         minionsKilled: minute <= 6 ? 0 : (minute - 6) * 5,
         totalGold: minute <= 6 ? 500 : 500 + (minute - 6) * 300,
         level: minute <= 6 ? 1 : 2,
+        position:
+          minute <= 6 ? { x: 1000, y: 1000 } : { x: 4000, y: 4000 },
       },
       '2': {
         participantId: 2,
         minionsKilled: minute * 5,
         totalGold: minute * 300,
         level: 1 + Math.floor(minute / 2),
+        position: { x: minute * 1000, y: minute * 1000 },
       },
     },
   });
@@ -2492,11 +2539,15 @@ test('时间线只统计存活期间无补刀和战斗的时间', () => {
   assert.ok(idle);
   assert.equal(idle.maxIdleMs, 360_000, '前 6 分钟没有补刀和战斗应算作连续空闲');
   assert.equal(idle.idleAliveMs, 360_000);
+  assert.equal(idle.maxStationaryMs, 300_000, '原地不动应单独统计为挂机时长');
+  assert.equal(idle.stationaryAliveMs, 300_000);
 
   const active = timeline.players.find((player) => player.puuid === 'active');
   assert.ok(active);
   assert.equal(active.maxIdleMs, 0, '每分钟都有补刀时不应出现空闲');
   assert.equal(active.idleAliveMs, 0);
+  assert.equal(active.maxStationaryMs, 0, '一直在移动时不应出现原地不动');
+  assert.equal(active.stationaryAliveMs, 0);
 });
 
 test('复活等待按等级估算，并随游戏时间放大', () => {

@@ -529,6 +529,10 @@ export class LiveSource implements DataSource {
       game = provisional;
     }
 
+    const timeline = await this.getMatchTimeline(gameId)
+      .then((result) => result.timeline)
+      .catch(() => undefined);
+
     const queueId = toNumber(game.queueId);
     const gameMode = modeFromQueue(queueId, game.gameMode);
     const participants = game.participants?.length ?? 0;
@@ -557,7 +561,7 @@ export class LiveSource implements DataSource {
       ? toNumber(selfParticipant.participantId)
       : undefined;
     const scoreMap = computeMatchScores(game, championMap);
-    const afkIds = afkParticipantIds(game, championMap, scoreMap);
+    const afkIds = afkParticipantIds(game, championMap, scoreMap, timeline);
     const remake = isRemakeGame(game);
     const bestTags = remake ? new Map<number, string>() : matchBestTags(game, scoreMap);
 
@@ -598,14 +602,14 @@ export class LiveSource implements DataSource {
         const participantId = toNumber(participant.participantId);
         const afk = participantId !== selfParticipantId && afkIds.has(participantId);
         const badLevel =
-          !afk && !remake && participantId !== selfParticipantId
+          !remake && participantId !== selfParticipantId
             ? badLevelOfScore(analyzed?.score)
             : undefined;
-        const tags = afk
-          ? ['逃跑', ...(analyzed?.tags ?? [])]
-          : badLevel
-            ? [badLevelLabel(badLevel), ...(analyzed?.tags ?? [])]
-            : analyzed?.tags;
+        const tags = [
+          ...(afk ? ['逃跑'] : []),
+          ...(badLevel ? [badLevelLabel(badLevel)] : []),
+          ...(analyzed?.tags ?? []),
+        ];
         const bestTag = bestTags.get(participantId);
         const finalTags = bestTag
           ? [
@@ -694,6 +698,7 @@ export class LiveSource implements DataSource {
       selfParticipant ? toNumber(selfParticipant.participantId) : undefined,
       championMap,
       scoreMap,
+      timeline,
     );
     const rawDuration = toNumber(game.gameDuration);
     const normalizedDuration =

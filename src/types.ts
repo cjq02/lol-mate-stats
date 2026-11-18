@@ -775,6 +775,10 @@ export interface MatchTimelinePlayer {
   idleAliveMs?: number;
   /** 存活期间连续没有补刀、也没有击杀/助攻/阵亡的最长时间（毫秒） */
   maxIdleMs?: number;
+  /** 存活期间累计原地不动、没有补刀和战斗事件的时间（毫秒） */
+  stationaryAliveMs?: number;
+  /** 存活期间连续原地不动、没有补刀和战斗事件的最长时间（毫秒） */
+  maxStationaryMs?: number;
   lives: MatchTimelineLife[];
 }
 

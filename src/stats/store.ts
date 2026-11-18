@@ -121,7 +121,7 @@ async function connect(): Promise<Pool | undefined> {
 }
 
 /** 表结构版本：每次新增迁移递增，旧库启动时按顺序补齐 */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 interface SchemaMigration {
   version: number;
@@ -253,6 +253,22 @@ const SCHEMA_MIGRATIONS: SchemaMigration[] = [
       }
     },
   },
+  {
+    version: 7,
+    describe: '时间线原地不动存活时长',
+    up: async (db) => {
+      if (!(await hasColumn(db, 'match_participants', 'stationary_alive_seconds'))) {
+        await db.query(
+          'ALTER TABLE match_participants ADD COLUMN stationary_alive_seconds INT NULL',
+        );
+      }
+      if (!(await hasColumn(db, 'match_participants', 'stationary_streak_seconds'))) {
+        await db.query(
+          'ALTER TABLE match_participants ADD COLUMN stationary_streak_seconds INT NULL',
+        );
+      }
+    },
+  },
 ];
 
 async function runSchemaMigrations(db: Pool): Promise<void> {
@@ -373,6 +389,8 @@ async function ensureSchema(db: Pool): Promise<void> {
        tags VARCHAR(255) NULL,
        idle_alive_seconds INT NULL,
        idle_streak_seconds INT NULL,
+       stationary_alive_seconds INT NULL,
+       stationary_streak_seconds INT NULL,
        PRIMARY KEY (game_id, participant_id),
        KEY idx_mp_puuid (puuid)
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -687,7 +705,7 @@ export async function saveLiveAiAnalysis(
 }
 
 /** 对局详情缓存版本：卡片/标签口径变化时递增，旧缓存自动失效 */
-const MATCH_DETAIL_CACHE_VERSION = 7;
+const MATCH_DETAIL_CACHE_VERSION = 8;
 
 /** 读取已持久保存的完整对局详情（10 人本局数据 + 近期战绩） */
 export async function getSavedMatchDetail(
@@ -736,7 +754,7 @@ export async function saveMatchDetail(detail: MatchDetail): Promise<void> {
 }
 
 /** 对局时间线缓存版本：解析口径变化时递增，旧缓存自动失效 */
-const MATCH_TIMELINE_CACHE_VERSION = 6;
+const MATCH_TIMELINE_CACHE_VERSION = 7;
 
 /** 读取已保存的对局时间线（按阵亡切分好的每条命） */
 export async function getSavedMatchTimeline(
@@ -782,14 +800,14 @@ export async function saveMatchTimeline(timeline: MatchTimeline): Promise<void> 
   } catch {
     /* 缓存写入失败不影响本次返回 */
   }
-  await saveTimelineIdleStats(timeline);
+  await saveTimelineAfkStats(timeline);
 }
 
 /**
- * 把时间线里的“存活但没有补刀/战斗事件”的时长同步到参与者表。
- * 历史战绩重新推断逃跑标签时可以直接读这两列，不再解析时间线 JSON。
+ * 把时间线里的“存活但没有补刀/战斗事件”和“原地不动”的时长同步到参与者表。
+ * 历史战绩重新推断逃跑标签时可以直接读这几列，不再解析时间线 JSON。
  */
-export async function saveTimelineIdleStats(timeline: MatchTimeline): Promise<void> {
+export async function saveTimelineAfkStats(timeline: MatchTimeline): Promise<void> {
   const db = await getDb();
   if (!db || !timeline?.gameId || !timeline.players?.length) return;
   await Promise.all(
@@ -798,11 +816,14 @@ export async function saveTimelineIdleStats(timeline: MatchTimeline): Promise<vo
       return db
         .query(
           `UPDATE match_participants
-           SET idle_alive_seconds = ?, idle_streak_seconds = ?
+           SET idle_alive_seconds = ?, idle_streak_seconds = ?,
+               stationary_alive_seconds = ?, stationary_streak_seconds = ?
            WHERE game_id = ? AND participant_id = ?`,
           [
             Math.max(0, Math.round((player.idleAliveMs ?? 0) / 1000)),
             Math.max(0, Math.round((player.maxIdleMs ?? 0) / 1000)),
+            Math.max(0, Math.round((player.stationaryAliveMs ?? 0) / 1000)),
+            Math.max(0, Math.round((player.maxStationaryMs ?? 0) / 1000)),
             timeline.gameId,
             player.participantId,
           ],
