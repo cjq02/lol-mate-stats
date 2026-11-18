@@ -12,7 +12,7 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { afkParticipantIds, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, MILD_BAD_GAME_SCORE, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
+import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
@@ -510,15 +510,15 @@ test('队列/模式分组', () => {
 });
 
 test('单场坑的程度分档', () => {
-  assert.equal(badLevelOfScore(40), undefined);
-  assert.equal(badLevelOfScore(39), 'mild');
-  assert.equal(badLevelOfScore(32), 'mild');
+  assert.equal(badLevelOfScore(35), undefined);
+  assert.equal(badLevelOfScore(34.9), 'mild');
   assert.equal(badLevelOfScore(30), 'mild');
-  assert.equal(badLevelOfScore(29.9), 'bad');
-  assert.equal(badLevelOfScore(25), 'bad');
+  assert.equal(badLevelOfScore(25), 'mild');
+  assert.equal(badLevelOfScore(24.9), 'bad');
   assert.equal(badLevelOfScore(20), 'bad');
-  assert.equal(badLevelOfScore(19.9), 'severe');
-  assert.equal(badLevelOfScore(18), 'severe');
+  assert.equal(badLevelOfScore(15), 'bad');
+  assert.equal(badLevelOfScore(14.9), 'severe');
+  assert.equal(badLevelOfScore(10), 'severe');
   assert.equal(badLevelLabel('mild'), '小坑');
   assert.equal(badLevelLabel('bad'), '坑');
   assert.equal(badLevelLabel('severe'), '巨坑');
@@ -752,7 +752,7 @@ test('评分百分位在本局 10 人内比较', () => {
   );
 });
 
-test('碾压局的胜方整体高于败方，败方会出现小坑', () => {
+test('碾压局的胜方整体高于败方', () => {
   // 2026-11-18 20:48 极地大乱斗：胜方 37 杀、败方 16 杀，11 分 39 秒结束。
   // 按本队 5 人比较时两队均分接近（约 62 : 62），按局内 10 人比较才能拉开差距。
   const scores = percentileScores([
@@ -772,10 +772,9 @@ test('碾压局的胜方整体高于败方，败方会出现小坑', () => {
   const winAvg = avg(scores.slice(0, 5));
   const lossAvg = avg(scores.slice(5));
   assert.ok(winAvg - lossAvg > 12, `胜方 ${winAvg.toFixed(1)} 应明显高于败方 ${lossAvg.toFixed(1)}`);
-  const pitScores = scores.slice(5).filter((score) => score < MILD_BAD_GAME_SCORE);
   assert.ok(
-    pitScores.length >= 2,
-    `败方应至少有 2 人被判定小坑：${scores.slice(5).join(',')}`,
+    Math.min(...scores.slice(5)) < 40,
+    `败方最低分应明显偏低：${scores.slice(5).join(',')}`,
   );
 });
 
@@ -1786,11 +1785,11 @@ test('英雄熟练度综合场次和表现并随样本增长', () => {
 
 test('坑场次包含小坑、坑和巨坑', () => {
   const summary = summarize([
-    makeGame(1, 'MID', { score: 39.9 }),
-    makeGame(2, 'MID', { score: 30 }),
-    makeGame(3, 'MID', { score: 29.9 }),
-    makeGame(4, 'MID', { score: 19.9 }),
-    makeGame(5, 'MID', { score: 40 }),
+    makeGame(1, 'MID', { score: 34.9 }),
+    makeGame(2, 'MID', { score: 25 }),
+    makeGame(3, 'MID', { score: 24.9 }),
+    makeGame(4, 'MID', { score: 14.9 }),
+    makeGame(5, 'MID', { score: 35 }),
   ]);
   assert.equal(summary.games, 5);
   assert.equal(summary.pitGames, 4);

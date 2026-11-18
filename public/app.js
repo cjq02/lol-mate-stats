@@ -349,11 +349,11 @@ function isInactiveKda(stats) {
 }
 
 const RATING_TONES = [
-  { min: 80, className: 'score-80', color: '#3ddc97' },
-  { min: 70, className: 'score-70', color: '#5eead4' },
-  { min: 60, className: 'score-60', color: '#f5c76a' },
-  { min: 50, className: 'score-50', color: '#ffab5e' },
-  { min: 40, className: 'score-40', color: '#ff9b9b' },
+  { min: 75, className: 'score-75', color: '#3ddc97' },
+  { min: 65, className: 'score-65', color: '#5eead4' },
+  { min: 55, className: 'score-55', color: '#f5c76a' },
+  { min: 45, className: 'score-45', color: '#ffab5e' },
+  { min: 35, className: 'score-35', color: '#ff9b9b' },
   { min: -Infinity, className: 'score-low', color: '#ff4d6d' },
 ];
 
@@ -997,7 +997,7 @@ function buildCard(player, isLocal, options = {}) {
           risk
             ? `<div class="metric bad-metric${
                 pitGames / Math.max(1, recent.games) >= 0.5 ? ' is-high' : ''
-              }" title="近 ${recent.games} 场中 ${pitGames} 场单场评分 < 40，包含小坑 / 坑 / 巨坑"><span>坑场次</span><b>${pitGames} / ${recent.games}</b></div>`
+              }" title="近 ${recent.games} 场中 ${pitGames} 场单场评分 < 35，包含小坑 / 坑 / 巨坑"><span>坑场次</span><b>${pitGames} / ${recent.games}</b></div>`
             : ''
         }
         ${
