@@ -513,11 +513,11 @@ test('单场坑的程度分档', () => {
   assert.equal(badLevelOfScore(35), undefined);
   assert.equal(badLevelOfScore(34.9), 'mild');
   assert.equal(badLevelOfScore(30), 'mild');
-  assert.equal(badLevelOfScore(25), 'mild');
-  assert.equal(badLevelOfScore(24.9), 'bad');
+  assert.equal(badLevelOfScore(29.9), 'bad');
+  assert.equal(badLevelOfScore(25), 'bad');
   assert.equal(badLevelOfScore(20), 'bad');
-  assert.equal(badLevelOfScore(15), 'bad');
-  assert.equal(badLevelOfScore(14.9), 'severe');
+  assert.equal(badLevelOfScore(19.9), 'severe');
+  assert.equal(badLevelOfScore(15), 'severe');
   assert.equal(badLevelOfScore(10), 'severe');
   assert.equal(badLevelLabel('mild'), '小坑');
   assert.equal(badLevelLabel('bad'), '坑');
@@ -1786,9 +1786,9 @@ test('英雄熟练度综合场次和表现并随样本增长', () => {
 test('坑场次包含小坑、坑和巨坑', () => {
   const summary = summarize([
     makeGame(1, 'MID', { score: 34.9 }),
-    makeGame(2, 'MID', { score: 25 }),
-    makeGame(3, 'MID', { score: 24.9 }),
-    makeGame(4, 'MID', { score: 14.9 }),
+    makeGame(2, 'MID', { score: 29.9 }),
+    makeGame(3, 'MID', { score: 20 }),
+    makeGame(4, 'MID', { score: 19.9 }),
     makeGame(5, 'MID', { score: 35 }),
   ]);
   assert.equal(summary.games, 5);
