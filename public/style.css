@@ -1324,6 +1324,37 @@ body::before {
   box-shadow: 0 0 6px currentColor;
 }
 
+/* 战绩列表标签行里的队友/对手逃跑：保持原位，用描边小胶囊稍微加强 */
+.match-item .who small .match-flag.afk,
+.match-item .who small .match-flag.enemy-afk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 171, 94, 0.5);
+  border-radius: 5px;
+  background: rgba(255, 171, 94, 0.1);
+  color: #ffbd7a;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.match-item .who small .match-flag.afk::before,
+.match-item .who small .match-flag.enemy-afk::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 5px currentColor;
+}
+
+.match-item .who small .match-flag.enemy-afk {
+  border-color: rgba(255, 107, 129, 0.5);
+  background: rgba(255, 107, 129, 0.1);
+  color: #ff8fa0;
+}
+
 /* 坑徽章用描边，和实心的 MVP / SVP 徽章区分 */
 .detail-bad-badge {
   display: inline-flex;
