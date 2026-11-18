@@ -26,7 +26,7 @@ export const CHAMPION_ROLES: Record<number, ChampionRole> = {
   22: 'carry', // 寒冰射手 Ashe
   23: 'fighter', // 蛮族之王 Tryndamere
   24: 'fighter', // 武器大师 Jax
-  25: 'tank', // 堕落天使 Morgana
+  25: 'carry', // 堕落天使 Morgana
   26: 'support', // 时光守护者 Zilean
   27: 'tank', // 炼金术士 Singed
   28: 'carry', // 痛苦之拥 Evelynn
@@ -131,7 +131,7 @@ export const CHAMPION_ROLES: Record<number, ChampionRole> = {
   223: 'tank', // 河流之王 TahmKench
   233: 'fighter', // 狂厄蔷薇 Briar
   234: 'fighter', // 破败之王 Viego
-  235: 'tank', // 涤魂圣枪 Senna
+  235: 'carry', // 涤魂圣枪 Senna
   236: 'carry', // 圣枪游侠 Lucian
   238: 'carry', // 影流之主 Zed
   240: 'fighter', // 暴怒骑士 Kled
@@ -156,7 +156,7 @@ export const CHAMPION_ROLES: Record<number, ChampionRole> = {
   518: 'carry', // 万花通灵 Neeko
   523: 'carry', // 残月之肃 Aphelios
   526: 'tank', // 镕铁少女 Rell
-  555: 'tank', // 血港鬼影 Pyke
+  555: 'support', // 血港鬼影 Pyke
   711: 'carry', // 愁云使者 Vex
   777: 'fighter', // 封魔剑魂 Yone
   799: 'fighter', // 铁血狼母 Ambessa
@@ -187,7 +187,7 @@ export const CHAMPION_ROLES: Record<number, ChampionRole> = {
   60013: 'carry', // 流浪法师 Jade_Ryze
   60014: 'tank', // 亡灵勇士 Jade_Sion
   60015: 'carry', // 战争女神 Jade_Sivir
-  60016: 'tank', // 众星之子 Jade_Soraka
+  60016: 'support', // 众星之子 Jade_Soraka
   60017: 'carry', // 迅捷斥候 Jade_Teemo
   60018: 'carry', // 麦林炮手 Jade_Tristana
   60019: 'fighter', // 嗜血猎手 Jade_Warwick
@@ -196,8 +196,8 @@ export const CHAMPION_ROLES: Record<number, ChampionRole> = {
   60022: 'carry', // 寒冰射手 Jade_Ashe
   60023: 'fighter', // 蛮族之王 Jade_Tryndamere
   60024: 'fighter', // 武器大师 Jade_Jax
-  60025: 'tank', // 堕落天使 Jade_Morgana
-  60026: 'tank', // 时光守护者 Jade_Zilean
+  60025: 'carry', // 堕落天使 Jade_Morgana
+  60026: 'support', // 时光守护者 Jade_Zilean
   60027: 'tank', // 炼金术士 Jade_Singed
   60028: 'carry', // 寡妇制造者 Jade_Evelynn
   60029: 'carry', // 瘟疫之源 Jade_Twitch
@@ -208,14 +208,14 @@ export const CHAMPION_ROLES: Record<number, ChampionRole> = {
   60034: 'carry', // 冰晶凤凰 Jade_Anivia
   60035: 'carry', // 恶魔小丑 Jade_Shaco
   60036: 'tank', // 祖安狂人 Jade_DrMundo
-  60037: 'tank', // 琴瑟仙女 Jade_Sona
+  60037: 'support', // 琴瑟仙女 Jade_Sona
   60038: 'carry', // 虚空行者 Jade_Kassadin
   60039: 'fighter', // 刀锋意志 Jade_Irelia
-  60040: 'tank', // 风暴之怒 Jade_Janna
+  60040: 'support', // 风暴之怒 Jade_Janna
   60041: 'fighter', // 海洋之灾 Jade_Gangplank
   60042: 'carry', // 英勇投弹手 Jade_Corki
-  60043: 'carry', // 天启者 Jade_Karma
-  60044: 'tank', // 宝石骑士 Jade_Taric
+  60043: 'support', // 天启者 Jade_Karma
+  60044: 'support', // 宝石骑士 Jade_Taric
   60045: 'carry', // 邪恶小法师 Jade_Veigar
   60051: 'carry', // 皮城女警 Jade_Caitlyn
   60053: 'tank', // 蒸汽机器人 Jade_Blitzcrank
@@ -250,12 +250,12 @@ export const CHAMPION_ROLES: Record<number, ChampionRole> = {
   60105: 'carry', // 潮汐海灵 Jade_Fizz
   60111: 'tank', // 深海泰坦 Jade_Nautilus
   60114: 'fighter', // 无双剑姬 Jade_Fiora
-  60117: 'tank', // 仙灵女巫 Jade_Lulu
+  60117: 'support', // 仙灵女巫 Jade_Lulu
   60120: 'fighter', // 战争之影 Jade_Hecarim
   60133: 'carry', // 德玛西亚之翼 Jade_Quinn
   60236: 'carry', // 圣枪游侠 Jade_Lucian
   60266: 'fighter', // 暗裔剑魔 Jade_Aatrox
-  60267: 'tank', // 唤潮鲛姬 Jade_Nami
+  60267: 'support', // 唤潮鲛姬 Jade_Nami
 };
 
 export function championRole(championId: number): ChampionRole {

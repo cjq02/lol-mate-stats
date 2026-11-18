@@ -18,6 +18,7 @@ import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
+import { championRole } from './champion-roles.js';
 import { premadeSizesByPuuid, premadeSizesFromGames } from './premade.js';
 import { buildLiveTimeline } from './live-timeline.js';
 import { estimateRespawnMs, parseMatchTimeline } from './timeline.js';
@@ -133,7 +134,7 @@ test('正常中单玩家：评分正常、坑指数低', () => {
   const summary = summarize(games, { level: 300 });
   assert.ok(summary.rating >= 60, `rating=${summary.rating}`);
   assert.ok(summary.risk.score <= 25, `risk=${summary.risk.score}`);
-  assert.ok(!summary.labels.includes('坑'));
+  assert.ok(!summary.labels.includes('很坑'));
 });
 
 test('新手菜鸟：伤害只有几 K、补刀低、死亡多 → 判为坑', () => {
@@ -153,7 +154,7 @@ test('新手菜鸟：伤害只有几 K、补刀低、死亡多 → 判为坑', (
   const summary = summarize(games, { level: 22 });
   assert.equal(summary.risk.level, 'severe', `risk=${summary.risk.score}`);
   assert.ok(summary.risk.score >= 65, `risk=${summary.risk.score}`);
-  assert.ok(summary.labels.includes('坑'), summary.labels.join(','));
+  assert.ok(summary.labels.includes('很坑'), summary.labels.join(','));
   assert.ok(summary.labels.includes('疑似新手'), summary.labels.join(','));
   assert.equal(summary.risk.newbie, true);
   assert.ok(summary.avgDamagePerMin < 200);
@@ -520,14 +521,14 @@ test('单场坑的程度分档', () => {
   assert.equal(badLevelOfScore(15), 'severe');
   assert.equal(badLevelOfScore(10), 'severe');
   assert.equal(badLevelLabel('mild'), '小坑');
-  assert.equal(badLevelLabel('bad'), '坑');
+  assert.equal(badLevelLabel('bad'), '很坑');
   assert.equal(badLevelLabel('severe'), '巨坑');
   assert.equal(worseBadLevel('mild', 'severe'), 'severe');
   assert.equal(worseBadLevel(undefined, 'bad'), 'bad');
   assert.equal(worseBadLevel('bad', 'mild'), 'bad');
 });
 
-test('自己坑/逃跑也会打标签', () => {
+test('自己很坑/逃跑也会打标签', () => {
   assert.deepEqual(
     gameFlagTags({
       remake: false,
@@ -536,6 +537,16 @@ test('自己坑/逃跑也会打标签', () => {
       selfBad: 'severe',
     }),
     ['自己巨坑'],
+  );
+  assert.deepEqual(
+    gameFlagTags({
+      remake: false,
+      teammateAfk: false,
+      opponentAfk: false,
+      selfBad: 'bad',
+      teammateBad: 'bad',
+    }),
+    ['自己很坑', '队友很坑'],
   );
   assert.deepEqual(
     gameFlagTags({
@@ -604,6 +615,16 @@ test('各英雄类型评分权重总和保持一致', () => {
     const sum = Object.values(weights).reduce((total, value) => total + value, 0);
     assert.ok(Math.abs(sum - 16.7) < 0.02, `${role} 权重之和为 ${sum}`);
   }
+});
+
+test('射手和软辅不会被误判成坦克', () => {
+  // 赛娜、派克、莫甘娜曾被分到 tank，承伤权重 7.8 会把低承伤的局压到 50 分左右。
+  assert.equal(championRole(235), 'carry', '赛娜应算输出');
+  assert.equal(championRole(555), 'support', '派克应算辅助');
+  assert.equal(championRole(25), 'carry', '莫甘娜应算输出');
+  // 特殊模式 ID 需要和基础英雄保持一致。
+  assert.equal(championRole(60267), 'support', 'Jade 娜美应算辅助');
+  assert.equal(championRole(60025), 'carry', 'Jade 莫甘娜应算输出');
 });
 
 test('坦克高承伤和参团时不再被输出位稳压', () => {
@@ -709,7 +730,7 @@ test('坦克高承伤和参团时不再被输出位稳压', () => {
 
 test('参团和输出同时垫底时按减分制判巨坑', () => {
   // 2026-11-16 23:50 极地大乱斗真实数据：螳螂 9/6/3，参团 32.4%、输出占比 7.2%，
-  // 两项都远低于输出位阈值，绝对分应再扣短板分，落到「坑」。
+  // 两项都远低于输出位阈值，绝对分应再扣短板分，落到「巨坑」。
   const scores = percentileScores([
     { kda: 2.0, killParticipation: 0.541, damageShare: 0.188, tankShare: 0.197, healShare: 0.356, role: 'carry' as const },
     { kda: 1.35, killParticipation: 0.622, damageShare: 0.275, tankShare: 0.319, healShare: 0.388, role: 'fighter' as const },
@@ -1510,7 +1531,7 @@ test('时段统计按本地时间统计时段、星期、周、月、位置和�
     {
       gameCreation: at(1, 5, 1, 59),
       win: false,
-      tags: ['队友坑'],
+      tags: ['队友很坑'],
       position: 'TOP',
       championId: 89,
     },
@@ -1783,7 +1804,7 @@ test('英雄熟练度综合场次和表现并随样本增长', () => {
   );
 });
 
-test('坑场次包含小坑、坑和巨坑', () => {
+test('坑场次包含小坑、很坑和巨坑', () => {
   const summary = summarize([
     makeGame(1, 'MID', { score: 34.9 }),
     makeGame(2, 'MID', { score: 29.9 }),
