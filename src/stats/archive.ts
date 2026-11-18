@@ -118,7 +118,7 @@ function stripComputedTags(tags: string[]): string[] {
       tag !== '重开' &&
       tag !== 'MVP' &&
       tag !== 'SVP' &&
-      !/^(?:自己|队友|对手|敌方)(?:小坑|坑|巨坑|逃跑)$/.test(tag),
+      !/^(?:自己|队友|对手|敌方)(?:小坑|很坑|坑|巨坑|逃跑)$/.test(tag),
   );
 }
 

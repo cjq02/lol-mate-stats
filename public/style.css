@@ -1722,7 +1722,7 @@ body::before {
   background: rgba(255, 143, 160, 0.12);
 }
 
-/* 坑的程度：小坑 / 坑 / 巨坑 */
+/* 坑的程度：小坑 / 很坑 / 巨坑 */
 .match-flag.mild {
   font-weight: 600;
   opacity: 0.86;

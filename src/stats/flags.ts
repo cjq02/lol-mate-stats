@@ -36,7 +36,7 @@ export function worseBadLevel(
 export function badLevelLabel(level: BadLevel): string {
   if (level === 'severe') return '巨坑';
   if (level === 'mild') return '小坑';
-  return '坑';
+  return '很坑';
 }
 
 export interface GameFlags {
@@ -161,7 +161,7 @@ export function afkParticipantIds(
 /**
  * 计算某名参与者视角下的对局标记。
  * 队友/对手逃跑没有官方字段，用绝对阈值 + 队内相对表现做保守推断；
- * “坑”按单场表现分分成小坑 / 坑 / 巨坑三档。
+ * “坑”按单场表现分分成小坑 / 很坑 / 巨坑三档。
  */
 export function gameFlags(
   game: RawGame,

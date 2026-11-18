@@ -841,7 +841,9 @@ function buildCard(player, isLocal, options = {}) {
     : null;
   const badTag = thisGame
     ? options.badTag ??
-      rawLabels.find((label) => label === '巨坑' || label === '坑' || label === '小坑') ??
+      rawLabels.find(
+        (label) => label === '巨坑' || label === '很坑' || label === '坑' || label === '小坑',
+      ) ??
       null
     : null;
   const labels = rawLabels
@@ -850,6 +852,7 @@ function buildCard(player, isLocal, options = {}) {
         label !== 'MVP' &&
         label !== 'SVP' &&
         label !== '巨坑' &&
+        label !== '很坑' &&
         label !== '坑' &&
         label !== '小坑',
     )
@@ -874,7 +877,7 @@ function buildCard(player, isLocal, options = {}) {
   }${
     badTag === '巨坑'
       ? ' is-bad-severe'
-      : badTag === '坑'
+      : badTag === '很坑' || badTag === '坑'
         ? ' is-bad'
         : badTag === '小坑'
           ? ' is-bad-mild'
@@ -905,6 +908,7 @@ function buildCard(player, isLocal, options = {}) {
     ? `<div class="chips">${labels
         .map((label) => {
           const danger = [
+            '很坑',
             '坑',
             '小坑',
             '巨坑',
@@ -937,7 +941,7 @@ function buildCard(player, isLocal, options = {}) {
     : '';
   const badBadge = badTag
     ? `<span class="detail-bad-badge ${
-        badTag === '巨坑' ? 'severe' : badTag === '坑' ? 'bad' : 'mild'
+        badTag === '巨坑' ? 'severe' : badTag === '很坑' || badTag === '坑' ? 'bad' : 'mild'
       }">${badTag}</span>`
     : '';
 
@@ -997,7 +1001,7 @@ function buildCard(player, isLocal, options = {}) {
           risk
             ? `<div class="metric bad-metric${
                 pitGames / Math.max(1, recent.games) >= 0.5 ? ' is-high' : ''
-              }" title="近 ${recent.games} 场中 ${pitGames} 场单场评分 < 35，包含小坑 / 坑 / 巨坑"><span>坑场次</span><b>${pitGames} / ${recent.games}</b></div>`
+              }" title="近 ${recent.games} 场中 ${pitGames} 场单场评分 < 35，包含小坑 / 很坑 / 巨坑"><span>坑场次</span><b>${pitGames} / ${recent.games}</b></div>`
             : ''
         }
         ${
@@ -2128,7 +2132,7 @@ function matchFlagsHtml(tags) {
           tag,
         )}</b>`;
       }
-      const badMatch = /^(队友|敌方|自己)(小坑|坑|巨坑)$/.exec(tag);
+      const badMatch = /^(队友|敌方|自己)(小坑|很坑|坑|巨坑)$/.exec(tag);
       if (badMatch) {
         const side = badMatch[1];
         const level = badMatch[2] === '巨坑' ? 'severe' : badMatch[2] === '小坑' ? 'mild' : 'bad';
@@ -2305,7 +2309,7 @@ function matchRow(game, showScore) {
   const selfAfk = tags.includes('自己逃跑');
   const selfBadTag = remake
     ? null
-    : tags.find((tag) => /^自己(小坑|坑|巨坑)$/.test(tag)) ?? null;
+    : tags.find((tag) => /^自己(小坑|很坑|坑|巨坑)$/.test(tag)) ?? null;
   const selfBadLevel = selfBadTag
     ? selfBadTag.includes('巨坑')
       ? 'severe'
@@ -2588,7 +2592,7 @@ function renderScoreboard(detail) {
   const byName = new Map(players.map((player) => [player.displayName, player]));
   const selfPuuid = detail.selfPuuid ?? state.selfPuuid;
   const selfBadTag = (detail.tags ?? [])
-    .find((tag) => /^自己(小坑|坑|巨坑)$/.test(tag))
+    .find((tag) => /^自己(小坑|很坑|坑|巨坑)$/.test(tag))
     ?.replace(/^自己/, '');
   const radarContext = buildRadarContext(scoreboard);
   const { ranks, total: rankTotal } = scoreRankMap(scoreboard);
@@ -2757,7 +2761,7 @@ function matchListSummary(games) {
     const tags = game.tags ?? [];
     if (tags.includes('MVP')) mvp += 1;
     if (tags.includes('SVP')) svp += 1;
-    if (tags.some((tag) => /^自己(小坑|坑|巨坑)$/.test(tag))) bad += 1;
+    if (tags.some((tag) => /^自己(小坑|很坑|坑|巨坑)$/.test(tag))) bad += 1;
     if (tags.includes('自己逃跑')) afk += 1;
   }
 

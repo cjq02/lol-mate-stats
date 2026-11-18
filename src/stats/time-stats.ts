@@ -102,8 +102,8 @@ const TYPE_DEFINITIONS: Array<[string, string]> = [
   ['type-support', '辅助'],
   ['type-default', '其他'],
 ];
-const TEAMMATE_BAD_TAG = /^队友(?:小坑|坑|巨坑|逃跑)$/;
-const SELF_BAD_TAG = /^自己(?:小坑|坑|巨坑|逃跑)$/;
+const TEAMMATE_BAD_TAG = /^队友(?:小坑|很坑|坑|巨坑|逃跑)$/;
+const SELF_BAD_TAG = /^自己(?:小坑|很坑|坑|巨坑|逃跑)$/;
 
 function typeBucketKey(championId?: number): string {
   const id = Number(championId) || 0;

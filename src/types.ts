@@ -300,7 +300,7 @@ export interface RecentSummary {
   afkGames: number;
   /** 疑似挂机比例 0-1 */
   afkRate: number;
-  /** 近 N 场中被判为小坑/坑/巨坑的场次（单场评分 < 35） */
+  /** 近 N 场中被判为小坑/很坑/巨坑的场次（单场评分 < 35） */
   pitGames: number;
   avgKda: number;
   avgScore: number;
@@ -332,7 +332,7 @@ export interface RecentSummary {
 
 export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
 
-/** 单场“坑”的程度：小坑 / 坑 / 巨坑 */
+/** 单场“坑”的程度：小坑 / 很坑 / 巨坑 */
 export type BadLevel = 'mild' | 'bad' | 'severe';
 
 /** 统计用的模式分组：召唤师峡谷 / 极地大乱斗 / 竞技场 */
