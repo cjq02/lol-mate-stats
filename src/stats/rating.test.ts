@@ -12,7 +12,7 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { afkParticipantIds, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
+import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, MILD_BAD_GAME_SCORE, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
@@ -572,7 +572,7 @@ test('局内百分位评分：强于队友的玩家分更高', () => {
   assert.ok(scores.every((score) => score >= 0 && score <= 100));
   assert.ok(scores[9]! > scores[0]!, `scores=${scores.join(',')}`);
   const avg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-  assert.ok(avg > 54 && avg < 63, `avg=${avg}`);
+  assert.ok(avg > 42 && avg < 50, `avg=${avg}`);
   assert.ok(scores[9]! > 85, `top=${scores[9]}`);
   assert.ok(scores[0]! < 15, `bottom=${scores[0]}`);
 });
@@ -700,16 +700,16 @@ test('坦克高承伤和参团时不再被输出位稳压', () => {
       role: 'carry' as const,
       deaths: 8,
     },
-  ].map((input, index) => ({ ...input, teamId: index < 5 ? 100 : 200 })));
+  ]);
   assert.ok(
     scores[0]! >= scores[3]!,
     `坦克 ${scores[0]} 不应低于提莫 ${scores[3]}（全部：${scores.join(',')}）`,
   );
 });
 
-test('参团和输出同时垫底时按减分制判坑', () => {
+test('参团和输出同时垫底时按减分制判巨坑', () => {
   // 2026-11-16 23:50 极地大乱斗真实数据：螳螂 9/6/3，参团 32.4%、输出占比 7.2%，
-  // 两项都远低于输出位阈值，曲线校准后的 30.1 分应再扣短板分，落到「坑」。
+  // 两项都远低于输出位阈值，绝对分应再扣短板分，落到「坑」。
   const scores = percentileScores([
     { kda: 2.0, killParticipation: 0.541, damageShare: 0.188, tankShare: 0.197, healShare: 0.356, role: 'carry' as const },
     { kda: 1.35, killParticipation: 0.622, damageShare: 0.275, tankShare: 0.319, healShare: 0.388, role: 'fighter' as const },
@@ -721,33 +721,62 @@ test('参团和输出同时垫底时按减分制判坑', () => {
     { kda: 3.2, killParticipation: 0.593, damageShare: 0.125, tankShare: 0.289, healShare: 0.298, role: 'fighter' as const },
     { kda: 6.0, killParticipation: 0.333, damageShare: 0.065, tankShare: 0.08, healShare: 0.083, role: 'carry' as const },
     { kda: 4.0, killParticipation: 0.741, damageShare: 0.346, tankShare: 0.211, healShare: 0.099, role: 'carry' as const },
-  ].map((input, index) => ({ ...input, teamId: index < 5 ? 100 : 200 })));
-  assert.ok(scores[3]! < 30, `螳螂=${scores[3]}`);
-  assert.equal(badLevelOfScore(scores[3]), 'bad');
+  ]);
+  assert.ok(scores[3]! < 20, `螳螂=${scores[3]}`);
+  assert.equal(badLevelOfScore(scores[3]), 'severe');
 });
 
-test('评分百分位只在本队 5 人内比较', () => {
-  const team = (teamId: number, bonus: number) =>
+test('评分百分位在本局 10 人内比较', () => {
+  const team = (bonus: number) =>
     Array.from({ length: 5 }, (_, index) => ({
       kda: 1 + index + bonus,
       killParticipation: 0.4 + index * 0.08 + bonus * 0.05,
       damageShare: 0.1 + index * 0.03 + bonus * 0.05,
       tankShare: 0.1 + index * 0.02 + bonus * 0.05,
       healShare: 0.05 + index * 0.02 + bonus * 0.05,
-      teamId,
     }));
-  // 两队内部排序完全一样，只是 B 队整体数值更高：
-  // 按队伍比较时，对应位置的百分位和评分应完全相同。
-  const scores = percentileScores([...team(100, 0), ...team(200, 3)]);
+  // 两队内部排序完全一样，只是 B 队整体数据更高：
+  // 按局内 10 人比较时，B 队每个位置都应高于 A 队。
+  const scores = percentileScores([...team(0), ...team(3)]);
+  for (let index = 0; index < 5; index += 1) {
+    assert.ok(
+      scores[index + 5]! > scores[index]!,
+      `B 队第 ${index + 1} 名 ${scores[index + 5]} 应高于 A 队第 ${index + 1} 名 ${scores[index]}`,
+    );
+  }
+  const avg = (values: number[]): number =>
+    values.reduce((sum, value) => sum + value, 0) / values.length;
   assert.ok(
-    Math.abs(scores[0]! - scores[5]!) < 1e-9,
-    `A 队最弱 ${scores[0]} 应等于 B 队最弱 ${scores[5]}`,
+    avg(scores.slice(5)) > avg(scores.slice(0, 5)),
+    `整体更强的 B 队均值应更高：${scores.join(',')}`,
   );
+});
+
+test('碾压局的胜方整体高于败方，败方会出现小坑', () => {
+  // 2026-11-18 20:48 极地大乱斗：胜方 37 杀、败方 16 杀，11 分 39 秒结束。
+  // 按本队 5 人比较时两队均分接近（约 62 : 62），按局内 10 人比较才能拉开差距。
+  const scores = percentileScores([
+    { kda: 32, killParticipation: 0.865, damageShare: 0.22, tankShare: 0.118, healShare: 0.136, role: 'carry' as const, deaths: 1 },
+    { kda: 10, killParticipation: 0.541, damageShare: 0.116, tankShare: 0.31, healShare: 0.398, role: 'tank' as const, deaths: 2 },
+    { kda: 5.5, killParticipation: 0.892, damageShare: 0.239, tankShare: 0.213, healShare: 0.089, role: 'carry' as const, deaths: 6 },
+    { kda: 8.667, killParticipation: 0.703, damageShare: 0.134, tankShare: 0.192, healShare: 0.286, role: 'carry' as const, deaths: 3 },
+    { kda: 7.25, killParticipation: 0.784, damageShare: 0.291, tankShare: 0.167, healShare: 0.092, role: 'carry' as const, deaths: 4 },
+    { kda: 1.6, killParticipation: 0.5, damageShare: 0.134, tankShare: 0.226, healShare: 0.235, role: 'tank' as const, deaths: 5 },
+    { kda: 1.25, killParticipation: 0.625, damageShare: 0.369, tankShare: 0.15, healShare: 0.089, role: 'carry' as const, deaths: 8 },
+    { kda: 1, killParticipation: 0.563, damageShare: 0.147, tankShare: 0.269, healShare: 0.099, role: 'fighter' as const, deaths: 9 },
+    { kda: 1, killParticipation: 0.625, damageShare: 0.184, tankShare: 0.241, healShare: 0.489, role: 'fighter' as const, deaths: 10 },
+    { kda: 1.8, killParticipation: 0.563, damageShare: 0.166, tankShare: 0.113, healShare: 0.089, role: 'carry' as const, deaths: 5 },
+  ]);
+  const avg = (values: number[]): number =>
+    values.reduce((sum, value) => sum + value, 0) / values.length;
+  const winAvg = avg(scores.slice(0, 5));
+  const lossAvg = avg(scores.slice(5));
+  assert.ok(winAvg - lossAvg > 12, `胜方 ${winAvg.toFixed(1)} 应明显高于败方 ${lossAvg.toFixed(1)}`);
+  const pitScores = scores.slice(5).filter((score) => score < MILD_BAD_GAME_SCORE);
   assert.ok(
-    Math.abs(scores[4]! - scores[9]!) < 1e-9,
-    `A 队最强 ${scores[4]} 应等于 B 队最强 ${scores[9]}`,
+    pitScores.length >= 2,
+    `败方应至少有 2 人被判定小坑：${scores.slice(5).join(',')}`,
   );
-  assert.ok(scores[4]! > scores[0]!, `队伍内最强应高于最弱：${scores.join(',')}`);
 });
 
 test('解析 Live Client Data 的装备对象', () => {

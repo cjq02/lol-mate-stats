@@ -128,8 +128,6 @@ export interface MatchPercentileInput {
   tankShare: number;
   healShare: number;
   role?: ChampionRole;
-  /** 队伍 ID；评分百分位只在同一队内比较，缺省时回退到全部输入 */
-  teamId?: number;
   /** 本局死亡数，用于识别极端的“没输出又一直死”局 */
   deaths?: number;
 }
@@ -197,41 +195,22 @@ function percentileRank(values: number[], value: number): number {
 }
 
 /**
- * 单场评分：按本队 5 名玩家的 KDA / 参团 / 输出 / 承伤 / 治疗百分位加权。
- * 权重来自 40 个掌盟评分样本的拟合结果，先得到绝对分（掌盟 0–20 × 5），
- * 再用 0.7 次幂做单调校准；最后对“参团 + 另一项核心指标同时垫底”的局扣短板分。
+ * 单场评分：按本局 10 名玩家的 KDA / 参团 / 输出 / 承伤 / 治疗百分位加权。
+ * 权重来自 40 个掌盟评分样本的拟合结果，直接得到绝对分（掌盟 0–20 × 5）；
+ * 最后对“参团 + 另一项核心指标同时垫底”的局扣短板分。
  */
 function scoreWithWeights(
   inputs: MatchPercentileInput[],
   weightsFor: (input: MatchPercentileInput) => RoleWeights,
-  options: { deficitDeduction?: boolean; teamScoped?: boolean } = {},
+  options: { deficitDeduction?: boolean } = {},
 ): number[] {
   if (!inputs.length) return [];
   const applyDeficitDeduction = options.deficitDeduction ?? true;
-  const teamScoped = options.teamScoped ?? true;
   const rank = (
     key: 'kda' | 'killParticipation' | 'damageShare' | 'tankShare' | 'healShare',
   ): number[] => {
-    const rankAll = (indices: number[]): void => {
-      const values = indices.map((index) => (inputs[index] as MatchPercentileInput)[key]);
-      indices.forEach((inputIndex, valueIndex) => {
-        result[inputIndex] = percentileRank(values, values[valueIndex] as number);
-      });
-    };
-    const result = new Array<number>(inputs.length);
-    if (!teamScoped || !inputs.every((input) => Number.isFinite(input.teamId))) {
-      rankAll(inputs.map((_, index) => index));
-      return result;
-    }
-    const groups = new Map<number, number[]>();
-    inputs.forEach((input, index) => {
-      const teamId = Number(input.teamId);
-      const list = groups.get(teamId) ?? [];
-      list.push(index);
-      groups.set(teamId, list);
-    });
-    for (const indices of groups.values()) rankAll(indices);
-    return result;
+    const values = inputs.map((input) => input[key]);
+    return inputs.map((input) => percentileRank(values, input[key]));
   };
 
   const kda = rank('kda');
@@ -251,7 +230,6 @@ function scoreWithWeights(
       weights.taken * (taken[index] ?? 0.5) +
       weights.heal * (heal[index] ?? 0.5);
     const absolute = clamp(score20 * 5, 0, 100);
-    const curved = 100 * (absolute / 100) ** 0.7;
     // 伤害占比和参团都极低、死亡还多：属于整局几乎没打出作用的“巨坑”局，
     // 不再让辅助/坦克权重把分数托到正常范围。
     const catastrophic =
@@ -286,7 +264,7 @@ function scoreWithWeights(
     }
 
     return round(
-      clamp(catastrophic ? Math.min(curved, 12) : Math.max(0, curved - deduction), 0, 100),
+      clamp(catastrophic ? Math.min(absolute, 12) : Math.max(0, absolute - deduction), 0, 100),
       1,
     );
   });
@@ -297,11 +275,10 @@ export function percentileScores(inputs: MatchPercentileInput[]): number[] {
   return scoreWithWeights(inputs, (input) => ROLE_WEIGHTS[input.role ?? 'default']);
 }
 
-/** 旧版全局权重：用于分阶段回滚/对比（不应用短板减分，也不按队伍分组） */
+/** 旧版全局权重：用于分阶段回滚/对比（不应用短板减分） */
 export function legacyPercentileScores(inputs: MatchPercentileInput[]): number[] {
   return scoreWithWeights(inputs, () => ROLE_WEIGHTS.default, {
     deficitDeduction: false,
-    teamScoped: false,
   });
 }
 

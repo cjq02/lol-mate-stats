@@ -356,7 +356,6 @@ export function computeMatchScores(
       tankShare: base.tankShareRaw,
       healShare: base.healShareRaw,
       role: championRole(base.championId),
-      teamId: toNumber(participant.teamId),
       deaths: base.deaths,
     })),
   );

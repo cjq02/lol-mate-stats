@@ -142,7 +142,6 @@ async function main(): Promise<void> {
           tankShare: total.taken > 0 ? Number(participant.damage_taken) / total.taken : 0,
           healShare: total.heal > 0 ? Number(participant.heal) / total.heal : 0,
           role: championRole(Number(participant.champion_id)),
-          teamId: Number(participant.team_id),
           deaths,
         };
       });
