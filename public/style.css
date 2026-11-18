@@ -1297,13 +1297,58 @@ body::before {
   box-shadow: 0 0 16px rgba(157, 179, 232, 0.55);
 }
 
+/* 战绩列表里的逃跑标签：比普通标签更醒目 */
+.afk-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.afk-badge::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.afk-badge.self {
+  color: #2b0308;
+  background: linear-gradient(135deg, #ffb3bd, #ff5c7a);
+  box-shadow: 0 0 10px rgba(255, 92, 122, 0.55);
+}
+
+.afk-badge.ally {
+  color: #2b1202;
+  background: linear-gradient(135deg, #ffd0a1, #ff8b4d);
+  box-shadow: 0 0 10px rgba(255, 139, 77, 0.5);
+}
+
+.afk-badge.enemy {
+  color: #2b0710;
+  background: linear-gradient(135deg, #ffd0d8, #ff6b81);
+  box-shadow: 0 0 10px rgba(255, 107, 129, 0.45);
+}
+
+/* 坑徽章用描边，和实心的 MVP / SVP 徽章区分 */
 .detail-bad-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 44px;
   padding: 4px 10px;
-  border-radius: 999px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: rgba(8, 13, 26, 0.6);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -1311,9 +1356,7 @@ body::before {
 }
 
 .detail-bad-badge.severe {
-  color: #2b0308;
-  background: linear-gradient(135deg, #ffb3bd, #ff5c7a);
-  box-shadow: 0 0 16px rgba(255, 92, 122, 0.55);
+  color: #ff5c7a;
 }
 
 /* 战绩列表里自己的“坑”徽章 */
@@ -1324,7 +1367,9 @@ body::before {
   justify-content: center;
   min-width: 40px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  background: rgba(8, 13, 26, 0.6);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -1333,33 +1378,23 @@ body::before {
 }
 
 .self-bad-badge.mild {
-  color: #2b0710;
-  background: linear-gradient(135deg, #ffd0d8, #ff9aa8);
-  box-shadow: 0 0 10px rgba(255, 154, 168, 0.4);
+  color: #ffb3bd;
 }
 
 .self-bad-badge.bad {
-  color: #2b1202;
-  background: linear-gradient(135deg, #ffd0a1, #ff8b4d);
-  box-shadow: 0 0 12px rgba(255, 139, 77, 0.5);
+  color: #ff8b4d;
 }
 
 .self-bad-badge.severe {
-  color: #2b0308;
-  background: linear-gradient(135deg, #ffb3bd, #ff5c7a);
-  box-shadow: 0 0 14px rgba(255, 92, 122, 0.6);
+  color: #ff5c7a;
 }
 
 .detail-bad-badge.bad {
-  color: #2b1202;
-  background: linear-gradient(135deg, #ffd0a1, #ff8b4d);
-  box-shadow: 0 0 14px rgba(255, 139, 77, 0.45);
+  color: #ff8b4d;
 }
 
 .detail-bad-badge.mild {
-  color: #2b0710;
-  background: linear-gradient(135deg, #ffd0d8, #ff9aa8);
-  box-shadow: 0 0 12px rgba(255, 154, 168, 0.35);
+  color: #ff9aa8;
 }
 
 .match-flag {
