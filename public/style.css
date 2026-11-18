@@ -1297,14 +1297,17 @@ body::before {
   box-shadow: 0 0 16px rgba(157, 179, 232, 0.55);
 }
 
-/* 战绩列表里的逃跑标签：比普通标签更醒目 */
-.afk-badge {
+/* 战绩列表里只有「自己逃跑」单独强调；队友/对手逃跑跟坑标签放在一起 */
+.self-afk-badge {
   flex: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
   border-radius: 6px;
+  color: #2b0308;
+  background: linear-gradient(135deg, #ffb3bd, #ff5c7a);
+  box-shadow: 0 0 10px rgba(255, 92, 122, 0.55);
   font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -1312,31 +1315,13 @@ body::before {
   white-space: nowrap;
 }
 
-.afk-badge::before {
+.self-afk-badge::before {
   content: '';
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: currentColor;
   box-shadow: 0 0 6px currentColor;
-}
-
-.afk-badge.self {
-  color: #2b0308;
-  background: linear-gradient(135deg, #ffb3bd, #ff5c7a);
-  box-shadow: 0 0 10px rgba(255, 92, 122, 0.55);
-}
-
-.afk-badge.ally {
-  color: #2b1202;
-  background: linear-gradient(135deg, #ffd0a1, #ff8b4d);
-  box-shadow: 0 0 10px rgba(255, 139, 77, 0.5);
-}
-
-.afk-badge.enemy {
-  color: #2b0710;
-  background: linear-gradient(135deg, #ffd0d8, #ff6b81);
-  box-shadow: 0 0 10px rgba(255, 107, 129, 0.45);
 }
 
 /* 坑徽章用描边，和实心的 MVP / SVP 徽章区分 */

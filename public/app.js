@@ -2287,9 +2287,7 @@ function matchRow(game, showScore) {
   const tags = game.tags ?? [];
   const remake = tags.includes('重开');
   const bestTag = remake ? null : tags.includes('MVP') ? 'MVP' : tags.includes('SVP') ? 'SVP' : null;
-  const afkTags = tags.filter(
-    (tag) => tag === '自己逃跑' || tag === '队友逃跑' || tag === '对手逃跑',
-  );
+  const selfAfk = tags.includes('自己逃跑');
   const selfBadTag = remake
     ? null
     : tags.find((tag) => /^自己(小坑|坑|巨坑)$/.test(tag)) ?? null;
@@ -2305,15 +2303,11 @@ function matchRow(game, showScore) {
       tag !== 'MVP' &&
       tag !== 'SVP' &&
       tag !== selfBadTag &&
-      !afkTags.includes(tag),
+      tag !== '自己逃跑',
   );
-  const afkBadges = afkTags
-    .map((tag) => {
-      const kind =
-        tag === '自己逃跑' ? 'self' : tag === '队友逃跑' ? 'ally' : 'enemy';
-      return `<span class="afk-badge ${kind}">${escapeHtml(tag)}</span>`;
-    })
-    .join('');
+  const selfAfkBadge = selfAfk
+    ? '<span class="self-afk-badge">自己逃跑</span>'
+    : '';
   const bestBadge = bestTag
     ? `<span class="best-badge ${bestTag === 'MVP' ? 'mvp' : 'svp'}">${bestTag}</span>`
     : '';
@@ -2330,7 +2324,7 @@ function matchRow(game, showScore) {
       champPath(game.championId),
       game.championName,
       'sm',
-    )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b>${afkBadges}${bestBadge}${selfBadBadge}<small>${escapeHtml(
+    )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b>${selfAfkBadge}${bestBadge}${selfBadBadge}<small>${escapeHtml(
       game.queueName ?? '',
     )} · ${durationMin} 分钟 · ${formatGameTime(game.gameCreation)}${
       displayTags?.length ? ` · ${matchFlagsHtml(displayTags)}` : ''
