@@ -14,6 +14,7 @@ import type {
   MatchDetail,
   MatchSummary,
   MatchTimeline,
+  MatchTimelinePlayer,
   PlayerReport,
   RawGame,
   RawGameTimeline,
@@ -59,7 +60,7 @@ import {
   gameFlags,
   isRemakeGame,
 } from './stats/flags.js';
-import { gradeOf } from './stats/rating.js';
+import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, gradeOf } from './stats/rating.js';
 import { premadeSizesByPuuid } from './stats/premade.js';
 import { buildLiveTimeline, type LiveTimelineSample } from './stats/live-timeline.js';
 import { parseMatchTimeline } from './stats/timeline.js';
@@ -122,6 +123,29 @@ export function phaseMessage(phase: string): string {
     default:
       return '等待进入选人阶段…';
   }
+}
+
+/** 把秒数写成“14 分 39 秒”，用于逃跑判定依据 */
+function formatAfkSeconds(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return minutes > 0 ? `${minutes} 分 ${rest} 秒` : `${rest} 秒`;
+}
+
+/** 从时间线玩家数据生成可读的逃跑依据；没有明显信号时返回 undefined */
+function afkReasonFromTimelinePlayer(
+  player?: MatchTimelinePlayer,
+): string | undefined {
+  const stationary = Math.round((player?.maxStationaryMs ?? 0) / 1000);
+  if (stationary >= AFK_STATIONARY_SECONDS) {
+    return `存活期间原地不动 ${formatAfkSeconds(stationary)}`;
+  }
+  const idle = Math.round((player?.maxIdleMs ?? 0) / 1000);
+  if (idle >= AFK_IDLE_VETO_SECONDS) {
+    return `连续 ${formatAfkSeconds(idle)} 没有补刀和战斗`;
+  }
+  return undefined;
 }
 
 export class LiveSource implements DataSource {
@@ -489,6 +513,68 @@ export class LiveSource implements DataSource {
     return changed;
   }
 
+  /** 旧缓存详情没有逃跑依据，打开时按已保存时间线补算一次 */
+  private async enrichDetailAfkReasons(detail: MatchDetail): Promise<boolean> {
+    const afkPlayers = detail.afkPlayers ?? [];
+    const afkScoreboard = (detail.scoreboard ?? []).filter((player) =>
+      player.tags?.includes('逃跑'),
+    );
+    if (!afkPlayers.length && !afkScoreboard.length) return false;
+
+    const fallback = '伤害、经济或参团明显低于队友';
+    const timeline = await getSavedMatchTimeline(detail.gameId).catch(() => undefined);
+    let changed = false;
+    if (!timeline?.players?.length) {
+      for (const player of afkPlayers) {
+        if (!player.reason) {
+          player.reason = fallback;
+          changed = true;
+        }
+      }
+      for (const player of afkScoreboard) {
+        if (!player.afkReason) {
+          player.afkReason = fallback;
+          changed = true;
+        }
+      }
+      return changed;
+    }
+
+    const byPuuid = new Map(
+      timeline.players
+        .filter((player) => Boolean(player.puuid))
+        .map((player) => [player.puuid as string, player] as const),
+    );
+    const findTimelinePlayer = (
+      puuid?: string,
+      name?: string,
+      championId?: number,
+    ): MatchTimelinePlayer | undefined =>
+      (puuid ? byPuuid.get(puuid) : undefined) ??
+      timeline.players.find((player) => player.name === name) ??
+      timeline.players.find(
+        (player) => Number(player.championId) === Number(championId),
+      );
+
+    for (const player of afkPlayers) {
+      if (player.reason) continue;
+      player.reason =
+        afkReasonFromTimelinePlayer(
+          findTimelinePlayer(player.puuid, player.name, player.championId),
+        ) ?? fallback;
+      changed = true;
+    }
+    for (const player of afkScoreboard) {
+      if (player.afkReason) continue;
+      player.afkReason =
+        afkReasonFromTimelinePlayer(
+          findTimelinePlayer(player.puuid, player.name, player.championId),
+        ) ?? fallback;
+      changed = true;
+    }
+    return changed;
+  }
+
   async getMatchDetail(
     gameId: number,
     recent: number,
@@ -500,9 +586,10 @@ export class LiveSource implements DataSource {
       const cached = await getSavedMatchDetail(gameId);
       if (cached) {
         const filled = await this.enrichDetailRanks(cached);
-        if (filled) {
+        const reasons = await this.enrichDetailAfkReasons(cached);
+        if (filled || reasons) {
           await saveMatchDetail(cached);
-          logTag('match', `[${gameId}] 命中对局详情缓存，已补算近期平均排名`);
+          logTag('match', `[${gameId}] 命中对局详情缓存，已补算近期平均排名和逃跑依据`);
         } else {
           logTag('match', `[${gameId}] 命中对局详情缓存，直接返回`);
         }
@@ -536,6 +623,26 @@ export class LiveSource implements DataSource {
     const timeline = await this.getMatchTimeline(gameId)
       .then((result) => result.timeline)
       .catch(() => undefined);
+    const timelinePlayerByPuuid = new Map(
+      (timeline?.players ?? [])
+        .filter((player) => Boolean(player.puuid))
+        .map((player) => [player.puuid as string, player] as const),
+    );
+    const timelinePlayerById = new Map(
+      (timeline?.players ?? []).map(
+        (player) => [Number(player.participantId), player] as const,
+      ),
+    );
+    const afkReasonFor = (participantId: number, puuid?: string): string => {
+      // 结算数据和时间线的 participantId 偶尔错位，优先按 puuid 找
+      const timelinePlayer =
+        (puuid ? timelinePlayerByPuuid.get(puuid) : undefined) ??
+        timelinePlayerById.get(participantId);
+      return (
+        afkReasonFromTimelinePlayer(timelinePlayer) ??
+        '伤害、经济或参团明显低于队友'
+      );
+    };
 
     const queueId = toNumber(game.queueId);
     const gameMode = modeFromQueue(queueId, game.gameMode);
@@ -604,7 +711,9 @@ export class LiveSource implements DataSource {
         const perMin = (value: number): number =>
           durationMin > 0 ? Math.round(value / durationMin) : 0;
         const participantId = toNumber(participant.participantId);
+        const puuid = typeof player?.puuid === 'string' ? player.puuid : undefined;
         const afk = participantId !== selfParticipantId && afkIds.has(participantId);
+        const afkReason = afk ? afkReasonFor(participantId, puuid) : undefined;
         const badLevel =
           !remake && participantId !== selfParticipantId
             ? badLevelOfScore(analyzed?.score)
@@ -623,7 +732,7 @@ export class LiveSource implements DataSource {
           : tags;
 
         return {
-          puuid: typeof player?.puuid === 'string' ? player.puuid : undefined,
+          puuid,
           name,
           championId,
           championName: championMap.get(championId)?.name,
@@ -663,6 +772,7 @@ export class LiveSource implements DataSource {
           damageTakenPerMin: perMin(toNumber(stats.totalDamageTaken)),
           visionPerMin: analyzed?.visionPerMin,
           badLevel,
+          afkReason,
           tags: finalTags,
           timeline: analyzed?.timeline,
         };
@@ -680,6 +790,7 @@ export class LiveSource implements DataSource {
         teamId: player.teamId,
         isEnemy: player.isEnemy,
         position: player.position,
+        reason: player.afkReason,
       }));
     const badPlayers = scoreboard
       .filter((player) => player.badLevel)

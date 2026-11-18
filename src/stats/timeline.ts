@@ -1,10 +1,12 @@
 import type {
   MatchTimeline,
+  MatchTimelineBuildingEvent,
   MatchTimelineChampionCount,
   MatchTimelineDeath,
   MatchTimelineEvent,
   MatchTimelineLife,
   MatchTimelinePlayer,
+  MatchTimelineSeriesPoint,
   RawGame,
   RawGameTimeline,
   RawGameTimelineEvent,
@@ -403,6 +405,81 @@ function measureStationaryAlive(
 }
 
 /**
+ * 把每分钟快照汇总成双方总经济/经验。
+ * 只用于展示曲线和 AI 节奏分析，不参与评分。
+ */
+function buildTeamSeries(
+  frames: RawGameTimelineFrame[],
+  teamByParticipant: Map<number, number>,
+  durationMs: number,
+): MatchTimelineSeriesPoint[] {
+  const byTime = new Map<number, MatchTimelineSeriesPoint>();
+  for (const frame of frames) {
+    const timestamp = toNumber(frame.timestamp);
+    if (timestamp <= 0 || (durationMs > 0 && timestamp > durationMs + 60_000)) continue;
+    const totals = new Map<number, { gold: number; xp: number }>();
+    for (const [participantId, participantFrame] of Object.entries(
+      frame.participantFrames ?? {},
+    )) {
+      const teamId = teamByParticipant.get(toNumber(participantId));
+      if (teamId === undefined) continue;
+      const total = totals.get(teamId) ?? { gold: 0, xp: 0 };
+      total.gold += toNumber(participantFrame.totalGold);
+      total.xp += toNumber(participantFrame.xp);
+      totals.set(teamId, total);
+    }
+    if (!totals.size) continue;
+    byTime.set(timestamp, {
+      timestampMs: Math.round(timestamp),
+      teams: [...totals.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([teamId, total]) => ({
+          teamId,
+          gold: Math.round(total.gold),
+          xp: Math.round(total.xp),
+        })),
+    });
+  }
+  return [...byTime.values()].sort((a, b) => a.timestampMs - b.timestampMs);
+}
+
+/** 收集推塔/水晶事件，用于在曲线上标出节奏点 */
+function buildBuildingEvents(
+  frames: RawGameTimelineFrame[],
+): MatchTimelineBuildingEvent[] {
+  const seen = new Set<string>();
+  const buildings: MatchTimelineBuildingEvent[] = [];
+  for (const frame of frames) {
+    for (const event of frame.events ?? []) {
+      if (event.type !== 'BUILDING_KILL') continue;
+      const timestamp = toNumber(event.timestamp);
+      if (timestamp <= 0) continue;
+      const teamId = toNumber(event.teamId);
+      const x = toNumber(event.position?.x);
+      const y = toNumber(event.position?.y);
+      const buildingType =
+        typeof event.buildingType === 'string' ? event.buildingType : undefined;
+      const laneType = typeof event.laneType === 'string' ? event.laneType : undefined;
+      const towerType = typeof event.towerType === 'string' ? event.towerType : undefined;
+      const key = `${timestamp}:${teamId}:${buildingType ?? ''}:${laneType ?? ''}:${
+        towerType ?? ''
+      }:${x}:${y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      buildings.push({
+        timestampMs: Math.round(timestamp),
+        teamId,
+        buildingType,
+        laneType,
+        towerType,
+        position: x > 0 && y > 0 ? { x, y } : undefined,
+      });
+    }
+  }
+  return buildings.sort((a, b) => a.timestampMs - b.timestampMs);
+}
+
+/**
  * 把 LCU 对局时间线解析成“每条命”：
  * 阵亡事件切分时间段，分钟快照提供补刀/金币增量，等级用于估算复活等待。
  * 官方时间线没有伤害字段，伤害/承伤只能保留整局总数。
@@ -489,5 +566,16 @@ export function parseMatchTimeline(
     };
   });
 
-  return { gameId: toNumber(game.gameId), durationMs, players };
+  const teamByParticipant = new Map(
+    metas.map((meta) => [meta.participantId, meta.teamId] as const),
+  );
+  const series = buildTeamSeries(frames, teamByParticipant, durationMs);
+  const buildings = buildBuildingEvents(frames);
+  return {
+    gameId: toNumber(game.gameId),
+    durationMs,
+    players,
+    ...(series.length ? { series } : {}),
+    ...(buildings.length ? { buildings } : {}),
+  };
 }

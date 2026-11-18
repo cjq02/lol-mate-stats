@@ -177,6 +177,34 @@ function timelineText(timeline?: GameTimeline): string {
   return `时间线：${parts.join('，')}${idle}`;
 }
 
+/** 双方经济差和推塔节奏，给 AI 一个整局走势参考 */
+function economyTimelineText(timeline: MatchTimeline, teamId: number): string {
+  const series = timeline.series ?? [];
+  if (series.length < 2) return '';
+  const teamIds = new Set<number>();
+  for (const point of series) {
+    for (const team of point.teams ?? []) teamIds.add(Number(team.teamId));
+  }
+  if (teamIds.size !== 2 || !teamIds.has(teamId)) return '';
+  const enemyId = [...teamIds].find((id) => id !== teamId);
+  if (enemyId === undefined) return '';
+  const goldAt = (point: (typeof series)[number], id: number): number =>
+    Number((point.teams ?? []).find((team) => Number(team.teamId) === id)?.gold) || 0;
+  const diffAt = (point: (typeof series)[number]): number =>
+    goldAt(point, teamId) - goldAt(point, enemyId);
+  const formatDiff = (value: number): string =>
+    `${value >= 0 ? '+' : '-'}${(Math.abs(value) / 1000).toFixed(1)}k`;
+  const first = series[0];
+  const last = series[series.length - 1];
+  if (!first || !last) return '';
+  const buildings = timeline.buildings ?? [];
+  const towerCount = (id: number): number =>
+    buildings.filter((building) => Number(building.teamId) === id).length;
+  return `经济差 ${formatDiff(diffAt(first))} → ${formatDiff(
+    diffAt(last),
+  )}，推塔 ${towerCount(teamId)}:${towerCount(enemyId)}`;
+}
+
 /** 把“每条命”时间线压缩成模型可读的几行，用于分析死亡节点和节奏 */
 function lifeTimelineText(timeline?: MatchTimeline, selfPuuid?: string): string {
   if (!timeline?.players?.length) return '';
@@ -238,6 +266,7 @@ function lifeTimelineText(timeline?: MatchTimeline, selfPuuid?: string): string 
     .join('；');
   const header = [
     `【我的每条命时间线】共 ${player.lives.length} 条命`,
+    economyTimelineText(timeline, player.teamId),
     versus ? `对位：${versus}` : '',
     `整局伤害 ${fix(player.damage)}、承伤 ${fix(
       player.damageTaken,

@@ -1902,6 +1902,126 @@ body::before {
   background: rgba(255, 255, 255, 0.018);
 }
 
+/* 时间线里的双方经济差曲线 */
+.timeline-curve {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+  padding: 9px 12px 7px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.timeline-curve-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 3px 12px;
+  margin-bottom: 2px;
+  color: var(--muted-2);
+  font-size: 10.5px;
+}
+
+.timeline-curve-head em {
+  color: var(--muted-2);
+  font-style: normal;
+  opacity: 0.8;
+}
+
+.timeline-curve-head b {
+  color: #e6eeff;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-curve-head b.positive {
+  color: #5eead4;
+}
+
+.timeline-curve-head b.negative {
+  color: #ff8fa0;
+}
+
+.timeline-curve svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.timeline-curve-grid {
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 1;
+}
+
+.timeline-curve-grid.zero {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-dasharray: 4 4;
+}
+
+.timeline-curve-area {
+  fill: rgba(94, 234, 212, 0.08);
+}
+
+.timeline-curve-line {
+  fill: none;
+  stroke: #5eead4;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.timeline-curve-marker {
+  stroke-width: 1.2;
+  opacity: 0.7;
+  pointer-events: stroke;
+}
+
+.timeline-curve-marker.ally {
+  stroke: #ffd166;
+}
+
+.timeline-curve-marker.enemy {
+  stroke: #ff6b81;
+}
+
+.timeline-curve-dot.positive {
+  fill: #5eead4;
+}
+
+.timeline-curve-dot.negative {
+  fill: #ff8fa0;
+}
+
+.timeline-curve-label {
+  fill: var(--muted-2);
+  font-size: 9.5px;
+}
+
+.timeline-curve-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 2px;
+  color: var(--muted-2);
+  font-size: 9.5px;
+}
+
+.timeline-curve-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.timeline-curve-legend i.ally {
+  background: #ffd166;
+}
+
+.timeline-curve-legend i.enemy {
+  background: #ff6b81;
+}
+
 .timeline-versus-table {
   width: 100%;
   min-width: 360px;

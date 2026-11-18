@@ -919,9 +919,13 @@ function buildCard(player, isLocal, options = {}) {
           const gold = label === '大腿' || label === 'MVP';
           const svp = label === 'SVP';
           const afkChip = label === '逃跑';
+          const afkTitle =
+            afkChip && thisGame?.afkReason
+              ? ` title="${escapeHtml(thisGame.afkReason)}"`
+              : '';
           return `<span class="chip${gold ? ' gold' : ''}${svp ? ' svp' : ''}${
             afkChip ? ' afk-chip' : danger ? ' danger' : ''
-          }">${escapeHtml(label)}</span>`;
+          }"${afkTitle}>${escapeHtml(label)}</span>`;
         })
         .join('')}${baselineChip}</div>`
     : !thisGame && recent
@@ -2139,7 +2143,8 @@ function matchFlagsHtml(tags) {
 
 function afkPlayerLabel(player) {
   const champion = player.championName ?? '未知英雄';
-  return `${champion}（${player.name}）`;
+  const reason = player.reason ? ` · ${player.reason}` : '';
+  return `${champion}（${player.name}${reason}）`;
 }
 
 function renderMatchFlags(detail) {
@@ -4073,6 +4078,173 @@ function timelineLifeHtml(life, playersById, actorParticipantId, selfParticipant
   </div>`;
 }
 
+function timelineTeamGold(point, teamId) {
+  const teams = Array.isArray(point?.teams) ? point.teams : [];
+  const team = teams.find((item) => Number(item.teamId) === Number(teamId));
+  return Number(team?.gold) || 0;
+}
+
+function timelineBuildingLabel(building) {
+  const lane =
+    {
+      TOP_LANE: '上路',
+      MID_LANE: '中路',
+      BOT_LANE: '下路',
+      NEXUS: '基地',
+    }[building?.laneType] ?? '';
+  if (building?.buildingType === 'INHIBITOR_BUILDING') return `${lane}水晶`;
+  if (building?.buildingType === 'NEXUS_BUILDING') return '基地水晶';
+  if (building?.buildingType === 'TOWER_BUILDING') {
+    const tower =
+      {
+        OUTER_TURRET: '一塔',
+        INNER_TURRET: '二塔',
+        BASE_TURRET: '门牙塔',
+        NEXUS_TURRET: '门牙塔',
+      }[building?.towerType] ?? '防御塔';
+    return `${lane}${tower}`;
+  }
+  return '建筑';
+}
+
+/** 双方经济差曲线；只在两人队伍模式下绘制，避免竞技场多队伍时误导 */
+function timelineCurveHtml(timeline, player) {
+  const series = Array.isArray(timeline?.series) ? timeline.series : [];
+  if (series.length < 2) return '';
+  const teamId = Number(player?.teamId);
+  const teamIds = new Set();
+  for (const point of series) {
+    for (const team of Array.isArray(point?.teams) ? point.teams : []) {
+      teamIds.add(Number(team.teamId));
+    }
+  }
+  if (teamIds.size !== 2 || !teamIds.has(teamId)) return '';
+  const enemyId = [...teamIds].find((id) => id !== teamId);
+  if (enemyId === undefined) return '';
+
+  const points = series.map((point) => {
+    const timestampMs = Number(point.timestampMs) || 0;
+    const mine = timelineTeamGold(point, teamId);
+    const enemy = timelineTeamGold(point, enemyId);
+    return { timestampMs, mine, enemy, diff: mine - enemy };
+  });
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!first || !last) return '';
+  const durationMs = Math.max(Number(timeline.durationMs) || 0, last.timestampMs, 1);
+  const maxAbs = Math.max(1000, ...points.map((point) => Math.abs(point.diff)));
+  const step = maxAbs > 8000 ? 4000 : maxAbs > 4000 ? 2000 : 1000;
+  const bound = Math.max(step, Math.ceil(maxAbs / step) * step);
+  const width = 760;
+  const plot = {
+    left: 34,
+    right: width - 12,
+    top: 20,
+    bottom: 138,
+    middle: (20 + 138) / 2,
+  };
+  const x = (timestampMs) =>
+    plot.left +
+    (Math.min(durationMs, Math.max(0, timestampMs)) / durationMs) *
+      (plot.right - plot.left);
+  const y = (diff) =>
+    plot.middle - (diff / bound) * ((plot.bottom - plot.top) / 2);
+  const path = points
+    .map(
+      (point, index) =>
+        `${index ? 'L' : 'M'}${x(point.timestampMs).toFixed(1)},${y(
+          point.diff,
+        ).toFixed(1)}`,
+    )
+    .join(' ');
+  const area = `M${x(first.timestampMs).toFixed(1)},${plot.middle.toFixed(
+    1,
+  )} L${points
+    .map(
+      (point) =>
+        `${x(point.timestampMs).toFixed(1)},${y(point.diff).toFixed(1)}`,
+    )
+    .join(' L')} L${x(last.timestampMs).toFixed(1)},${plot.middle.toFixed(1)} Z`;
+
+  const buildings = Array.isArray(timeline.buildings) ? timeline.buildings : [];
+  const allies = buildings.filter((item) => Number(item.teamId) === teamId);
+  const enemies = buildings.filter((item) => Number(item.teamId) === enemyId);
+  const markers = [...allies, ...enemies]
+    .filter((building) => {
+      const timestampMs = Number(building.timestampMs) || 0;
+      return timestampMs > 0 && timestampMs <= durationMs;
+    })
+    .map((building) => {
+      const timestampMs = Number(building.timestampMs) || 0;
+      const isMine = Number(building.teamId) === teamId;
+      const label = `${gameClock(timestampMs / 1000)} ${
+        isMine ? '我方' : '对方'
+      }推掉${timelineBuildingLabel(building)}`;
+      const markerX = x(timestampMs).toFixed(1);
+      return `<line class="timeline-curve-marker ${
+        isMine ? 'ally' : 'enemy'
+      }" x1="${markerX}" y1="${plot.top}" x2="${markerX}" y2="${
+        plot.bottom
+      }"><title>${escapeHtml(label)}</title></line>`;
+    })
+    .join('');
+
+  const grid = [plot.top, plot.middle, plot.bottom]
+    .map(
+      (lineY, index) =>
+        `<line class="timeline-curve-grid${
+          index === 1 ? ' zero' : ''
+        }" x1="${plot.left}" y1="${lineY}" x2="${plot.right}" y2="${lineY}"></line>`,
+    )
+    .join('');
+  const middleX = ((plot.left + plot.right) / 2).toFixed(1);
+  const diffClass = last.diff >= 0 ? 'positive' : 'negative';
+  const diffLabel = `${last.diff >= 0 ? '领先' : '落后'} ${timelineGoldText(
+    Math.abs(last.diff),
+  )}`;
+
+  return `<div class="timeline-curve">
+    <div class="timeline-curve-head">
+      <span class="timeline-curve-title">经济差曲线 <em>（所在方 - 对方）</em></span>
+      <span class="timeline-curve-total">所在方 <b>${timelineGoldText(
+        last.mine,
+      )}</b> · 对方 <b>${timelineGoldText(
+        last.enemy,
+      )}</b> · <b class="${diffClass}">${diffLabel}</b></span>
+    </div>
+    <svg viewBox="0 0 ${width} 160" role="img" aria-label="双方经济差曲线">
+      ${grid}
+      <line class="timeline-curve-grid zero" x1="${middleX}" y1="${
+        plot.top
+      }" x2="${middleX}" y2="${plot.bottom}"></line>
+      <path class="timeline-curve-area" d="${area}"></path>
+      <path class="timeline-curve-line" d="${path}"></path>
+      ${markers}
+      <circle class="timeline-curve-dot ${diffClass}" cx="${x(
+        last.timestampMs,
+      ).toFixed(1)}" cy="${y(last.diff).toFixed(1)}" r="3.2"></circle>
+      <text class="timeline-curve-label" x="${plot.left}" y="154">0:00</text>
+      <text class="timeline-curve-label" x="${middleX}" y="154" text-anchor="middle">${gameClock(
+        durationMs / 2000,
+      )}</text>
+      <text class="timeline-curve-label" x="${plot.right}" y="154" text-anchor="end">${gameClock(
+        durationMs / 1000,
+      )}</text>
+      <text class="timeline-curve-label" x="4" y="${plot.top + 4}">+${
+        bound / 1000
+      }k</text>
+      <text class="timeline-curve-label" x="4" y="${plot.bottom}">-${
+        bound / 1000
+      }k</text>
+    </svg>
+    <div class="timeline-curve-legend">
+      <span><i class="ally"></i>所在方推塔 ${allies.length}</span>
+      <span><i class="enemy"></i>对方推塔 ${enemies.length}</span>
+      <span>竖线为推塔时间</span>
+    </div>
+  </div>`;
+}
+
 function renderTimeline(timeline, detail, cached) {
   const self = timelineSelfPlayer(detail, timeline);
   const fallback = timelinePlayerFor(detail, timeline);
@@ -4133,8 +4305,9 @@ function renderTimeline(timeline, detail, cached) {
     ? Math.round((Number(player.damageTaken) || 0) / lives.length)
     : 0;
   const versus = timelineVersusHtml(player, timeline);
+  const curve = timelineCurveHtml(timeline, player);
   els.timelineList.innerHTML = lives.length
-    ? `${versus}<div class="timeline-lives">${lives
+    ? `${curve}${versus}<div class="timeline-lives">${lives
         .map((life) =>
           timelineLifeHtml(
             life,
@@ -4153,7 +4326,7 @@ function renderTimeline(timeline, detail, cached) {
       )} / ${timelineGoldText(
         perLifeTaken,
       )}。官方接口不提供每条命的伤害拆分，复活时间按等级估算，分钟级快照会有少量误差。</div>`
-    : '<div class="timeline-status">这局没有解析出存活时间段</div>';
+    : `${curve}<div class="timeline-status">这局没有解析出存活时间段</div>`;
   els.timelineList.scrollTop = 0;
 }
 

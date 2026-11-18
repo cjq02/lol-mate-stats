@@ -660,6 +660,8 @@ export interface MatchScoreboardPlayer {
   visionPerMin?: number;
   /** 本局“坑”的程度 */
   badLevel?: BadLevel;
+  /** 被推断为逃跑时的判定依据 */
+  afkReason?: string;
   tags?: string[];
   /** 本局节奏（结算接口有 timeline 时） */
   timeline?: GameTimeline;
@@ -677,6 +679,8 @@ export interface MatchAfkPlayer {
   badLevel?: BadLevel;
   /** 本局表现分 */
   score?: number;
+  /** 被推断为逃跑时的判定依据 */
+  reason?: string;
 }
 
 export interface MatchDetail {
@@ -788,10 +792,36 @@ export interface MatchTimelineChampionCount {
   count: number;
 }
 
+/** 某个时间点各队伍的总经济/经验，用于时间线曲线 */
+export interface MatchTimelineTeamSnapshot {
+  teamId: number;
+  gold: number;
+  xp: number;
+}
+
+export interface MatchTimelineSeriesPoint {
+  timestampMs: number;
+  teams: MatchTimelineTeamSnapshot[];
+}
+
+/** 推塔/水晶等建筑事件，teamId 表示推掉建筑的队伍 */
+export interface MatchTimelineBuildingEvent {
+  timestampMs: number;
+  teamId: number;
+  buildingType?: string;
+  laneType?: string;
+  towerType?: string;
+  position?: { x: number; y: number };
+}
+
 export interface MatchTimeline {
   gameId: number;
   durationMs: number;
   players: MatchTimelinePlayer[];
+  /** 每分钟双方经济/经验曲线；旧缓存可能没有 */
+  series?: MatchTimelineSeriesPoint[];
+  /** 推塔/水晶事件；旧缓存可能没有 */
+  buildings?: MatchTimelineBuildingEvent[];
 }
 
 export interface LiveGameData {

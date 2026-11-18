@@ -1142,6 +1142,31 @@ test('赛后 AI 复盘会带上每条命时间线且不编造每命伤害', () =
         lives: [],
       },
     ],
+    series: [
+      {
+        timestampMs: 60_000,
+        teams: [
+          { teamId: 100, gold: 2_000, xp: 200 },
+          { teamId: 200, gold: 1_500, xp: 150 },
+        ],
+      },
+      {
+        timestampMs: 1_200_000,
+        teams: [
+          { teamId: 100, gold: 50_000, xp: 5_000 },
+          { teamId: 200, gold: 45_000, xp: 4_800 },
+        ],
+      },
+    ],
+    buildings: [
+      {
+        timestampMs: 500_000,
+        teamId: 100,
+        buildingType: 'TOWER_BUILDING',
+        laneType: 'MID_LANE',
+        towerType: 'OUTER_TURRET',
+      },
+    ],
   } as MatchTimeline;
   const text = buildAnalysisMessages(detail, () => '', timeline)
     .map((message) => message.content)
@@ -1150,6 +1175,8 @@ test('赛后 AI 复盘会带上每条命时间线且不编造每命伤害', () =
   assert.ok(text.includes('第 1 条'), text);
   assert.ok(text.includes('被盲僧击杀'), text);
   assert.ok(text.includes('助攻 拉克丝'), text);
+  assert.ok(text.includes('经济差 +0.5k → +5.0k'), text);
+  assert.ok(text.includes('推塔 1:0'), text);
   assert.ok(text.includes('禁止编造'), '应明确禁止编造每条命伤害');
 });
 
@@ -2809,6 +2836,79 @@ test('击杀事件也会重置空闲和原地不动计时', () => {
   assert.equal(self.idleAliveMs, 120_000, '击杀前后两段各算一次空闲');
   assert.equal(self.maxIdleMs, 60_000, '击杀应把连续空闲打断');
   assert.equal(self.maxStationaryMs, 60_000, '击杀也应重置原地不动计时');
+});
+
+test('时间线汇总双方经济/经验曲线和推塔事件', () => {
+  const game: RawGame = {
+    gameId: 48,
+    gameDuration: 120,
+    participants: [
+      { participantId: 1, teamId: 100, championId: 103, stats: { kills: 0, deaths: 0, assists: 0 } },
+      { participantId: 2, teamId: 100, championId: 64, stats: { kills: 0, deaths: 0, assists: 0 } },
+      { participantId: 3, teamId: 200, championId: 99, stats: { kills: 0, deaths: 0, assists: 0 } },
+      { participantId: 4, teamId: 200, championId: 1, stats: { kills: 0, deaths: 0, assists: 0 } },
+    ],
+    participantIdentities: [
+      { participantId: 1, player: { puuid: 'a', gameName: 'A', tagLine: '0001' } },
+      { participantId: 2, player: { puuid: 'b', gameName: 'B', tagLine: '0002' } },
+      { participantId: 3, player: { puuid: 'c', gameName: 'C', tagLine: '0003' } },
+      { participantId: 4, player: { puuid: 'd', gameName: 'D', tagLine: '0004' } },
+    ],
+  };
+  const frame = (
+    timestamp: number,
+    golds: [number, number, number, number],
+    xps: [number, number, number, number],
+  ) => ({
+    timestamp,
+    participantFrames: {
+      '1': { participantId: 1, totalGold: golds[0], xp: xps[0] },
+      '2': { participantId: 2, totalGold: golds[1], xp: xps[1] },
+      '3': { participantId: 3, totalGold: golds[2], xp: xps[2] },
+      '4': { participantId: 4, totalGold: golds[3], xp: xps[3] },
+    },
+  });
+  const building = {
+    type: 'BUILDING_KILL',
+    timestamp: 90_000,
+    teamId: 100,
+    buildingType: 'TOWER_BUILDING',
+    laneType: 'MID_LANE',
+    towerType: 'OUTER_TURRET',
+    position: { x: 5000, y: 5000 },
+  };
+  const timeline = parseMatchTimeline(game, {
+    frames: [
+      { ...frame(60_000, [1000, 500, 800, 400], [100, 50, 80, 40]), events: [building] },
+      // 同一事件在相邻帧重复出现时只保留一次
+      { ...frame(120_000, [2500, 1000, 1800, 900], [250, 100, 180, 90]), events: [building] },
+    ],
+  });
+
+  assert.equal(timeline.series?.length, 2);
+  assert.deepEqual(timeline.series?.[0], {
+    timestampMs: 60_000,
+    teams: [
+      { teamId: 100, gold: 1500, xp: 150 },
+      { teamId: 200, gold: 1200, xp: 120 },
+    ],
+  });
+  assert.deepEqual(timeline.series?.[1], {
+    timestampMs: 120_000,
+    teams: [
+      { teamId: 100, gold: 3500, xp: 350 },
+      { teamId: 200, gold: 2700, xp: 270 },
+    ],
+  });
+  assert.equal(timeline.buildings?.length, 1);
+  assert.deepEqual(timeline.buildings?.[0], {
+    timestampMs: 90_000,
+    teamId: 100,
+    buildingType: 'TOWER_BUILDING',
+    laneType: 'MID_LANE',
+    towerType: 'OUTER_TURRET',
+    position: { x: 5000, y: 5000 },
+  });
 });
 
 test('复活等待按等级估算，并随游戏时间放大', () => {
