@@ -1674,6 +1674,72 @@ body::before {
   white-space: nowrap;
 }
 
+.timeline-players {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.01);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.timeline-player-tab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 3px 10px 3px 4px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.timeline-player-tab:hover {
+  color: #cbd6ef;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.timeline-player-tab.active {
+  color: #e8f0ff;
+  border-color: rgba(94, 234, 212, 0.45);
+  background: rgba(94, 234, 212, 0.1);
+}
+
+.timeline-player-tab.enemy:not(.active) {
+  background: rgba(255, 107, 129, 0.045);
+}
+
+.timeline-player-tab .icon.sm {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.timeline-player-tab.self .timeline-player-label {
+  color: #ffd479;
+}
+
+.timeline-player-tab.active.self {
+  border-color: rgba(255, 212, 121, 0.55);
+  background: rgba(255, 212, 121, 0.1);
+}
+
+.timeline-player-label {
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .timeline-summary {
   display: flex;
   flex-wrap: wrap;
@@ -2044,6 +2110,10 @@ body::before {
   vertical-align: middle;
 }
 
+.timeline-champ.self .icon.sm {
+  box-shadow: 0 0 0 2px #f5c76a, 0 0 10px rgba(245, 199, 106, 0.4);
+}
+
 .timeline-life-death .icon.sm {
   width: 20px;
   height: 20px;
@@ -2087,6 +2157,20 @@ body::before {
   .timeline-summary {
     padding: 7px 12px;
     gap: 4px 12px;
+  }
+
+  .timeline-players {
+    padding: 6px 10px;
+    gap: 3px;
+  }
+
+  .timeline-player-tab {
+    padding-right: 7px;
+    font-size: 10px;
+  }
+
+  .timeline-player-label {
+    max-width: 56px;
   }
 
   .timeline-list {
