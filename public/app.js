@@ -918,7 +918,10 @@ function buildCard(player, isLocal, options = {}) {
           ].includes(label);
           const gold = label === '大腿' || label === 'MVP';
           const svp = label === 'SVP';
-          return `<span class="chip${gold ? ' gold' : ''}${svp ? ' svp' : ''}${danger ? ' danger' : ''}">${escapeHtml(label)}</span>`;
+          const afkChip = label === '逃跑';
+          return `<span class="chip${gold ? ' gold' : ''}${svp ? ' svp' : ''}${
+            afkChip ? ' afk-chip' : danger ? ' danger' : ''
+          }">${escapeHtml(label)}</span>`;
         })
         .join('')}${baselineChip}</div>`
     : !thisGame && recent
@@ -2169,6 +2172,12 @@ function renderMatchFlags(detail) {
   } else if (tags.includes('对手逃跑')) {
     parts.push('<span class="match-flag enemy-afk">对手逃跑</span>');
   }
+  const hasAfk =
+    afk.length > 0 ||
+    tags.some(
+      (tag) => tag === '自己逃跑' || tag === '队友逃跑' || tag === '对手逃跑',
+    );
+  els.matchFlags.classList.toggle('has-afk', hasAfk);
   els.matchFlags.innerHTML = parts.join('');
   els.matchFlags.classList.toggle('hidden', parts.length === 0);
 }
@@ -2258,6 +2267,7 @@ function clearMatchSummary() {
 
 function clearMatchFlags() {
   els.matchFlags.innerHTML = '';
+  els.matchFlags.classList.remove('has-afk');
   els.matchFlags.classList.add('hidden');
   clearMatchSummary();
 }

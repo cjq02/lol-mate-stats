@@ -1657,6 +1657,55 @@ body::before {
   background: rgba(255, 107, 129, 0.12);
 }
 
+/* 对局详情顶部的逃跑提示：比普通标签更醒目 */
+.match-flags.has-afk {
+  border-left: 2px solid rgba(255, 139, 77, 0.65);
+  background: linear-gradient(90deg, rgba(255, 139, 77, 0.07), rgba(255, 255, 255, 0.02) 45%);
+}
+
+.match-flags .match-flag.self-afk {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 179, 189, 0.75);
+  color: #2b0308;
+  background: linear-gradient(135deg, #ffb3bd, #ff5c7a);
+  box-shadow: 0 0 12px rgba(255, 92, 122, 0.35);
+  font-weight: 800;
+}
+
+.match-flags .match-flag.afk,
+.match-flags .match-flag.enemy-afk {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 171, 94, 0.55);
+  color: #ffc08a;
+  background: rgba(255, 171, 94, 0.14);
+  box-shadow: 0 0 10px rgba(255, 171, 94, 0.12);
+  font-weight: 700;
+}
+
+.match-flags .match-flag.enemy-afk {
+  border-color: rgba(255, 107, 129, 0.6);
+  color: #ff9aa8;
+  background: rgba(255, 107, 129, 0.14);
+  box-shadow: 0 0 10px rgba(255, 107, 129, 0.12);
+}
+
+.match-flags .match-flag.self-afk::before,
+.match-flags .match-flag.afk::before,
+.match-flags .match-flag.enemy-afk::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+}
+
 .match-flags .match-flag.teammate-bad {
   background: rgba(255, 154, 168, 0.1);
 }
@@ -3185,6 +3234,15 @@ body::before {
   color: #ffb3bd;
   border-color: rgba(255, 107, 129, 0.3);
   background: rgba(255, 107, 129, 0.08);
+}
+
+/* 玩家卡片里的「逃跑」单独强调 */
+.chip.afk-chip {
+  color: #2b1202;
+  border-color: #ffbd7a;
+  background: linear-gradient(135deg, #ffd0a1, #ff8b4d);
+  box-shadow: 0 0 8px rgba(255, 139, 77, 0.35);
+  font-weight: 800;
 }
 
 /* 与个人长期基线对比 */
