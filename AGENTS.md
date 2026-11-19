@@ -31,6 +31,8 @@
 
 `npm start` 运行的是 `dist/` 构建产物。改完 `src/` 后必须执行 `npm run build` 再启动；只重启服务不会生效。开发调试用 `npm run dev`，或直接用 `npm run start:build`（自动先构建）。
 
+改完代码后按改动位置决定要不要重启：改 `src/` 要 `npm run build` 并重启正在运行的 `npm start` 进程；只改 `public/`（HTML / CSS / app.js）不需要构建和重启，静态资源按文件 mtime 重新读取，浏览器刷新即可。
+
 ## 目录职责
 
 - `src/lcu/`：客户端发现、HTTP、WebSocket、Live Client Data API。只做通信，不写业务判断。
@@ -72,6 +74,7 @@
 - 样本不足 3 场时坑指数封顶 45；极端局评分封顶 12，这些保护逻辑不要随手删除。
 - 新增模式或队列先改 `src/stats/constants.ts`，不要硬编码 queueId。
 - 英雄定位表 `src/stats/champion-roles.ts` 由 `scripts/generate-champion-roles.mjs` 从客户端 `roles` 生成，不要手改；个别英雄要调整主副定位时改脚本里的 `OVERRIDES` 再重新生成。
+- 评分按主 / 副定位混合：主定位占 70%、副定位占 30%，短板扣分和核心指标只看主定位；`support` 模板只用作主定位，不要给输出型英雄挂辅助副定位。
 - 修改公式、阈值或标签时，必须同步更新三处：`rating.ts`、`rating.test.ts`、`README.md` 的公式与阈值说明，并递增 `store.ts` 的 `MATCH_DETAIL_CACHE_VERSION`，避免旧详情缓存继续显示旧评分。
 
 ## 测试
@@ -87,6 +90,7 @@
 - `public/` 无构建、无打包、无 TS，直接在浏览器运行，不要加 `import`。
 - 实时数据通过 `/api/stream` 的 SSE 获取，不要改回轮询。
 - 颜色、间距和布局改 `public/style.css`，不要在 JS 里拼内联样式。
+- 战绩列表上方的汇总统一走 `matchListSummary` / `renderMatchesSummary`；评分分段用 `MATCH_SCORE_BANDS` 做展示分箱，只统计当前已加载、非重开、有评分的对局，不要把分段规则搬到后端重算。条宽可以内联百分比，颜色写在 `.score-band-*` 里。
 - 保留现有卡片、弹窗和页签结构，优先复用已有样式类。
 
 ## 数据库
