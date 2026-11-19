@@ -348,24 +348,6 @@ function isInactiveKda(stats) {
   return kills === 0 && assists === 0 && deaths <= 1;
 }
 
-/** 战绩列表上方的评分分段：按单场评分区间统计，从小到大排 */
-const MATCH_SCORE_BANDS = [
-  { label: '80+', from: 80, className: 'score-band-80' },
-  { label: '70–79', from: 70, className: 'score-band-70' },
-  { label: '60–69', from: 60, className: 'score-band-60' },
-  { label: '50–59', from: 50, className: 'score-band-50' },
-  { label: '40–49', from: 40, className: 'score-band-40' },
-  { label: '< 40', from: -Infinity, className: 'score-band-low' },
-];
-
-/** 单场评分属于哪一段：返回 MATCH_SCORE_BANDS 的下标 */
-function matchScoreBandIndex(score) {
-  for (let index = 0; index < MATCH_SCORE_BANDS.length; index += 1) {
-    if (score >= MATCH_SCORE_BANDS[index].from) return index;
-  }
-  return MATCH_SCORE_BANDS.length - 1;
-}
-
 const RATING_TONES = [
   { min: 75, className: 'score-75', color: '#3ddc97' },
   { min: 65, className: 'score-65', color: '#5eead4' },
@@ -374,6 +356,33 @@ const RATING_TONES = [
   { min: 35, className: 'score-35', color: '#ff9b9b' },
   { min: -Infinity, className: 'score-low', color: '#ff4d6d' },
 ];
+
+/**
+ * 战绩列表上方的评分分段：直接复用 RATING_TONES 的边界和颜色，
+ * 保证同一个分数在列表里和分段条里颜色一致（75+ / 65–74 / 55–64 / 45–54 / 35–44 / < 35）。
+ */
+const MATCH_SCORE_BANDS = RATING_TONES.map((tone, index) => {
+  const upper = index === 0 ? null : RATING_TONES[index - 1].min - 1;
+  const label =
+    upper === null
+      ? `${tone.min}+`
+      : Number.isFinite(tone.min)
+        ? `${tone.min}–${upper}`
+        : `< ${upper + 1}`;
+  return {
+    from: tone.min,
+    label,
+    className: `score-band-${Number.isFinite(tone.min) ? tone.min : 'low'}`,
+  };
+});
+
+/** 单场评分属于哪一段：返回 MATCH_SCORE_BANDS 的下标 */
+function matchScoreBandIndex(score) {
+  for (let index = 0; index < MATCH_SCORE_BANDS.length; index += 1) {
+    if (score >= MATCH_SCORE_BANDS[index].from) return index;
+  }
+  return MATCH_SCORE_BANDS.length - 1;
+}
 
 /** 时段统计看的是平均分，实际集中在 50-75，单独用更细的分段颜色 */
 const TIME_STATS_SCORE_TONES = [
