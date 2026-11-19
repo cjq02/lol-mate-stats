@@ -687,11 +687,21 @@ export class LiveSource implements DataSource {
     const bestTags = remake ? new Map<number, string>() : matchBestTags(game, scoreMap);
     // 经济转化加减分：按队伍总经济算占比，和评分里的口径一致
     const teamGoldById = new Map<number, number>();
+    const teamKillsById = new Map<number, number>();
+    const teamDeathsById = new Map<number, number>();
     for (const participant of game.participants ?? []) {
       const teamId = toNumber(participant.teamId);
       teamGoldById.set(
         teamId,
         (teamGoldById.get(teamId) ?? 0) + toNumber(participant.stats?.goldEarned),
+      );
+      teamKillsById.set(
+        teamId,
+        (teamKillsById.get(teamId) ?? 0) + toNumber(participant.stats?.kills),
+      );
+      teamDeathsById.set(
+        teamId,
+        (teamDeathsById.get(teamId) ?? 0) + toNumber(participant.stats?.deaths),
       );
     }
 
@@ -762,6 +772,10 @@ export class LiveSource implements DataSource {
                 tankShare: analyzed.tankShare,
                 healShare: 0,
                 goldShare,
+                kills: toNumber(stats.kills),
+                deaths: analyzed.deaths,
+                teamKills: teamKillsById.get(toNumber(participant.teamId)) ?? 0,
+                teamDeaths: teamDeathsById.get(toNumber(participant.teamId)) ?? 0,
                 role: roleProfile.primary,
               })
             : [];

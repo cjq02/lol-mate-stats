@@ -100,6 +100,8 @@ let deltaSum = 0;
 let changedDeltaSum = 0;
 let economyBonus = 0;
 let economyDeduction = 0;
+let killBonus = 0;
+let deathDeduction = 0;
 let afkCapped = 0;
 const oldScores = [];
 const newScores = [];
@@ -112,12 +114,14 @@ for (const [gameId, list] of byGame) {
     const teamId = Number(row.team_id);
     const total = teams.get(teamId) ?? {
       kills: 0,
+      deaths: 0,
       gold: 0,
       damage: 0,
       taken: 0,
       heal: 0,
     };
     total.kills += Number(row.kills);
+    total.deaths += Number(row.deaths);
     total.gold += Number(row.gold);
     total.damage += Number(row.damage);
     total.taken += Number(row.damage_taken);
@@ -142,6 +146,9 @@ for (const [gameId, list] of byGame) {
           ? {
               goldShare:
                 total.gold > 0 ? Number(row.gold) / total.gold : 0,
+              kills,
+              teamKills: total.kills,
+              teamDeaths: total.deaths,
             }
           : {}),
         role: profile.primary,
@@ -211,12 +218,17 @@ for (const [gameId, list] of byGame) {
       changed += 1;
       changedDeltaSum += after - before;
     }
-    const adjustmentValue = scoreAdjustments(newInputs[index]).reduce(
-      (sum, item) => sum + item.value,
-      0,
-    );
-    if (adjustmentValue > 0) economyBonus += 1;
-    if (adjustmentValue < 0) economyDeduction += 1;
+    const adjustmentValue = scoreAdjustments(newInputs[index]);
+    for (const item of adjustmentValue) {
+      if (item.key === 'economy') {
+        if (item.value > 0) economyBonus += 1;
+        else economyDeduction += 1;
+      } else if (item.key === 'kill') {
+        killBonus += 1;
+      } else if (item.key === 'death') {
+        deathDeduction += 1;
+      }
+    }
     if (afkIds.has(participantId) && newRaw[index] > after + 0.05) afkCapped += 1;
     movers.push({
       gameId,
@@ -241,7 +253,8 @@ console.log(
   }${(changedDeltaSum / Math.max(1, changed)).toFixed(2)} 分`,
 );
 console.log(
-  `经济转化：加分 ${economyBonus} 人，扣分 ${economyDeduction} 人；挂机封顶 ${afkCapped} 人`,
+  `经济转化：加分 ${economyBonus} 人，扣分 ${economyDeduction} 人；` +
+    `击杀核心 ${killBonus} 人，死亡过多 ${deathDeduction} 人；挂机封顶 ${afkCapped} 人`,
 );
 console.log(
   '变动最大的 8 人',

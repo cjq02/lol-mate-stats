@@ -76,7 +76,7 @@
 - 新增模式或队列先改 `src/stats/constants.ts`，不要硬编码 queueId。
 - 英雄定位表 `src/stats/champion-roles.ts` 由 `scripts/generate-champion-roles.mjs` 从客户端 `roles` 生成，不要手改；个别英雄要调整主副定位时改脚本里的 `OVERRIDES` 再重新生成。
 - 评分按主 / 副定位混合：主定位占 70%、副定位占 30%，短板扣分和核心指标只看主定位；`support` 模板只用作主定位，不要给输出型英雄挂辅助副定位。
-- 经济转化只对 `carry` / `fighter` 生效（伤害占比 ÷ 经济占比 ≥ 1.3 加 1.5 分；≤ 0.85 且经济占比 ≥ 20% 扣 2 分）；挂机/逃跑判定成立时评分封顶 12 分，原本更低的不上调。
+- 经济转化只对 `carry` / `fighter` 生效（伤害占比 ÷ 经济占比 ≥ 1.3 加 1.5 分；≤ 0.85 且经济占比 ≥ 20% 扣 2 分）；人头/死亡按位置区分：carry ≥ 18 杀、fighter ≥ 15 杀才有击杀分，坦克和辅助不拿击杀分，坦克死亡门槛最高；挂机/逃跑判定成立时评分封顶 12 分，原本更低的不上调。
 - 修改公式、阈值或标签时，必须同步更新三处：`rating.ts`、`rating.test.ts`、`README.md` 的公式与阈值说明，并递增 `store.ts` 的 `MATCH_DETAIL_CACHE_VERSION`，避免旧详情缓存继续显示旧评分。
 
 ## 测试

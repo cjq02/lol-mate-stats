@@ -45,6 +45,7 @@ interface ParticipantRow {
 
 interface TeamTotals {
   kills: number;
+  deaths: number;
   gold: number;
   damage: number;
   taken: number;
@@ -141,12 +142,14 @@ async function main(): Promise<void> {
         const teamId = Number(participant.team_id);
         const total = teamTotals.get(teamId) ?? {
           kills: 0,
+          deaths: 0,
           gold: 0,
           damage: 0,
           taken: 0,
           heal: 0,
         };
         total.kills += Number(participant.kills);
+        total.deaths += Number(participant.deaths);
         total.gold += Number(participant.gold);
         total.damage += Number(participant.damage);
         total.taken += Number(participant.damage_taken);
@@ -167,6 +170,9 @@ async function main(): Promise<void> {
           tankShare: total.taken > 0 ? Number(participant.damage_taken) / total.taken : 0,
           healShare: total.heal > 0 ? Number(participant.heal) / total.heal : 0,
           goldShare: total.gold > 0 ? Number(participant.gold) / total.gold : 0,
+          kills,
+          teamKills: total.kills,
+          teamDeaths: total.deaths,
           role: profile.primary,
           secondaryRole: profile.secondary,
           deaths,

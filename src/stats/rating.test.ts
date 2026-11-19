@@ -12,7 +12,7 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { afkParticipantIds, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, PROFILES, capAfkScores, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, scoreAdjustments, summarize } from './rating.js';
+import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, PROFILES, capAfkScores, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, killDeathAdjustments, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, scoreAdjustments, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
@@ -727,6 +727,95 @@ test('经济转化：低经济高输出加分，吃资源不输出扣分', () =>
     scoreAdjustments({ ...base, role: 'tank', damageShare: 0.2, goldShare: 0.3 }).length,
     0,
     '坦克不吃资源黑洞扣分',
+  );
+});
+
+test('人头/死亡加减分按位置区分', () => {
+  const base = {
+    kda: 3,
+    killParticipation: 0.6,
+    damageShare: 0.22,
+    tankShare: 0.2,
+    healShare: 0.1,
+    goldShare: 0.22,
+  };
+  const carryKills = killDeathAdjustments({
+    ...base,
+    role: 'carry',
+    kills: 21,
+    teamKills: 63,
+    deaths: 5,
+    teamDeaths: 43,
+  });
+  assert.equal(carryKills[0]?.key, 'kill', '输出位 21 杀应该加分');
+  assert.equal(carryKills[0]?.value, 1.5);
+  assert.ok(!carryKills.some((item) => item.key === 'death'), '5 死不触发死亡扣分');
+  assert.equal(
+    killDeathAdjustments({
+      ...base,
+      role: 'carry',
+      kills: 17,
+      teamKills: 63,
+      deaths: 5,
+      teamDeaths: 43,
+    }).length,
+    0,
+    '17 杀还没到输出位加分门槛',
+  );
+
+  const fighterNormal = killDeathAdjustments({
+    ...base,
+    role: 'fighter',
+    kills: 13,
+    teamKills: 63,
+    deaths: 11,
+    teamDeaths: 43,
+  });
+  assert.equal(fighterNormal.length, 0, '战士 21% 击杀、25.6% 死亡属于正常范围，不调整');
+
+  const fighterExtreme = killDeathAdjustments({
+    ...base,
+    role: 'fighter',
+    kills: 18,
+    teamKills: 60,
+    deaths: 14,
+    teamDeaths: 40,
+  });
+  assert.deepEqual(
+    fighterExtreme.map((item) => [item.key, item.value]),
+    [
+      ['kill', 1],
+      ['death', -1],
+    ],
+    '战士 30% 击杀 + 35% 死亡才触发',
+  );
+
+  const tank = killDeathAdjustments({
+    ...base,
+    role: 'tank',
+    kills: 20,
+    teamKills: 50,
+    deaths: 14,
+    teamDeaths: 40,
+  });
+  assert.deepEqual(
+    tank.map((item) => item.key),
+    ['death'],
+    '坦克不靠人头加分，死亡只有非常极端才扣',
+  );
+
+  const support = killDeathAdjustments({
+    ...base,
+    role: 'support',
+    kills: 15,
+    teamKills: 50,
+    deaths: 8,
+    teamDeaths: 30,
+  });
+  assert.deepEqual(
+    support.map((item) => item.key),
+    ['death'],
+    '辅助同样不拿人头分，死亡门槛比坦克低',
   );
 });
 

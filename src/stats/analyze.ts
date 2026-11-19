@@ -223,6 +223,8 @@ interface BaseAnalysis {
   killParticipationRaw: number;
   killParticipation: number;
   healShareRaw: number;
+  teamKills: number;
+  teamDeaths: number;
   visionScore: number;
   visionPerMin: number;
   position: Lane;
@@ -263,6 +265,7 @@ function analyzeBase(
     statNumber(stats, 'minionsKilled');
 
   const teamKills = team.reduce((sum, item) => sum + statNumber(item.stats ?? {}, 'kills'), 0);
+  const teamDeaths = team.reduce((sum, item) => sum + statNumber(item.stats ?? {}, 'deaths'), 0);
   const teamGold = team.reduce((sum, item) => sum + statNumber(item.stats ?? {}, 'goldEarned'), 0);
   const teamDamage = team.reduce(
     (sum, item) => sum + statNumber(item.stats ?? {}, 'totalDamageDealtToChampions'),
@@ -330,6 +333,8 @@ function analyzeBase(
     killParticipationRaw: killParticipation,
     killParticipation: Math.round(killParticipation * 1000) / 1000,
     healShareRaw: healShare,
+    teamKills,
+    teamDeaths,
     visionScore,
     visionPerMin: Math.round(visionPerMin * 100) / 100,
     position,
@@ -362,6 +367,9 @@ export function computeMatchScores(
         tankShare: base.tankShareRaw,
         healShare: base.healShareRaw,
         goldShare: base.goldShareRaw,
+        kills: base.kills,
+        teamKills: base.teamKills,
+        teamDeaths: base.teamDeaths,
         role: profile.primary,
         secondaryRole: profile.secondary,
         deaths: base.deaths,
@@ -438,6 +446,8 @@ export function analyzeParticipant(
     tankShareRaw: _tankShareRaw,
     killParticipationRaw: _killParticipationRaw,
     healShareRaw: _healShareRaw,
+    teamKills: _teamKills,
+    teamDeaths: _teamDeaths,
     largestKillingSpree,
     pentaKills,
     quadraKills,

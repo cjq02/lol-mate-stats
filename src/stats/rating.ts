@@ -36,32 +36,97 @@ export const ECONOMY_EFFICIENCY_DEDUCTION = 2;
 export const MAX_SCORE_ADJUSTMENT = 4;
 
 export interface ScoreAdjustment {
-  key: 'economy';
+  key: 'economy' | 'kill' | 'death';
   label: string;
   value: number;
 }
 
-/** 五项百分位之外的加减分项（目前只有经济转化） */
+interface KillDeathRule {
+  kill?: { minKills: number; value: number };
+  death?: { minShare: number; minDeaths: number; value: number };
+}
+
+/**
+ * 人头/死亡按位置区别对待：
+ * - 输出位拿人头是本职，击杀数高才加分；死亡代价最大
+ * - 战士可以换命，死亡占比非常极端才扣
+ * - 坦克/辅助不靠击杀加分；坦克要开团，死亡门槛更高
+ * 击杀用绝对值，避免队伍总击杀高时把个人击杀稀释掉。
+ */
+const KILL_DEATH_RULES: Record<ChampionRole, KillDeathRule> = {
+  carry: {
+    kill: { minKills: 18, value: 1.5 },
+    death: { minShare: 0.25, minDeaths: 8, value: -1.5 },
+  },
+  fighter: {
+    kill: { minKills: 15, value: 1 },
+    death: { minShare: 0.32, minDeaths: 12, value: -1 },
+  },
+  tank: {
+    death: { minShare: 0.3, minDeaths: 13, value: -1 },
+  },
+  support: {
+    death: { minShare: 0.25, minDeaths: 8, value: -1 },
+  },
+  default: {
+    kill: { minKills: 15, value: 1 },
+    death: { minShare: 0.3, minDeaths: 10, value: -1 },
+  },
+};
+
+/** 人头/死亡加减分：击杀看绝对值，死亡看占比，避免不同位置互相误伤 */
+export function killDeathAdjustments(
+  input: MatchPercentileInput,
+): ScoreAdjustment[] {
+  const role = input.role ?? 'default';
+  const rule = KILL_DEATH_RULES[role];
+  const adjustments: ScoreAdjustment[] = [];
+  const kills = Number(input.kills) || 0;
+  const deaths = Number(input.deaths) || 0;
+  const teamDeaths = Number(input.teamDeaths) || 0;
+  const deathShare = teamDeaths > 0 ? deaths / teamDeaths : 0;
+
+  if (rule.kill && kills >= rule.kill.minKills) {
+    adjustments.push({ key: 'kill', label: '击杀核心', value: rule.kill.value });
+  }
+  if (rule.death && deathShare >= rule.death.minShare && deaths >= rule.death.minDeaths) {
+    adjustments.push({ key: 'death', label: '死亡过多', value: rule.death.value });
+  }
+  return adjustments;
+}
+
+/** 五项百分位之外的加减分项：经济转化 + 按位置区分的人头/死亡 */
 export function scoreAdjustments(input: MatchPercentileInput): ScoreAdjustment[] {
   const role = input.role ?? 'default';
+  const adjustments: ScoreAdjustment[] = [];
+
   const goldShare = Number(input.goldShare) || 0;
-  if (role !== 'carry' && role !== 'fighter') return [];
-  if (goldShare <= 0) return [];
-  const ratio = input.damageShare / goldShare;
-  if (
-    ratio >= ECONOMY_EFFICIENCY_HIGH_RATIO &&
-    input.damageShare >= ECONOMY_EFFICIENCY_MIN_DAMAGE_SHARE
-  ) {
-    return [{ key: 'economy', label: '经济转化', value: ECONOMY_EFFICIENCY_BONUS }];
+  if ((role === 'carry' || role === 'fighter') && goldShare > 0) {
+    const ratio = input.damageShare / goldShare;
+    if (
+      ratio >= ECONOMY_EFFICIENCY_HIGH_RATIO &&
+      input.damageShare >= ECONOMY_EFFICIENCY_MIN_DAMAGE_SHARE
+    ) {
+      adjustments.push({
+        key: 'economy',
+        label: '经济转化',
+        value: ECONOMY_EFFICIENCY_BONUS,
+      });
+    } else if (
+      goldShare >= ECONOMY_EFFICIENCY_MIN_GOLD_SHARE &&
+      ratio <= ECONOMY_EFFICIENCY_LOW_RATIO
+    ) {
+      // 只有经济拿得多的人才会因为“没打出伤害”被扣，低经济高输出只加分
+      adjustments.push({
+        key: 'economy',
+        label: '资源黑洞',
+        value: -ECONOMY_EFFICIENCY_DEDUCTION,
+      });
+    }
   }
-  // 只有经济拿得多的人才会因为“没打出伤害”被扣，低经济高输出只加分
-  if (
-    goldShare >= ECONOMY_EFFICIENCY_MIN_GOLD_SHARE &&
-    ratio <= ECONOMY_EFFICIENCY_LOW_RATIO
-  ) {
-    return [{ key: 'economy', label: '资源黑洞', value: -ECONOMY_EFFICIENCY_DEDUCTION }];
-  }
-  return [];
+
+  adjustments.push(...killDeathAdjustments(input));
+  return adjustments;
 }
 
 interface MetricProfile {
@@ -174,6 +239,11 @@ export interface MatchPercentileInput {
   healShare: number;
   /** 经济占比（本人经济 / 队伍总经济），用于经济转化加减分 */
   goldShare?: number;
+  /** 本人击杀数，用于按位置区分的人头加分 */
+  kills?: number;
+  /** 队伍总击杀 / 总死亡，用于计算击杀、死亡占比 */
+  teamKills?: number;
+  teamDeaths?: number;
   role?: ChampionRole;
   /** 副定位：按 30% 权重参与评分，短板规则仍看主定位 */
   secondaryRole?: ChampionRole;
