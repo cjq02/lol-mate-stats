@@ -2,7 +2,13 @@
 
 import type { ChampionRole } from './stats/champion-roles.js';
 
-/** 单场评分的计算口径：定位 + 实际权重，供前端悬浮显示评分标准 */
+/** 单场评分的计算口径：定位 + 实际权重 + 命中的加减分项，供前端悬浮显示评分标准 */
+export interface MatchScoreAdjustment {
+  key: string;
+  label: string;
+  value: number;
+}
+
 export interface MatchScoreRule {
   primary: ChampionRole;
   secondary?: ChampionRole;
@@ -13,6 +19,7 @@ export interface MatchScoreRule {
     taken: number;
     heal: number;
   };
+  adjustments?: MatchScoreAdjustment[];
 }
 
 /** 历史战绩游标分页：按对局时间 + gameId 定位下一页 */

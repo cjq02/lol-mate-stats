@@ -12,7 +12,7 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { afkParticipantIds, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, summarize } from './rating.js';
+import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, PROFILES, capAfkScores, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, scoreAdjustments, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
@@ -696,6 +696,71 @@ test('副定位让承伤型战士的评分更高', () => {
     withTankSecondary[0]! > fighterOnly[0]!,
     `纯战士=${fighterOnly[0]}，战士+坦克副定位=${withTankSecondary[0]}`,
   );
+});
+
+test('经济转化：低经济高输出加分，吃资源不输出扣分', () => {
+  const base = {
+    kda: 3,
+    killParticipation: 0.6,
+    tankShare: 0.2,
+    healShare: 0.1,
+    role: 'carry' as const,
+  };
+  const bonus = scoreAdjustments({
+    ...base,
+    damageShare: 0.3,
+    goldShare: 0.2,
+  });
+  assert.equal(bonus[0]?.value, 1.5, '伤害占比 30% / 经济占比 20% 应加 1.5 分');
+  const deduction = scoreAdjustments({
+    ...base,
+    damageShare: 0.2,
+    goldShare: 0.3,
+  });
+  assert.equal(deduction[0]?.value, -2, '经济占比 30% 只打出 20% 伤害应扣 2 分');
+  assert.equal(
+    scoreAdjustments({ ...base, role: 'support', damageShare: 0.3, goldShare: 0.2 }).length,
+    0,
+    '软辅不吃经济转化',
+  );
+  assert.equal(
+    scoreAdjustments({ ...base, role: 'tank', damageShare: 0.2, goldShare: 0.3 }).length,
+    0,
+    '坦克不吃资源黑洞扣分',
+  );
+});
+
+test('经济转化会进入最终评分', () => {
+  const base = {
+    kda: 4,
+    killParticipation: 0.7,
+    damageShare: 0.3,
+    tankShare: 0.15,
+    healShare: 0.05,
+    role: 'carry' as const,
+    deaths: 4,
+  };
+  // 经济占比 25% 时转化比 1.2，不触发；降到 20% 后转化比 1.5，触发 +1.5
+  const neutral = percentileScores([{ ...base, goldShare: 0.25 }])[0]!;
+  const rewarded = percentileScores([{ ...base, goldShare: 0.2 }])[0]!;
+  assert.ok(
+    Math.abs(rewarded - neutral - 1.5) < 1e-9,
+    `中性=${neutral}，低经济高输出=${rewarded}`,
+  );
+});
+
+test('挂机/逃跑封顶只压高评分，不抬低评分', () => {
+  const capped = capAfkScores(
+    new Map([
+      [1, 80],
+      [2, 8],
+      [3, 40],
+    ]),
+    new Set([1, 2]),
+  );
+  assert.equal(capped.get(1), AFK_SCORE_CAP, '80 分应被压到封顶值');
+  assert.equal(capped.get(2), 8, '本来就低于封顶值的不抬分');
+  assert.equal(capped.get(3), 40, '未被判定逃跑的玩家不受影响');
 });
 
 test('射手和软辅不会被误判成坦克', () => {

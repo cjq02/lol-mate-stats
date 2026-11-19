@@ -15,6 +15,7 @@ import type {
 import { toNumber } from '../util.js';
 import { analyzeParticipant, computeMatchScores, detectLane, matchBestTags } from './analyze.js';
 import {
+  afkParticipantIds,
   badLevelLabel,
   badLevelOfScore,
   gameFlagTags,
@@ -24,7 +25,7 @@ import {
   worseBadLevel,
 } from './flags.js';
 import { queueName } from './constants.js';
-import { isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
+import { capAfkScores, isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 import { championProficiency } from './proficiency.js';
 import { getDb, getSavedMatchTimeline, readMeta, saveTimelineAfkStats, withTransaction, writeMeta } from './store.js';
 import { summarizeTimeStats, type TimeStatsSummary } from './time-stats.js';
@@ -403,7 +404,9 @@ export async function archiveGames(
 
         const rows: unknown[][] = [];
         const participants = game.participants ?? [];
-        const scoreMap = computeMatchScores(game, championMap);
+        const rawScores = computeMatchScores(game, championMap);
+        const afkIds = afkParticipantIds(game, championMap, rawScores);
+        const scoreMap = capAfkScores(rawScores, afkIds);
         const bestTags = matchBestTags(game, scoreMap);
         participants.forEach((participant: RawParticipant, index: number) => {
           const participantId = toNumber(participant.participantId) || index + 1;

@@ -63,8 +63,11 @@ import {
 import {
   AFK_IDLE_VETO_SECONDS,
   AFK_STATIONARY_SECONDS,
+  CATASTROPHIC_SCORE_CAP,
+  capAfkScores,
   gradeOf,
   roleProfileWeights,
+  scoreAdjustments,
 } from './stats/rating.js';
 import { championRoleProfile } from './stats/champion-roles.js';
 import { premadeSizesByPuuid } from './stats/premade.js';
@@ -677,10 +680,20 @@ export class LiveSource implements DataSource {
     const selfParticipantId = selfParticipant
       ? toNumber(selfParticipant.participantId)
       : undefined;
-    const scoreMap = computeMatchScores(game, championMap);
-    const afkIds = afkParticipantIds(game, championMap, scoreMap, timeline);
+    const rawScores = computeMatchScores(game, championMap);
+    const afkIds = afkParticipantIds(game, championMap, rawScores, timeline);
+    const scoreMap = capAfkScores(rawScores, afkIds);
     const remake = isRemakeGame(game);
     const bestTags = remake ? new Map<number, string>() : matchBestTags(game, scoreMap);
+    // 经济转化加减分：按队伍总经济算占比，和评分里的口径一致
+    const teamGoldById = new Map<number, number>();
+    for (const participant of game.participants ?? []) {
+      const teamId = toNumber(participant.teamId);
+      teamGoldById.set(
+        teamId,
+        (teamGoldById.get(teamId) ?? 0) + toNumber(participant.stats?.goldEarned),
+      );
+    }
 
     const scoreboard = (game.participants ?? [])
       .map((participant) => {
@@ -738,6 +751,33 @@ export class LiveSource implements DataSource {
           : tags;
         const roleProfile = championRoleProfile(championId);
         const scoreWeights = roleProfileWeights(roleProfile);
+        const teamGold = teamGoldById.get(toNumber(participant.teamId)) ?? 0;
+        const goldShare = teamGold > 0 ? toNumber(stats.goldEarned) / teamGold : 0;
+        const economyAdjustments =
+          analyzed && analyzed.score > CATASTROPHIC_SCORE_CAP
+            ? scoreAdjustments({
+                kda: 0,
+                killParticipation: analyzed.killParticipation,
+                damageShare: analyzed.damageShare,
+                tankShare: analyzed.tankShare,
+                healShare: 0,
+                goldShare,
+                role: roleProfile.primary,
+              })
+            : [];
+        const rawScore = rawScores.get(participantId) ?? 0;
+        const finalScore = scoreMap.get(participantId) ?? 0;
+        const afkAdjustments =
+          afkIds.has(participantId) && rawScore > finalScore
+            ? [
+                {
+                  key: 'afk',
+                  label: '挂机/逃跑封顶',
+                  value: Math.round((finalScore - rawScore) * 10) / 10,
+                },
+              ]
+            : [];
+        const adjustments = [...economyAdjustments, ...afkAdjustments];
 
         return {
           puuid,
@@ -775,6 +815,7 @@ export class LiveSource implements DataSource {
             primary: roleProfile.primary,
             secondary: roleProfile.secondary,
             weights: scoreWeights,
+            ...(adjustments.length ? { adjustments } : {}),
           },
           damageShare: analyzed?.damageShare,
           tankShare: analyzed?.tankShare,

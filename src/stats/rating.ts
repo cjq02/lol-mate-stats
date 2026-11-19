@@ -18,6 +18,51 @@ export const BAD_GAME_SCORE = 30;
 export const MILD_BAD_GAME_SCORE = 35;
 /** 多项数据严重不达标，算“巨坑” */
 export const SEVERE_BAD_GAME_SCORE = 20;
+/** 极端局评分封顶 */
+export const CATASTROPHIC_SCORE_CAP = 12;
+/** 挂机/逃跑成立时的评分上限，和极端局保持一致 */
+export const AFK_SCORE_CAP = 12;
+
+/** 经济转化：伤害占比 ÷ 经济占比 */
+export const ECONOMY_EFFICIENCY_HIGH_RATIO = 1.3;
+export const ECONOMY_EFFICIENCY_LOW_RATIO = 0.85;
+/** 拿这么多经济才值得看转化率，避免辅助/坦克被误伤 */
+export const ECONOMY_EFFICIENCY_MIN_GOLD_SHARE = 0.2;
+/** 打出这么多伤害才给加分，避免低分局整体被抬 */
+export const ECONOMY_EFFICIENCY_MIN_DAMAGE_SHARE = 0.2;
+export const ECONOMY_EFFICIENCY_BONUS = 1.5;
+export const ECONOMY_EFFICIENCY_DEDUCTION = 2;
+/** 所有加分/扣分累计后的上限，避免多条规则叠加 */
+export const MAX_SCORE_ADJUSTMENT = 4;
+
+export interface ScoreAdjustment {
+  key: 'economy';
+  label: string;
+  value: number;
+}
+
+/** 五项百分位之外的加减分项（目前只有经济转化） */
+export function scoreAdjustments(input: MatchPercentileInput): ScoreAdjustment[] {
+  const role = input.role ?? 'default';
+  const goldShare = Number(input.goldShare) || 0;
+  if (role !== 'carry' && role !== 'fighter') return [];
+  if (goldShare <= 0) return [];
+  const ratio = input.damageShare / goldShare;
+  if (
+    ratio >= ECONOMY_EFFICIENCY_HIGH_RATIO &&
+    input.damageShare >= ECONOMY_EFFICIENCY_MIN_DAMAGE_SHARE
+  ) {
+    return [{ key: 'economy', label: '经济转化', value: ECONOMY_EFFICIENCY_BONUS }];
+  }
+  // 只有经济拿得多的人才会因为“没打出伤害”被扣，低经济高输出只加分
+  if (
+    goldShare >= ECONOMY_EFFICIENCY_MIN_GOLD_SHARE &&
+    ratio <= ECONOMY_EFFICIENCY_LOW_RATIO
+  ) {
+    return [{ key: 'economy', label: '资源黑洞', value: -ECONOMY_EFFICIENCY_DEDUCTION }];
+  }
+  return [];
+}
 
 interface MetricProfile {
   kda: number;
@@ -127,6 +172,8 @@ export interface MatchPercentileInput {
   damageShare: number;
   tankShare: number;
   healShare: number;
+  /** 经济占比（本人经济 / 队伍总经济），用于经济转化加减分 */
+  goldShare?: number;
   role?: ChampionRole;
   /** 副定位：按 30% 权重参与评分，短板规则仍看主定位 */
   secondaryRole?: ChampionRole;
@@ -205,6 +252,22 @@ export function roleProfileWeights(profile: ChampionRoleProfile): RoleWeights {
   };
 }
 
+/** 极端局判定：几乎没打出作用，评分直接封顶，不再套加减分 */
+export function isCatastrophicLine(input: MatchPercentileInput): boolean {
+  return (
+    (input.damageShare < 0.06 &&
+      input.killParticipation < 0.35 &&
+      (input.deaths ?? 0) >= 10) ||
+    // 低伤害、低承伤、低治疗、低参团、低死亡：典型长时间挂机/避战后偶尔收残局，
+    // 即使 KDA 好看也不能算正常表现。
+    (input.damageShare < 0.05 &&
+      input.tankShare < 0.08 &&
+      input.healShare < 0.1 &&
+      input.killParticipation < 0.3 &&
+      (input.deaths ?? 0) <= 5)
+  );
+}
+
 /** 0–1 百分位；并列时取平均名次 */
 function percentileRank(values: number[], value: number): number {
   if (!values.length) return 0.5;
@@ -223,10 +286,11 @@ function percentileRank(values: number[], value: number): number {
 function scoreWithWeights(
   inputs: MatchPercentileInput[],
   weightsFor: (input: MatchPercentileInput) => RoleWeights,
-  options: { deficitDeduction?: boolean } = {},
+  options: { deficitDeduction?: boolean; roleAdjustments?: boolean } = {},
 ): number[] {
   if (!inputs.length) return [];
   const applyDeficitDeduction = options.deficitDeduction ?? true;
+  const applyRoleAdjustments = options.roleAdjustments ?? true;
   const rank = (
     key: 'kda' | 'killParticipation' | 'damageShare' | 'tankShare' | 'healShare',
   ): number[] => {
@@ -253,17 +317,7 @@ function scoreWithWeights(
     const absolute = clamp(score20 * 5, 0, 100);
     // 伤害占比和参团都极低、死亡还多：属于整局几乎没打出作用的“巨坑”局，
     // 不再让辅助/坦克权重把分数托到正常范围。
-    const catastrophic =
-      (input.damageShare < 0.06 &&
-        input.killParticipation < 0.35 &&
-        (input.deaths ?? 0) >= 10) ||
-      // 低伤害、低承伤、低治疗、低参团、低死亡：典型长时间挂机/避战后偶尔收残局，
-      // 即使 KDA 好看也不能算正常表现。
-      (input.damageShare < 0.05 &&
-        input.tankShare < 0.08 &&
-        input.healShare < 0.1 &&
-        input.killParticipation < 0.3 &&
-        (input.deaths ?? 0) <= 5);
+    const catastrophic = isCatastrophicLine(input);
 
     let deduction = 0;
     if (applyDeficitDeduction && !catastrophic) {
@@ -284,8 +338,25 @@ function scoreWithWeights(
       deduction = weakCount >= 3 ? 8 : pairLow ? 6 : weakCount >= 2 ? 4 : 0;
     }
 
+    const adjustment =
+      applyRoleAdjustments && !catastrophic
+        ? Math.max(
+            -MAX_SCORE_ADJUSTMENT,
+            Math.min(
+              MAX_SCORE_ADJUSTMENT,
+              scoreAdjustments(input).reduce((sum, item) => sum + item.value, 0),
+            ),
+          )
+        : 0;
+
     return round(
-      clamp(catastrophic ? Math.min(absolute, 12) : Math.max(0, absolute - deduction), 0, 100),
+      clamp(
+        catastrophic
+          ? Math.min(absolute, CATASTROPHIC_SCORE_CAP)
+          : Math.max(0, absolute + adjustment - deduction),
+        0,
+        100,
+      ),
       1,
     );
   });
@@ -301,11 +372,28 @@ export function percentileScores(inputs: MatchPercentileInput[]): number[] {
   );
 }
 
-/** 旧版全局权重：用于分阶段回滚/对比（不应用短板减分） */
+/** 旧版全局权重：用于分阶段回滚/对比（不应用短板减分和加减分） */
 export function legacyPercentileScores(inputs: MatchPercentileInput[]): number[] {
   return scoreWithWeights(inputs, () => ROLE_WEIGHTS.default, {
     deficitDeduction: false,
+    roleAdjustments: false,
   });
+}
+
+/** 挂机/逃跑判定成立后把评分压到上限；原本更低的不抬分 */
+export function capAfkScores(
+  scores: Map<number, number>,
+  afkIds: Set<number>,
+): Map<number, number> {
+  if (!afkIds.size) return scores;
+  const capped = new Map(scores);
+  for (const participantId of afkIds) {
+    const score = capped.get(participantId);
+    if (score !== undefined && score > AFK_SCORE_CAP) {
+      capped.set(participantId, AFK_SCORE_CAP);
+    }
+  }
+  return capped;
 }
 
 export function gradeOf(rating: number): Grade {

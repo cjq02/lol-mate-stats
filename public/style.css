@@ -1696,6 +1696,32 @@ body::before {
   color: var(--muted);
 }
 
+.score-tip-adjust {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 9px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.score-tip-adjust b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-tip-adjust b.up {
+  color: var(--win);
+}
+
+.score-tip-adjust b.down {
+  color: var(--loss);
+}
+
 .score-tip-row {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) 34px;

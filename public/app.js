@@ -433,11 +433,23 @@ function scoreTipHtml(payload) {
   const grade = payload.grade
     ? `<span class="score-tip-grade">${escapeHtml(payload.grade)}</span>`
     : '';
+  const adjustments = Array.isArray(payload.adjustments) ? payload.adjustments : [];
+  const adjustmentHtml = adjustments.length
+    ? `<div class="score-tip-adjust">${adjustments
+        .map(
+          (item) =>
+            `<span>${escapeHtml(item.label)}</span><b class="${
+              Number(item.value) >= 0 ? 'up' : 'down'
+            }">${Number(item.value) > 0 ? '+' : ''}${item.value}</b>`,
+        )
+        .join('')}</div>`
+    : '';
   return `<div class="score-tip-head">
       <b style="color:${payload.color ?? '#8b9ac0'}">${summaryScore(payload.score)}</b>
       ${grade}
     </div>
     <div class="score-tip-role">${escapeHtml(role)}${escapeHtml(secondary)}</div>
+    ${adjustmentHtml}
     <div class="score-tip-bars">${rows}</div>
     <div class="score-tip-note">
       按本局 10 人的 KDA / 参团 / 输出 / 承伤 / 治疗百分位加权，主副定位按 7:3 混合。<br />

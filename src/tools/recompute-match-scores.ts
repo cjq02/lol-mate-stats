@@ -1,7 +1,14 @@
 import '../env.js';
 import { closeDb, getDb } from '../stats/store.js';
 import { championRoleProfile } from '../stats/champion-roles.js';
-import { legacyPercentileScores, percentileScores } from '../stats/rating.js';
+import {
+  capAfkScores,
+  isAfkLikeRelative,
+  legacyPercentileScores,
+  percentileScores,
+  type AfkRelativeStats,
+} from '../stats/rating.js';
+import type { Lane } from '../types.js';
 import { mapLimit } from '../util.js';
 
 /**
@@ -24,13 +31,21 @@ interface ParticipantRow {
   kills: number;
   deaths: number;
   assists: number;
+  cs: number;
+  gold: number;
   damage: number;
   damage_taken: number;
   heal: number;
+  vision: number;
+  position: string | null;
+  duration_seconds: number | null;
+  idle_streak_seconds: number | null;
+  stationary_streak_seconds: number | null;
 }
 
 interface TeamTotals {
   kills: number;
+  gold: number;
   damage: number;
   taken: number;
   heal: number;
@@ -110,11 +125,13 @@ async function main(): Promise<void> {
   let completed = 0;
   await mapLimit(gameIds, concurrency, async (gameId) => {
     const [rows] = await db.query(
-      `SELECT participant_id, team_id, champion_id, kills, deaths, assists, damage,
-              damage_taken, heal
-       FROM match_participants
-       WHERE game_id = ?
-       ORDER BY participant_id`,
+      `SELECT p.participant_id, p.team_id, p.champion_id, p.kills, p.deaths, p.assists,
+              p.cs, p.gold, p.damage, p.damage_taken, p.heal, p.vision, p.position,
+              p.idle_streak_seconds, p.stationary_streak_seconds, m.duration_seconds
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE p.game_id = ?
+       ORDER BY p.participant_id`,
       [gameId],
     );
     const participants = rows as ParticipantRow[];
@@ -122,8 +139,15 @@ async function main(): Promise<void> {
       const teamTotals = new Map<number, TeamTotals>();
       for (const participant of participants) {
         const teamId = Number(participant.team_id);
-        const total = teamTotals.get(teamId) ?? { kills: 0, damage: 0, taken: 0, heal: 0 };
+        const total = teamTotals.get(teamId) ?? {
+          kills: 0,
+          gold: 0,
+          damage: 0,
+          taken: 0,
+          heal: 0,
+        };
         total.kills += Number(participant.kills);
+        total.gold += Number(participant.gold);
         total.damage += Number(participant.damage);
         total.taken += Number(participant.damage_taken);
         total.heal += Number(participant.heal);
@@ -142,6 +166,7 @@ async function main(): Promise<void> {
           damageShare: total.damage > 0 ? Number(participant.damage) / total.damage : 0,
           tankShare: total.taken > 0 ? Number(participant.damage_taken) / total.taken : 0,
           healShare: total.heal > 0 ? Number(participant.heal) / total.heal : 0,
+          goldShare: total.gold > 0 ? Number(participant.gold) / total.gold : 0,
           role: profile.primary,
           secondaryRole: profile.secondary,
           deaths,
@@ -149,10 +174,61 @@ async function main(): Promise<void> {
       });
       const scores = scoreFn(inputs);
 
+      // 挂机/逃跑封顶：用存档里的 KDA、经济、伤害、补刀、视野和时间线空闲列重新判定，
+      // 和详情页的 AFK 判定保持同一套规则。
+      const afkStatsByTeam = new Map<number, AfkRelativeStats[]>();
+      const afkIdByIndex: number[] = [];
+      participants.forEach((participant) => {
+        const total = teamTotals.get(Number(participant.team_id))!;
+        const kills = Number(participant.kills);
+        const assists = Number(participant.assists);
+        const durationMin = Math.max(1, Number(participant.duration_seconds) / 60);
+        const stats: AfkRelativeStats = {
+          durationMin,
+          gold: Number(participant.gold),
+          damage: Number(participant.damage),
+          cs: Number(participant.cs),
+          kills,
+          deaths: Number(participant.deaths),
+          assists,
+          visionScore: Number(participant.vision),
+          position: (participant.position ?? undefined) as Lane | undefined,
+          killParticipation: total.kills > 0 ? (kills + assists) / total.kills : 0,
+          damageTaken: Number(participant.damage_taken),
+          heal: Number(participant.heal),
+          idleStreakSeconds:
+            participant.idle_streak_seconds === null
+              ? undefined
+              : Number(participant.idle_streak_seconds),
+          stationaryStreakSeconds:
+            participant.stationary_streak_seconds === null
+              ? undefined
+              : Number(participant.stationary_streak_seconds),
+        };
+        const teamStats = afkStatsByTeam.get(Number(participant.team_id)) ?? [];
+        teamStats.push(stats);
+        afkStatsByTeam.set(Number(participant.team_id), teamStats);
+        afkIdByIndex.push(Number(participant.participant_id));
+      });
+      const afkIds = new Set<number>();
+      for (const [teamId, teamStats] of afkStatsByTeam) {
+        const members = participants.filter((item) => Number(item.team_id) === teamId);
+        members.forEach((participant, index) => {
+          if (isAfkLikeRelative(teamStats[index]!, teamStats)) {
+            afkIds.add(Number(participant.participant_id));
+          }
+        });
+      }
+      const cappedScores = capAfkScores(
+        new Map(afkIdByIndex.map((participantId, index) => [participantId, scores[index] ?? 0])),
+        afkIds,
+      );
+
       const cases = participants.map(() => 'WHEN ? THEN ?').join(' ');
       const updateParams: Array<number | string> = [];
-      participants.forEach((participant, participantIndex) => {
-        updateParams.push(Number(participant.participant_id), scores[participantIndex] ?? 0);
+      participants.forEach((participant) => {
+        const participantId = Number(participant.participant_id);
+        updateParams.push(participantId, cappedScores.get(participantId) ?? 0);
       });
       updateParams.push(gameId);
       await db.query(

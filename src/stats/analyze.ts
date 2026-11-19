@@ -214,6 +214,7 @@ interface BaseAnalysis {
   gold: number;
   damage: number;
   heal: number;
+  goldShareRaw: number;
   damageShareRaw: number;
   damageShare: number;
   damagePerMin: number;
@@ -262,6 +263,7 @@ function analyzeBase(
     statNumber(stats, 'minionsKilled');
 
   const teamKills = team.reduce((sum, item) => sum + statNumber(item.stats ?? {}, 'kills'), 0);
+  const teamGold = team.reduce((sum, item) => sum + statNumber(item.stats ?? {}, 'goldEarned'), 0);
   const teamDamage = team.reduce(
     (sum, item) => sum + statNumber(item.stats ?? {}, 'totalDamageDealtToChampions'),
     0,
@@ -285,6 +287,7 @@ function analyzeBase(
   const timeline = parseGameTimeline(participant.timeline, durationMin);
 
   const kda = (kills + assists) / Math.max(1, deaths);
+  const goldShare = teamGold > 0 ? gold / teamGold : 0;
   const damageShare = teamDamage > 0 ? damage / teamDamage : 0;
   const tankShare = teamDamageTaken > 0 ? damageTaken / teamDamageTaken : 0;
   const healShare = teamHeal > 0 ? totalHeal / teamHeal : 0;
@@ -318,6 +321,7 @@ function analyzeBase(
     gold,
     damage,
     heal: totalHeal,
+    goldShareRaw: goldShare,
     damageShareRaw: damageShare,
     damageShare: Math.round(damageShare * 1000) / 1000,
     damagePerMin: Math.round(damagePerMin),
@@ -357,6 +361,7 @@ export function computeMatchScores(
         damageShare: base.damageShareRaw,
         tankShare: base.tankShareRaw,
         healShare: base.healShareRaw,
+        goldShare: base.goldShareRaw,
         role: profile.primary,
         secondaryRole: profile.secondary,
         deaths: base.deaths,
@@ -428,6 +433,7 @@ export function analyzeParticipant(
   const {
     participantId: _participantId,
     kdaRaw: _kdaRaw,
+    goldShareRaw: _goldShareRaw,
     damageShareRaw: _damageShareRaw,
     tankShareRaw: _tankShareRaw,
     killParticipationRaw: _killParticipationRaw,
