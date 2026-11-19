@@ -453,6 +453,7 @@ function scoreTipHtml(payload) {
     <div class="score-tip-bars">${rows}</div>
     <div class="score-tip-note">
       按本局 10 人的 KDA / 参团 / 输出 / 承伤 / 治疗百分位加权，主副定位按 7:3 混合。<br />
+      输出位承伤低于本局中位时按中位计算，不会因为少挨打被扣分。<br />
       短板扣分：参团 + ${deficit}双低 -6；核心指标 2 项后 20% -4、3 项 -8；极端局封顶 12。
     </div>`;
 }

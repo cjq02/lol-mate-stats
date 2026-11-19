@@ -279,6 +279,13 @@ const ROLE_WEIGHTS: Record<ChampionRole, RoleWeights> = {
 /** 主定位在混合权重中的占比，剩下的 30% 给副定位 */
 export const PRIMARY_ROLE_SHARE = 0.7;
 
+/**
+ * 输出位的承伤百分位下限。
+ * 输出位打出伤害、少挨打通常是站位好，不能因为承伤全场最低就按“垫底”扣分；
+ * 只有承伤明显高于中位才继续加分。坦克/战士不受此限制，承伤是他们的本职。
+ */
+export const CARRY_TANK_PERCENTILE_FLOOR = 0.5;
+
 type CoreMetric = 'kda' | 'kp' | 'damage' | 'taken' | 'heal';
 
 /** 各类型的核心指标：少于 2 项处于本局后 20% 才不扣短板分 */
@@ -371,7 +378,12 @@ function scoreWithWeights(
   const kda = rank('kda');
   const kp = rank('killParticipation');
   const damage = rank('damageShare');
-  const taken = rank('tankShare');
+  // 输出位承伤低于中位时按中位算：少挨打是站位好，不该被当成最后一名扣分
+  const taken = rank('tankShare').map((value, index) =>
+    inputs[index]?.role === 'carry'
+      ? Math.max(value, CARRY_TANK_PERCENTILE_FLOOR)
+      : value,
+  );
   const heal = rank('healShare');
 
   return inputs.map((input, index) => {

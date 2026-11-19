@@ -615,6 +615,11 @@ test('各英雄类型评分权重总和保持一致', () => {
     const sum = Object.values(weights).reduce((total, value) => total + value, 0);
     assert.ok(Math.abs(sum - 16.7) < 0.02, `${role} 权重之和为 ${sum}`);
   }
+  const carry = roleScoreWeights('carry');
+  assert.ok(
+    carry.kda > carry.taken && carry.damage > carry.taken,
+    `输出位 KDA=${carry.kda}、输出=${carry.damage} 都应高于承伤=${carry.taken}`,
+  );
 });
 
 test('英雄定位改为主 + 副：刀妹战士主刺客副、猴子战士主坦克副', () => {
@@ -1005,6 +1010,30 @@ test('评分百分位在本局 10 人内比较', () => {
   assert.ok(
     avg(scores.slice(5)) > avg(scores.slice(0, 5)),
     `整体更强的 B 队均值应更高：${scores.join(',')}`,
+  );
+});
+
+test('大乱斗同队输出位：伤害接近时 KDA 更好的评分更高', () => {
+  // 2026-11-18 23:05 极地大乱斗真实数据：
+  // 烬 21/5/34，伤害 46,708；灰烬驱魔人 19/14/35，伤害 47,707。
+  // 两人伤害只差 2%，旧权重下输出、承伤的名次差把 KDA 优势抵掉，烬反而更低。
+  // 输出位降低承伤权重后，KDA 优势应该体现出来。
+  const inputs = [
+    { kda: 8.5, killParticipation: 0.7183, damageShare: 0.209, tankShare: 0.1477, healShare: 0.1661, role: 'carry' as const },
+    { kda: 11, killParticipation: 0.7746, damageShare: 0.2167, tankShare: 0.1185, healShare: 0.1746, role: 'carry' as const },
+    { kda: 3.8571, killParticipation: 0.7606, damageShare: 0.2214, tankShare: 0.192, healShare: 0.1978, role: 'carry' as const },
+    { kda: 4.1818, killParticipation: 0.6479, damageShare: 0.2191, tankShare: 0.315, healShare: 0.389, role: 'fighter' as const, secondaryRole: 'tank' as const },
+    { kda: 2.7857, killParticipation: 0.5493, damageShare: 0.1339, tankShare: 0.2268, healShare: 0.0724, role: 'carry' as const },
+    { kda: 1.9444, killParticipation: 0.7, damageShare: 0.2444, tankShare: 0.2201, healShare: 0.3184, role: 'fighter' as const, secondaryRole: 'carry' as const },
+    { kda: 3.3333, killParticipation: 0.6, damageShare: 0.1791, tankShare: 0.2084, healShare: 0.2009, role: 'tank' as const, secondaryRole: 'fighter' as const },
+    { kda: 3.2308, killParticipation: 0.84, damageShare: 0.2399, tankShare: 0.2693, healShare: 0.2799, role: 'tank' as const },
+    { kda: 1.6429, killParticipation: 0.46, damageShare: 0.1516, tankShare: 0.1276, healShare: 0.0995, role: 'carry' as const },
+    { kda: 1.8235, killParticipation: 0.62, damageShare: 0.185, tankShare: 0.1745, healShare: 0.1013, role: 'fighter' as const, secondaryRole: 'carry' as const },
+  ];
+  const scores = percentileScores(inputs);
+  assert.ok(
+    scores[1]! > scores[2]!,
+    `烬（21/5/34）=${scores[1]} 应高于灰烬驱魔人（19/14/35）=${scores[2]}`,
   );
 });
 
