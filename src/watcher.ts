@@ -60,7 +60,13 @@ import {
   gameFlags,
   isRemakeGame,
 } from './stats/flags.js';
-import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, gradeOf } from './stats/rating.js';
+import {
+  AFK_IDLE_VETO_SECONDS,
+  AFK_STATIONARY_SECONDS,
+  gradeOf,
+  roleProfileWeights,
+} from './stats/rating.js';
+import { championRoleProfile } from './stats/champion-roles.js';
 import { premadeSizesByPuuid } from './stats/premade.js';
 import { buildLiveTimeline, type LiveTimelineSample } from './stats/live-timeline.js';
 import { parseMatchTimeline } from './stats/timeline.js';
@@ -730,6 +736,8 @@ export class LiveSource implements DataSource {
               ...(tags ?? []).filter((tag) => tag !== 'MVP' && tag !== 'SVP'),
             ]
           : tags;
+        const roleProfile = championRoleProfile(championId);
+        const scoreWeights = roleProfileWeights(roleProfile);
 
         return {
           puuid,
@@ -763,6 +771,11 @@ export class LiveSource implements DataSource {
           durationMin,
           score: analyzed?.score,
           grade: analyzed ? gradeOf(analyzed.score) : undefined,
+          scoreRule: {
+            primary: roleProfile.primary,
+            secondary: roleProfile.secondary,
+            weights: scoreWeights,
+          },
           damageShare: analyzed?.damageShare,
           tankShare: analyzed?.tankShare,
           killParticipation: analyzed?.killParticipation,

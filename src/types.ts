@@ -1,5 +1,20 @@
 /** 全局类型定义（LCU 原始数据 + 本项目产出的报告结构） */
 
+import type { ChampionRole } from './stats/champion-roles.js';
+
+/** 单场评分的计算口径：定位 + 实际权重，供前端悬浮显示评分标准 */
+export interface MatchScoreRule {
+  primary: ChampionRole;
+  secondary?: ChampionRole;
+  weights: {
+    kda: number;
+    kp: number;
+    damage: number;
+    taken: number;
+    heal: number;
+  };
+}
+
 /** 历史战绩游标分页：按对局时间 + gameId 定位下一页 */
 export interface ArchiveCursor {
   gameCreation: number;
@@ -650,6 +665,8 @@ export interface MatchScoreboardPlayer {
   /** 本局表现评分（与近期战绩的评分口径一致） */
   score?: number;
   grade?: Grade;
+  /** 本局评分的权重和定位，前端悬浮评分时展示 */
+  scoreRule?: MatchScoreRule;
   damageShare?: number;
   tankShare?: number;
   killParticipation?: number;

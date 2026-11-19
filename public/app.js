@@ -45,6 +45,7 @@ const els = {
   mySrTabs: document.getElementById('my-sr-tabs'),
   matchMeta: document.getElementById('match-meta'),
   matchProgress: document.getElementById('match-progress'),
+  scoreTip: document.getElementById('score-tip'),
   matchSummary: document.getElementById('match-summary'),
   matchesSummary: document.getElementById('matches-summary'),
   matchesRangeTabs: document.getElementById('matches-range-tabs'),
@@ -382,6 +383,97 @@ function matchScoreBandIndex(score) {
     if (score >= MATCH_SCORE_BANDS[index].from) return index;
   }
   return MATCH_SCORE_BANDS.length - 1;
+}
+
+/** 评分定位的展示名；权重由后端 scoreRule 提供，前端只负责文案 */
+const SCORE_ROLE_LABELS = {
+  carry: '输出核心（法师/ADC/刺客）',
+  support: '软辅 / 治疗',
+  tank: '坦克 / 硬辅',
+  fighter: '战士',
+  default: '通用',
+};
+
+const SCORE_METRIC_LABELS = [
+  ['kda', 'KDA'],
+  ['kp', '参团'],
+  ['damage', '输出'],
+  ['taken', '承伤'],
+  ['heal', '治疗'],
+];
+
+/** 短板扣分里“参团 + 另一项”的另一项，按主定位取 */
+const SCORE_DEFICIT_LABELS = {
+  carry: '输出',
+  support: '治疗',
+  tank: '承伤',
+  fighter: '输出',
+  default: '输出',
+};
+
+/** 本局评分悬浮说明：定位、五项权重占比和短板规则 */
+function scoreTipHtml(payload) {
+  const weights = payload.weights ?? {};
+  const total = SCORE_METRIC_LABELS.reduce(
+    (sum, [key]) => sum + (Number(weights[key]) || 0),
+    0,
+  );
+  const rows = SCORE_METRIC_LABELS.map(([key, label]) => {
+    const share = total > 0 ? ((Number(weights[key]) || 0) / total) * 100 : 0;
+    return `<div class="score-tip-row"><span>${label}</span><i style="width:${share.toFixed(
+      1,
+    )}%"></i><b>${share.toFixed(0)}%</b></div>`;
+  }).join('');
+  const role = SCORE_ROLE_LABELS[payload.primary] ?? payload.primary ?? '通用';
+  const secondary =
+    payload.secondary && payload.secondary !== payload.primary
+      ? ` · 副 ${SCORE_ROLE_LABELS[payload.secondary] ?? payload.secondary}`
+      : '';
+  const deficit = SCORE_DEFICIT_LABELS[payload.primary] ?? '输出';
+  const grade = payload.grade
+    ? `<span class="score-tip-grade">${escapeHtml(payload.grade)}</span>`
+    : '';
+  return `<div class="score-tip-head">
+      <b style="color:${payload.color ?? '#8b9ac0'}">${summaryScore(payload.score)}</b>
+      ${grade}
+    </div>
+    <div class="score-tip-role">${escapeHtml(role)}${escapeHtml(secondary)}</div>
+    <div class="score-tip-bars">${rows}</div>
+    <div class="score-tip-note">
+      按本局 10 人的 KDA / 参团 / 输出 / 承伤 / 治疗百分位加权，主副定位按 7:3 混合。<br />
+      短板扣分：参团 + ${deficit}双低 -6；核心指标 2 项后 20% -4、3 项 -8；极端局封顶 12。
+    </div>`;
+}
+
+let scoreTipRing = null;
+
+function hideScoreTip() {
+  scoreTipRing = null;
+  els.scoreTip?.classList.add('hidden');
+}
+
+function showScoreTip(ring) {
+  if (!els.scoreTip || ring === scoreTipRing) return;
+  let payload;
+  try {
+    payload = JSON.parse(ring.dataset.scoreTip);
+  } catch {
+    return;
+  }
+  scoreTipRing = ring;
+  els.scoreTip.innerHTML = scoreTipHtml(payload);
+  els.scoreTip.classList.remove('hidden');
+  const rect = ring.getBoundingClientRect();
+  const tip = els.scoreTip.getBoundingClientRect();
+  const margin = 10;
+  const left = Math.min(
+    Math.max(margin, rect.left + rect.width / 2 - tip.width / 2),
+    window.innerWidth - tip.width - margin,
+  );
+  const above = rect.top - tip.height - 10;
+  const top = above >= margin ? above : rect.bottom + 10;
+  els.scoreTip.style.left = `${Math.round(left)}px`;
+  els.scoreTip.style.top = `${Math.round(top)}px`;
 }
 
 /** 时段统计看的是平均分，实际集中在 50-75，单独用更细的分段颜色 */
@@ -840,6 +932,18 @@ function buildCard(player, isLocal, options = {}) {
           options.rankTotal ? ` / ${options.rankTotal}` : ''
         }">#${rank}</span>`
       : '';
+  // 本局评分悬浮说明：带上这一局真实的定位和权重
+  const scoreTipAttr =
+    thisGame?.scoreRule && Number.isFinite(Number(rating))
+      ? ` data-score-tip="${escapeHtml(
+          JSON.stringify({
+            score: rating,
+            grade,
+            color,
+            ...thisGame.scoreRule,
+          }),
+        )}"`
+      : '';
   // 近期平均排名：只在展示近期综合数据的卡片上出现，对局详情的本局卡片用评分环上的单场名次
   const avgRankValue = !thisGame ? Number(player.recent?.avgRank) : Number.NaN;
   const avgRank =
@@ -1224,7 +1328,7 @@ function buildCard(player, isLocal, options = {}) {
     </div>
 
     <div class="score-row">
-      <div class="ring${!thisGame && player.loading && !recent ? ' loading' : ''}" style="--p:${rating ?? 0};--ring:${color}">
+      <div class="ring${!thisGame && player.loading && !recent ? ' loading' : ''}" style="--p:${rating ?? 0};--ring:${color}"${scoreTipAttr}>
         ${rankBadge}
         <div class="ring-inner"><b>${rating ?? '--'}</b><small>${thisGame ? '本局评分' : '评分'}</small></div>
       </div>
@@ -5262,6 +5366,21 @@ els.matchTabs.addEventListener('click', (event) => {
   if (!button) return;
   renderMatchTab(button.dataset.matchTab);
 });
+
+// 本局评分的悬浮说明：只在带 data-score-tip 的评分环上显示
+document.addEventListener('mouseover', (event) => {
+  if (!(event.target instanceof Element)) return;
+  const ring = event.target.closest('.ring[data-score-tip]');
+  if (ring) showScoreTip(ring);
+});
+document.addEventListener('mouseout', (event) => {
+  if (!(event.target instanceof Element)) return;
+  const ring = event.target.closest('.ring[data-score-tip]');
+  if (!ring) return;
+  if (event.relatedTarget instanceof Node && ring.contains(event.relatedTarget)) return;
+  hideScoreTip();
+});
+window.addEventListener('scroll', hideScoreTip, true);
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !els.timelineModal.classList.contains('hidden')) {
