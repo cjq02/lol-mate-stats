@@ -348,6 +348,24 @@ function isInactiveKda(stats) {
   return kills === 0 && assists === 0 && deaths <= 1;
 }
 
+/** 战绩列表上方的评分分段：按单场评分区间统计，从小到大排 */
+const MATCH_SCORE_BANDS = [
+  { label: '80+', from: 80, className: 'score-band-80' },
+  { label: '70–79', from: 70, className: 'score-band-70' },
+  { label: '60–69', from: 60, className: 'score-band-60' },
+  { label: '50–59', from: 50, className: 'score-band-50' },
+  { label: '40–49', from: 40, className: 'score-band-40' },
+  { label: '< 40', from: -Infinity, className: 'score-band-low' },
+];
+
+/** 单场评分属于哪一段：返回 MATCH_SCORE_BANDS 的下标 */
+function matchScoreBandIndex(score) {
+  for (let index = 0; index < MATCH_SCORE_BANDS.length; index += 1) {
+    if (score >= MATCH_SCORE_BANDS[index].from) return index;
+  }
+  return MATCH_SCORE_BANDS.length - 1;
+}
+
 const RATING_TONES = [
   { min: 75, className: 'score-75', color: '#3ddc97' },
   { min: 65, className: 'score-65', color: '#5eead4' },
@@ -2741,12 +2759,15 @@ function matchListSummary(games) {
   let svp = 0;
   let bad = 0;
   let afk = 0;
+  const scoreBands = MATCH_SCORE_BANDS.map(() => 0);
 
   for (const game of played) {
-    const score = Number(game.score);
-    if (Number.isFinite(score)) {
+    const rawScore = game.score;
+    const score = Number(rawScore);
+    if (rawScore !== null && rawScore !== undefined && Number.isFinite(score)) {
       scoreSum += score;
       scoreCount += 1;
+      scoreBands[matchScoreBandIndex(score)] += 1;
       if (best === null || score > best) best = score;
       if (worst === null || score < worst) worst = score;
     }
@@ -2777,6 +2798,8 @@ function matchListSummary(games) {
     svp,
     bad,
     afk,
+    scoreBands,
+    scoreCount,
   };
 }
 
@@ -2785,6 +2808,38 @@ function summaryScore(value) {
   if (!Number.isFinite(Number(value))) return '-';
   const number = Number(value);
   return Number.isInteger(number) ? String(number) : number.toFixed(1);
+}
+
+/** 评分分段长条 + 图例：每段显示场次和百分比 */
+function scoreBandsHtml(summary) {
+  const total = summary.scoreCount;
+  if (!total) return '';
+  const segments = MATCH_SCORE_BANDS.map((band, index) => {
+    const count = summary.scoreBands[index];
+    if (!count) return '';
+    const share = (count / total) * 100;
+    return `<span class="score-band-seg ${band.className}" style="width:${share.toFixed(
+      2,
+    )}%" title="${band.label} 分：${count} 场 · ${Math.round(share)}%"></span>`;
+  }).join('');
+  const legend = MATCH_SCORE_BANDS.map((band, index) => {
+    const count = summary.scoreBands[index];
+    const share = Math.round((count / total) * 100);
+    return `<span class="score-band-chip${count ? '' : ' empty'}">
+      <i class="score-band-dot ${band.className}"></i>
+      <span class="score-band-name">${band.label}</span>
+      <b>${count}</b><span class="score-band-unit">场</span>
+      <em>${share}%</em>
+    </span>`;
+  }).join('');
+  return `<div class="score-bands">
+    <div class="score-bands-head">
+      <span class="score-bands-title">评分分段</span>
+      <span class="score-bands-note">共 ${total} 场有评分 · 重开不计</span>
+    </div>
+    <div class="score-band-bar">${segments}</div>
+    <div class="score-band-legend">${legend}</div>
+  </div>`;
 }
 
 function renderMatchesSummary(games) {
@@ -2842,7 +2897,9 @@ function renderMatchesSummary(games) {
       <span class="summary-sub">${summary.afk ? `逃跑 ${summary.afk} 场` : '无逃跑'}</span>
     </div>`,
   ];
-  els.matchesSummary.innerHTML = `<div class="matches-summary-grid">${cells.join('')}</div>`;
+  els.matchesSummary.innerHTML = `<div class="matches-summary-grid">${cells.join(
+    '',
+  )}</div>${scoreBandsHtml(summary)}`;
   els.matchesSummary.classList.remove('hidden');
 }
 
