@@ -1533,12 +1533,12 @@ body::before {
 
 /* 评分分段：分段长条 + 每段场次/百分比 */
 .score-bands {
-  margin-top: 9px;
-  padding-top: 8px;
+  margin-top: 10px;
+  padding-top: 9px;
   border-top: 1px dashed var(--line);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .score-bands-head {
@@ -1550,14 +1550,14 @@ body::before {
 }
 
 .score-bands-title {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted-2);
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
 .score-bands-note {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted-2);
   white-space: nowrap;
   overflow: hidden;
@@ -1566,7 +1566,7 @@ body::before {
 
 .score-band-bar {
   display: flex;
-  height: 10px;
+  height: 12px;
   border-radius: 999px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.05);
@@ -1585,14 +1585,15 @@ body::before {
 .score-band-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
+  justify-content: space-between;
+  gap: 6px 12px;
 }
 
 .score-band-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 13.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1603,8 +1604,8 @@ body::before {
 }
 
 .score-band-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   flex: 0 0 auto;
 }
@@ -1615,15 +1616,15 @@ body::before {
 }
 
 .score-band-unit {
-  margin-left: -1px;
+  margin-left: -2px;
   color: var(--muted-2);
 }
 
 .score-band-chip em {
   font-style: normal;
-  font-size: 11.5px;
+  font-size: 13px;
   color: var(--muted-2);
-  min-width: 32px;
+  min-width: 36px;
   text-align: right;
 }
 
