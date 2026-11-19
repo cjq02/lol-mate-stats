@@ -1598,7 +1598,7 @@ body::before {
   white-space: nowrap;
 }
 
-.score-band-chip.empty {
+.score-band-chip.score-band-zero {
   opacity: 0.42;
 }
 

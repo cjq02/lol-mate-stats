@@ -2825,7 +2825,7 @@ function scoreBandsHtml(summary) {
   const legend = MATCH_SCORE_BANDS.map((band, index) => {
     const count = summary.scoreBands[index];
     const share = Math.round((count / total) * 100);
-    return `<span class="score-band-chip${count ? '' : ' empty'}">
+    return `<span class="score-band-chip${count ? '' : ' score-band-zero'}">
       <i class="score-band-dot ${band.className}"></i>
       <span class="score-band-name">${band.label}</span>
       <b>${count}</b><span class="score-band-unit">场</span>
@@ -2835,7 +2835,7 @@ function scoreBandsHtml(summary) {
   return `<div class="score-bands">
     <div class="score-bands-head">
       <span class="score-bands-title">评分分段</span>
-      <span class="score-bands-note">共 ${total} 场有评分 · 重开不计</span>
+      <span class="score-bands-note">共 ${total} 场有评分</span>
     </div>
     <div class="score-band-bar">${segments}</div>
     <div class="score-band-legend">${legend}</div>
