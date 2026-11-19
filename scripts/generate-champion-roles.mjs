@@ -118,9 +118,13 @@ try {
     .sort((a, b) => a.id - b.id);
 
   const lines = entries.map((entry) => {
-    const profile = entry.secondary
-      ? `{ primary: '${entry.primary}', secondary: '${entry.secondary}' }`
-      : `{ primary: '${entry.primary}' }`;
+    const parts = [`primary: '${entry.primary}'`];
+    if (entry.secondary) parts.push(`secondary: '${entry.secondary}'`);
+    // 官方原始分类保留下来，供“含刺客”这类细分规则使用
+    if (entry.official.length) {
+      parts.push(`classes: [${entry.official.map((role) => `'${role}'`).join(', ')}]`);
+    }
+    const profile = `{ ${parts.join(', ')} }`;
     const official = entry.official.length ? `[${entry.official.join(',')}]` : '[未知]';
     return `  ${entry.id}: ${profile}, // ${entry.name} ${entry.alias} ${official}`;
   });
@@ -143,6 +147,8 @@ export interface ChampionRoleProfile {
   primary: ChampionRole;
   /** 副定位：按 30% 权重参与评分 */
   secondary?: ChampionRole;
+  /** 官方原始分类，用于“含刺客”这类细分规则 */
+  classes?: ChampionClass[];
 }
 
 export const CHAMPION_ROLE_PROFILES: Record<number, ChampionRoleProfile> = {

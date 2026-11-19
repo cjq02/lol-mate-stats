@@ -175,6 +175,7 @@ async function main(): Promise<void> {
           teamDeaths: total.deaths,
           role: profile.primary,
           secondaryRole: profile.secondary,
+          classes: profile.classes,
           deaths,
         };
       });

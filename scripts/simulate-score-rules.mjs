@@ -153,6 +153,7 @@ for (const [gameId, list] of byGame) {
           : {}),
         role: profile.primary,
         secondaryRole: profile.secondary,
+        classes: profile.classes,
         deaths,
       };
     });

@@ -705,7 +705,7 @@ export async function saveLiveAiAnalysis(
 }
 
 /** 对局详情缓存版本：评分公式、坑档阈值、卡片/标签口径变化时递增，旧缓存自动失效 */
-const MATCH_DETAIL_CACHE_VERSION = 14;
+const MATCH_DETAIL_CACHE_VERSION = 15;
 
 /** 读取已持久保存的完整对局详情（10 人本局数据 + 近期战绩） */
 export async function getSavedMatchDetail(

@@ -625,23 +625,23 @@ test('各英雄类型评分权重总和保持一致', () => {
 test('英雄定位改为主 + 副：刀妹战士主刺客副、猴子战士主坦克副', () => {
   assert.deepEqual(
     championRoleProfile(39),
-    { primary: 'fighter', secondary: 'carry' },
+    { primary: 'fighter', secondary: 'carry', classes: ['fighter', 'assassin'] },
     '刀妹官方定位是 fighter + assassin，刺客归入 carry 副定位',
   );
   assert.deepEqual(
     championRoleProfile(62),
-    { primary: 'fighter', secondary: 'tank' },
+    { primary: 'fighter', secondary: 'tank', classes: ['fighter', 'tank'] },
     '猴子官方定位是 fighter + tank，坦克应作为副定位参与评分',
   );
   assert.deepEqual(
     championRoleProfile(67),
-    { primary: 'carry' },
+    { primary: 'carry', classes: ['marksman', 'assassin'] },
     'VN 的射手和刺客都映射到 carry，不需要副定位',
   );
   assert.equal(championRole(39), 'fighter', '只取主定位的调用方仍返回战士');
   assert.deepEqual(
     championRoleProfile(60062),
-    { primary: 'fighter', secondary: 'tank' },
+    { primary: 'fighter', secondary: 'tank', classes: ['fighter', 'tank'] },
     'Jade 猴子要和基础英雄保持一致',
   );
 });
@@ -822,6 +822,47 @@ test('人头/死亡加减分按位置区分', () => {
     ['death'],
     '辅助同样不拿人头分，死亡门槛比坦克低',
   );
+
+  const assassinCarry = killDeathAdjustments({
+    ...base,
+    role: 'carry',
+    kills: 15,
+    teamKills: 63,
+    deaths: 6,
+    teamDeaths: 43,
+    classes: ['assassin'],
+  });
+  assert.deepEqual(
+    assassinCarry.map((item) => [item.key, item.value]),
+    [['kill', 1.5]],
+    '含刺客标签的输出位 15 杀就按刺客标准加分',
+  );
+
+  const assassinFighter = killDeathAdjustments({
+    ...base,
+    role: 'fighter',
+    kills: 15,
+    teamKills: 63,
+    deaths: 6,
+    teamDeaths: 43,
+    classes: ['fighter', 'assassin'],
+  });
+  assert.deepEqual(
+    assassinFighter.map((item) => [item.key, item.value]),
+    [['kill', 1.5]],
+    '战士 + 刺客 15 杀拿刺客档 1.5，而不是战士档 1',
+  );
+
+  const carryNoAssassin = killDeathAdjustments({
+    ...base,
+    role: 'carry',
+    kills: 15,
+    teamKills: 63,
+    deaths: 6,
+    teamDeaths: 43,
+    classes: ['mage'],
+  });
+  assert.equal(carryNoAssassin.length, 0, '普通法师 15 杀还没到输出位的 18 杀门槛');
 });
 
 test('经济转化会进入最终评分', () => {

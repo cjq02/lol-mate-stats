@@ -8,7 +8,7 @@ import type {
   Streak,
   TopChampion,
 } from '../types.js';
-import type { ChampionRole, ChampionRoleProfile } from './champion-roles.js';
+import type { ChampionClass, ChampionRole, ChampionRoleProfile } from './champion-roles.js';
 import { clamp, round } from '../util.js';
 import { LANE_NAMES } from './constants.js';
 
@@ -74,6 +74,13 @@ const KILL_DEATH_RULES: Record<ChampionRole, KillDeathRule> = {
   },
 };
 
+/**
+ * 含刺客标签的英雄按刺客标准算击杀：
+ * 刺客本来就以收人头为职责，15 杀就视为完成收割，不再等输出位的 18 杀。
+ * 例如劫 / 阿卡丽 这类纯刺客，以及刀妹 / 剑圣这种战士 + 刺客。
+ */
+const ASSASSIN_KILL_RULE = { minKills: 15, value: 1.5 };
+
 /** 人头/死亡加减分：击杀看绝对值，死亡看占比，避免不同位置互相误伤 */
 export function killDeathAdjustments(
   input: MatchPercentileInput,
@@ -85,9 +92,10 @@ export function killDeathAdjustments(
   const deaths = Number(input.deaths) || 0;
   const teamDeaths = Number(input.teamDeaths) || 0;
   const deathShare = teamDeaths > 0 ? deaths / teamDeaths : 0;
+  const killRule = input.classes?.includes('assassin') ? ASSASSIN_KILL_RULE : rule.kill;
 
-  if (rule.kill && kills >= rule.kill.minKills) {
-    adjustments.push({ key: 'kill', label: '击杀核心', value: rule.kill.value });
+  if (killRule && kills >= killRule.minKills) {
+    adjustments.push({ key: 'kill', label: '击杀核心', value: killRule.value });
   }
   if (rule.death && deathShare >= rule.death.minShare && deaths >= rule.death.minDeaths) {
     adjustments.push({ key: 'death', label: '死亡过多', value: rule.death.value });
@@ -247,6 +255,8 @@ export interface MatchPercentileInput {
   role?: ChampionRole;
   /** 副定位：按 30% 权重参与评分，短板规则仍看主定位 */
   secondaryRole?: ChampionRole;
+  /** 官方原始分类：含 assassin 时击杀按刺客标准加分 */
+  classes?: ChampionClass[];
   /** 本局死亡数，用于识别极端的“没输出又一直死”局 */
   deaths?: number;
 }

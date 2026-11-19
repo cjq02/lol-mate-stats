@@ -777,6 +777,7 @@ export class LiveSource implements DataSource {
                 teamKills: teamKillsById.get(toNumber(participant.teamId)) ?? 0,
                 teamDeaths: teamDeathsById.get(toNumber(participant.teamId)) ?? 0,
                 role: roleProfile.primary,
+                classes: roleProfile.classes,
               })
             : [];
         const rawScore = rawScores.get(participantId) ?? 0;

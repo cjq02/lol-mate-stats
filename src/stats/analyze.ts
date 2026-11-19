@@ -372,6 +372,7 @@ export function computeMatchScores(
         teamDeaths: base.teamDeaths,
         role: profile.primary,
         secondaryRole: profile.secondary,
+        classes: profile.classes,
         deaths: base.deaths,
       };
     }),
