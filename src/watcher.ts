@@ -522,6 +522,38 @@ export class LiveSource implements DataSource {
     return changed;
   }
 
+  /** 旧缓存详情可能没有英雄定位，打开时按 championId 补算一次，供评分弹窗显示角色 */
+  private enrichDetailScoreRules(detail: MatchDetail): boolean {
+    let changed = false;
+    for (const row of detail.scoreboard ?? []) {
+      const profile = championRoleProfile(row.championId);
+      const rule = row.scoreRule;
+      if (!rule) {
+        row.scoreRule = {
+          primary: profile.primary,
+          ...(profile.secondary ? { secondary: profile.secondary } : {}),
+          ...(profile.classes?.length ? { classes: profile.classes } : {}),
+          weights: roleProfileWeights(profile),
+        };
+        changed = true;
+        continue;
+      }
+      if (!rule.primary) {
+        rule.primary = profile.primary;
+        changed = true;
+      }
+      if (!rule.secondary && profile.secondary) {
+        rule.secondary = profile.secondary;
+        changed = true;
+      }
+      if (!rule.classes?.length && profile.classes?.length) {
+        rule.classes = profile.classes;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   /** 旧缓存详情没有逃跑依据，打开时按已保存时间线补算一次 */
   private async enrichDetailAfkReasons(detail: MatchDetail): Promise<boolean> {
     const afkPlayers = detail.afkPlayers ?? [];
@@ -596,9 +628,10 @@ export class LiveSource implements DataSource {
       if (cached) {
         const filled = await this.enrichDetailRanks(cached);
         const reasons = await this.enrichDetailAfkReasons(cached);
-        if (filled || reasons) {
+        const rules = this.enrichDetailScoreRules(cached);
+        if (filled || reasons || rules) {
           await saveMatchDetail(cached);
-          logTag('match', `[${gameId}] 命中对局详情缓存，已补算近期平均排名和逃跑依据`);
+          logTag('match', `[${gameId}] 命中对局详情缓存，已补算近期平均排名、逃跑依据和评分定位`);
         } else {
           logTag('match', `[${gameId}] 命中对局详情缓存，直接返回`);
         }
@@ -829,6 +862,7 @@ export class LiveSource implements DataSource {
           scoreRule: {
             primary: roleProfile.primary,
             secondary: roleProfile.secondary,
+            classes: roleProfile.classes,
             weights: scoreWeights,
             ...(adjustments.length ? { adjustments } : {}),
           },

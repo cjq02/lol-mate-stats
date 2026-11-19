@@ -1,6 +1,6 @@
 /** 全局类型定义（LCU 原始数据 + 本项目产出的报告结构） */
 
-import type { ChampionRole } from './stats/champion-roles.js';
+import type { ChampionClass, ChampionRole } from './stats/champion-roles.js';
 
 /** 单场评分的计算口径：定位 + 实际权重 + 命中的加减分项，供前端悬浮显示评分标准 */
 export interface MatchScoreAdjustment {
@@ -12,6 +12,8 @@ export interface MatchScoreAdjustment {
 export interface MatchScoreRule {
   primary: ChampionRole;
   secondary?: ChampionRole;
+  /** 官方原始分类，用于显示该英雄的具体角色（法师 / 刺客 / 坦克等） */
+  classes?: ChampionClass[];
   weights: {
     kda: number;
     kp: number;

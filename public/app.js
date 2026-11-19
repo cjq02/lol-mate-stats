@@ -394,6 +394,16 @@ const SCORE_ROLE_LABELS = {
   default: '通用',
 };
 
+/** 官方英雄分类，评分弹窗里显示这只英雄具体是什么角色 */
+const SCORE_CLASS_LABELS = {
+  mage: '法师',
+  marksman: '射手',
+  assassin: '刺客',
+  fighter: '战士',
+  tank: '坦克',
+  support: '辅助',
+};
+
 const SCORE_METRIC_LABELS = [
   ['kda', 'KDA'],
   ['kp', '参团'],
@@ -429,6 +439,21 @@ function scoreTipHtml(payload) {
     payload.secondary && payload.secondary !== payload.primary
       ? ` · 副 ${SCORE_ROLE_LABELS[payload.secondary] ?? payload.secondary}`
       : '';
+  const classes = Array.isArray(payload.classes) ? payload.classes : [];
+  const classText = classes
+    .map((value) => SCORE_CLASS_LABELS[value] ?? value)
+    .filter(Boolean)
+    .join(' / ');
+  const positionText =
+    POSITION_NAMES[String(payload.position ?? '').toLowerCase()] ?? '';
+  const roleText = [
+    positionText ? `本局位置 ${positionText}` : '',
+    classText ? `英雄分类 ${classText}` : '',
+    `评分定位 ${role}${secondary}`,
+  ]
+    .filter(Boolean)
+    .map((part) => `<span>${escapeHtml(part)}</span>`)
+    .join('');
   const deficit = SCORE_DEFICIT_LABELS[payload.primary] ?? '输出';
   const grade = payload.grade
     ? `<span class="score-tip-grade">${escapeHtml(payload.grade)}</span>`
@@ -448,7 +473,7 @@ function scoreTipHtml(payload) {
       <b style="color:${payload.color ?? '#8b9ac0'}">${summaryScore(payload.score)}</b>
       ${grade}
     </div>
-    <div class="score-tip-role">${escapeHtml(role)}${escapeHtml(secondary)}</div>
+    <div class="score-tip-role">${roleText}</div>
     ${adjustmentHtml}
     <div class="score-tip-bars">${rows}</div>
     <div class="score-tip-note">
@@ -964,6 +989,7 @@ function buildCard(player, isLocal, options = {}) {
             score: rating,
             grade,
             color,
+            position: thisGame.position,
             ...thisGame.scoreRule,
           }),
         )}"`
