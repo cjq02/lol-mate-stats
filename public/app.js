@@ -793,12 +793,16 @@ function renderAramChampions(snapshot) {
   const nodes = options.map((option) => {
     const mine = option.games > 0 ? winRatePct(option.winRate) : '未使用';
     const overall = option.globalGames > 0 ? winRatePct(option.globalWinRate) : '-';
+    const avgScore = Number(option.avgScore) || 0;
+    const showScore = option.games > 0 && avgScore > 0;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `aram-champion${option.isCurrent ? ' current' : ''}`;
     button.title = `${option.championName}：本地存档整体 ${overall}${
       option.globalGames ? `（${option.globalGames} 场）` : ''
-    }；我的 ${mine}${option.games ? `（${option.games} 场）` : ''}`;
+    }；我的 ${mine}${option.games ? `（${option.games} 场）` : ''}${
+      showScore ? `，均分 ${avgScore.toFixed(1)}` : ''
+    }`;
     button.innerHTML = `
       <span class="aram-champ-icon">${iconHtml(
         champPath(option.championId),
@@ -816,6 +820,13 @@ function renderAramChampions(snapshot) {
           <span class="aram-stat mine"><small>我的</small><b>${mine}</b>${
             option.games ? `<em>${option.games}场</em>` : ''
           }</span>
+          ${
+            showScore
+              ? `<span class="aram-stat score"><small>均分</small><b style="color:${ratingColor(
+                  avgScore,
+                )}">${avgScore.toFixed(1)}</b></span>`
+              : ''
+          }
         </span>
       </span>
     `;
