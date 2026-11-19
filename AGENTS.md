@@ -71,6 +71,7 @@
 - 重开不计入胜率、场次、评分和坑指数，并自动往前补足正常对局。
 - 样本不足 3 场时坑指数封顶 45；极端局评分封顶 12，这些保护逻辑不要随手删除。
 - 新增模式或队列先改 `src/stats/constants.ts`，不要硬编码 queueId。
+- 英雄定位表 `src/stats/champion-roles.ts` 由 `scripts/generate-champion-roles.mjs` 从客户端 `roles` 生成，不要手改；个别英雄要调整主副定位时改脚本里的 `OVERRIDES` 再重新生成。
 - 修改公式、阈值或标签时，必须同步更新三处：`rating.ts`、`rating.test.ts`、`README.md` 的公式与阈值说明，并递增 `store.ts` 的 `MATCH_DETAIL_CACHE_VERSION`，避免旧详情缓存继续显示旧评分。
 
 ## 测试

@@ -12,13 +12,13 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
 import { afkParticipantIds, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleScoreWeights, summarize } from './rating.js';
+import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, PROFILES, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import { summarizeTimeStats } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
-import { championRole } from './champion-roles.js';
+import { championRole, championRoleProfile } from './champion-roles.js';
 import { premadeSizesByPuuid, premadeSizesFromGames } from './premade.js';
 import { buildLiveTimeline } from './live-timeline.js';
 import { estimateRespawnMs, parseMatchTimeline } from './timeline.js';
@@ -615,6 +615,87 @@ test('各英雄类型评分权重总和保持一致', () => {
     const sum = Object.values(weights).reduce((total, value) => total + value, 0);
     assert.ok(Math.abs(sum - 16.7) < 0.02, `${role} 权重之和为 ${sum}`);
   }
+});
+
+test('英雄定位改为主 + 副：刀妹战士主刺客副、猴子战士主坦克副', () => {
+  assert.deepEqual(
+    championRoleProfile(39),
+    { primary: 'fighter', secondary: 'carry' },
+    '刀妹官方定位是 fighter + assassin，刺客归入 carry 副定位',
+  );
+  assert.deepEqual(
+    championRoleProfile(62),
+    { primary: 'fighter', secondary: 'tank' },
+    '猴子官方定位是 fighter + tank，坦克应作为副定位参与评分',
+  );
+  assert.deepEqual(
+    championRoleProfile(67),
+    { primary: 'carry' },
+    'VN 的射手和刺客都映射到 carry，不需要副定位',
+  );
+  assert.equal(championRole(39), 'fighter', '只取主定位的调用方仍返回战士');
+  assert.deepEqual(
+    championRoleProfile(60062),
+    { primary: 'fighter', secondary: 'tank' },
+    'Jade 猴子要和基础英雄保持一致',
+  );
+});
+
+test('主副定位按 7:3 混合评分权重', () => {
+  const fighter = roleScoreWeights('fighter');
+  const tank = roleScoreWeights('tank');
+  const mixed = roleProfileWeights({ primary: 'fighter', secondary: 'tank' });
+  assert.ok(
+    Math.abs(mixed.taken - (fighter.taken * 0.7 + tank.taken * 0.3)) < 1e-9,
+    `混合承伤权重=${mixed.taken}`,
+  );
+  assert.ok(
+    Math.abs(mixed.kda - (fighter.kda * 0.7 + tank.kda * 0.3)) < 1e-9,
+    `混合 KDA 权重=${mixed.kda}`,
+  );
+  const sum = Object.values(mixed).reduce((total, value) => total + value, 0);
+  assert.ok(Math.abs(sum - 16.7) < 0.02, `混合权重之和为 ${sum}`);
+  assert.deepEqual(
+    roleProfileWeights({ primary: 'carry' }),
+    roleScoreWeights('carry'),
+    '没有副定位时不应改变权重',
+  );
+});
+
+test('副定位让承伤型战士的评分更高', () => {
+  // 猴子：承伤第一、输出垫底。混入 30% 坦克权重后，承伤应该更值钱。
+  const base = [
+    {
+      kda: 2,
+      killParticipation: 0.6,
+      damageShare: 0.12,
+      tankShare: 0.35,
+      healShare: 0.1,
+      deaths: 6,
+    },
+    {
+      kda: 4,
+      killParticipation: 0.7,
+      damageShare: 0.3,
+      tankShare: 0.1,
+      healShare: 0.1,
+      deaths: 4,
+    },
+  ];
+  const fighterOnly = percentileScores(
+    base.map((input) => ({ ...input, role: 'fighter' as const })),
+  );
+  const withTankSecondary = percentileScores(
+    base.map((input, index) =>
+      index === 0
+        ? { ...input, role: 'fighter' as const, secondaryRole: 'tank' as const }
+        : { ...input, role: 'fighter' as const },
+    ),
+  );
+  assert.ok(
+    withTankSecondary[0]! > fighterOnly[0]!,
+    `纯战士=${fighterOnly[0]}，战士+坦克副定位=${withTankSecondary[0]}`,
+  );
 });
 
 test('射手和软辅不会被误判成坦克', () => {

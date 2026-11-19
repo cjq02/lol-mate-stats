@@ -8,7 +8,7 @@ import type {
   Streak,
   TopChampion,
 } from '../types.js';
-import type { ChampionRole } from './champion-roles.js';
+import type { ChampionRole, ChampionRoleProfile } from './champion-roles.js';
 import { clamp, round } from '../util.js';
 import { LANE_NAMES } from './constants.js';
 
@@ -128,6 +128,8 @@ export interface MatchPercentileInput {
   tankShare: number;
   healShare: number;
   role?: ChampionRole;
+  /** 副定位：按 30% 权重参与评分，短板规则仍看主定位 */
+  secondaryRole?: ChampionRole;
   /** 本局死亡数，用于识别极端的“没输出又一直死”局 */
   deaths?: number;
 }
@@ -147,6 +149,7 @@ interface RoleWeights {
  * - tank（坦克/硬辅）：承伤和参团权重最高，输出权重最低
  * - fighter（战士）：输出和承伤均衡
  * 总权重都保持在约 16.7，避免不同定位之间整体分数漂移。
+ * 英雄有官方副定位时，主定位占 70%、副定位占 30%。
  */
 const ROLE_WEIGHTS: Record<ChampionRole, RoleWeights> = {
   carry: { kda: 5.4, kp: 1.2, damage: 7.8, taken: 2.3, heal: 0.01 },
@@ -155,6 +158,9 @@ const ROLE_WEIGHTS: Record<ChampionRole, RoleWeights> = {
   fighter: { kda: 4.8, kp: 2.2, damage: 5.0, taken: 4.5, heal: 0.2 },
   default: { kda: 5.3987, kp: 1.2844, damage: 6.7913, taken: 3.2165, heal: 0.0214 },
 };
+
+/** 主定位在混合权重中的占比，剩下的 30% 给副定位 */
+export const PRIMARY_ROLE_SHARE = 0.7;
 
 type CoreMetric = 'kda' | 'kp' | 'damage' | 'taken' | 'heal';
 
@@ -182,6 +188,21 @@ const LOW_PAIR: Record<
 /** 评分权重（供 AI 提示词等地方复用，避免和评分模型脱节） */
 export function roleScoreWeights(role: ChampionRole): RoleWeights {
   return ROLE_WEIGHTS[role];
+}
+
+/** 主 + 副定位的混合权重；没有副定位时直接返回主定位权重 */
+export function roleProfileWeights(profile: ChampionRoleProfile): RoleWeights {
+  const primary = ROLE_WEIGHTS[profile.primary];
+  if (!profile.secondary || profile.secondary === profile.primary) return primary;
+  const secondary = ROLE_WEIGHTS[profile.secondary];
+  const secondaryShare = 1 - PRIMARY_ROLE_SHARE;
+  return {
+    kda: primary.kda * PRIMARY_ROLE_SHARE + secondary.kda * secondaryShare,
+    kp: primary.kp * PRIMARY_ROLE_SHARE + secondary.kp * secondaryShare,
+    damage: primary.damage * PRIMARY_ROLE_SHARE + secondary.damage * secondaryShare,
+    taken: primary.taken * PRIMARY_ROLE_SHARE + secondary.taken * secondaryShare,
+    heal: primary.heal * PRIMARY_ROLE_SHARE + secondary.heal * secondaryShare,
+  };
 }
 
 /** 0–1 百分位；并列时取平均名次 */
@@ -270,9 +291,14 @@ function scoreWithWeights(
   });
 }
 
-/** 按英雄类型选择权重 */
+/** 按英雄主/副定位选择权重 */
 export function percentileScores(inputs: MatchPercentileInput[]): number[] {
-  return scoreWithWeights(inputs, (input) => ROLE_WEIGHTS[input.role ?? 'default']);
+  return scoreWithWeights(inputs, (input) =>
+    roleProfileWeights({
+      primary: input.role ?? 'default',
+      secondary: input.secondaryRole,
+    }),
+  );
 }
 
 /** 旧版全局权重：用于分阶段回滚/对比（不应用短板减分） */

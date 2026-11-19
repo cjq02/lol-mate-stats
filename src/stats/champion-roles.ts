@@ -1,263 +1,293 @@
-/** 自动生成：英雄主定位 → 评分权重类别。新英雄缺失时按 default 处理。 */
+/** 自动生成：英雄主/副定位 → 评分权重类别。新英雄缺失时按 default 处理。 */
+/** 重新生成：npm run build && node scripts/generate-champion-roles.mjs */
 export type ChampionRole = 'support' | 'tank' | 'fighter' | 'carry' | 'default';
 
-export const CHAMPION_ROLES: Record<number, ChampionRole> = {
-  1: 'carry', // 黑暗之女 Annie
-  2: 'fighter', // 狂战士 Olaf
-  3: 'tank', // 正义巨像 Galio
-  4: 'carry', // 卡牌大师 TwistedFate
-  5: 'fighter', // 德邦总管 XinZhao
-  6: 'fighter', // 无畏战车 Urgot
-  7: 'carry', // 诡术妖姬 Leblanc
-  8: 'carry', // 猩红收割者 Vladimir
-  9: 'carry', // 远古恐惧 FiddleSticks
-  10: 'carry', // 正义天使 Kayle
-  11: 'fighter', // 无极剑圣 MasterYi
-  12: 'tank', // 牛头酋长 Alistar
-  13: 'carry', // 符文法师 Ryze
-  14: 'tank', // 亡灵战神 Sion
-  15: 'carry', // 战争女神 Sivir
-  16: 'support', // 众星之子 Soraka
-  17: 'carry', // 迅捷斥候 Teemo
-  18: 'carry', // 麦林炮手 Tristana
-  19: 'fighter', // 祖安怒兽 Warwick
-  20: 'tank', // 雪原双子 Nunu
-  21: 'carry', // 赏金猎人 MissFortune
-  22: 'carry', // 寒冰射手 Ashe
-  23: 'fighter', // 蛮族之王 Tryndamere
-  24: 'fighter', // 武器大师 Jax
-  25: 'carry', // 堕落天使 Morgana
-  26: 'support', // 时光守护者 Zilean
-  27: 'tank', // 炼金术士 Singed
-  28: 'carry', // 痛苦之拥 Evelynn
-  29: 'carry', // 瘟疫之源 Twitch
-  30: 'carry', // 死亡颂唱者 Karthus
-  31: 'tank', // 虚空恐惧 Chogath
-  32: 'tank', // 殇之木乃伊 Amumu
-  33: 'tank', // 披甲龙龟 Rammus
-  34: 'carry', // 冰晶凤凰 Anivia
-  35: 'carry', // 恶魔小丑 Shaco
-  36: 'tank', // 祖安狂人 DrMundo
-  37: 'support', // 琴瑟仙女 Sona
-  38: 'carry', // 虚空行者 Kassadin
-  39: 'fighter', // 刀锋舞者 Irelia
-  40: 'support', // 风暴之怒 Janna
-  41: 'fighter', // 海洋之灾 Gangplank
-  42: 'carry', // 英勇投弹手 Corki
-  43: 'support', // 天启者 Karma
-  44: 'support', // 瓦洛兰之盾 Taric
-  45: 'carry', // 邪恶小法师 Veigar
-  48: 'fighter', // 巨魔之王 Trundle
-  50: 'carry', // 诺克萨斯统领 Swain
-  51: 'carry', // 皮城女警 Caitlyn
-  53: 'tank', // 蒸汽机器人 Blitzcrank
-  54: 'tank', // 熔岩巨兽 Malphite
-  55: 'carry', // 不祥之刃 Katarina
-  56: 'fighter', // 永恒梦魇 Nocturne
-  57: 'tank', // 扭曲树精 Maokai
-  58: 'fighter', // 荒漠屠夫 Renekton
-  59: 'fighter', // 德玛西亚皇子 JarvanIV
-  60: 'carry', // 蜘蛛女皇 Elise
-  61: 'carry', // 发条魔灵 Orianna
-  62: 'fighter', // 齐天大圣 MonkeyKing
-  63: 'carry', // 复仇焰魂 Brand
-  64: 'fighter', // 盲僧 LeeSin
-  67: 'carry', // 暗夜猎手 Vayne
-  68: 'fighter', // 机械公敌 Rumble
-  69: 'carry', // 魔蛇之拥 Cassiopeia
-  72: 'tank', // 上古领主 Skarner
-  74: 'carry', // 大发明家 Heimerdinger
-  75: 'fighter', // 沙漠死神 Nasus
-  76: 'carry', // 狂野女猎手 Nidalee
-  77: 'fighter', // 兽灵行者 Udyr
-  78: 'tank', // 圣锤之毅 Poppy
-  79: 'fighter', // 酒桶 Gragas
-  80: 'fighter', // 不屈之枪 Pantheon
-  81: 'carry', // 探险家 Ezreal
-  82: 'fighter', // 铁铠冥魂 Mordekaiser
-  83: 'fighter', // 牧魂人 Yorick
-  84: 'carry', // 离群之刺 Akali
-  85: 'carry', // 狂暴之心 Kennen
-  86: 'fighter', // 德玛西亚之力 Garen
-  89: 'tank', // 曙光女神 Leona
-  90: 'carry', // 虚空先知 Malzahar
-  91: 'carry', // 刀锋之影 Talon
-  92: 'fighter', // 放逐之刃 Riven
-  96: 'carry', // 深渊巨口 KogMaw
-  98: 'tank', // 暮光之眼 Shen
-  99: 'carry', // 光辉女郎 Lux
-  101: 'carry', // 远古巫灵 Xerath
-  102: 'fighter', // 龙血武姬 Shyvana
-  103: 'carry', // 九尾妖狐 Ahri
-  104: 'carry', // 法外狂徒 Graves
-  105: 'carry', // 潮汐海灵 Fizz
-  106: 'fighter', // 不灭狂雷 Volibear
-  107: 'carry', // 傲之追猎者 Rengar
-  110: 'carry', // 惩戒之箭 Varus
-  111: 'tank', // 深海泰坦 Nautilus
-  112: 'carry', // 奥术先驱 Viktor
-  113: 'tank', // 北地之怒 Sejuani
-  114: 'fighter', // 无双剑姬 Fiora
-  115: 'carry', // 爆破鬼才 Ziggs
-  117: 'support', // 仙灵女巫 Lulu
-  119: 'carry', // 荣耀行刑官 Draven
-  120: 'fighter', // 战争之影 Hecarim
-  121: 'carry', // 虚空掠夺者 Khazix
-  122: 'fighter', // 诺克萨斯之手 Darius
-  126: 'fighter', // 未来守护者 Jayce
-  127: 'carry', // 冰霜女巫 Lissandra
-  131: 'fighter', // 皎月女神 Diana
-  133: 'carry', // 德玛西亚之翼 Quinn
-  134: 'carry', // 暗黑元首 Syndra
-  136: 'carry', // 铸星龙王 AurelionSol
-  141: 'fighter', // 影流之镰 Kayn
-  142: 'carry', // 暮光星灵 Zoe
-  143: 'carry', // 荆棘之兴 Zyra
-  145: 'carry', // 虚空之女 Kaisa
-  147: 'support', // 星籁歌姬 Seraphine
-  150: 'fighter', // 迷失之牙 Gnar
-  154: 'tank', // 生化魔人 Zac
-  157: 'fighter', // 疾风剑豪 Yasuo
-  161: 'carry', // 虚空之眼 Velkoz
-  163: 'carry', // 岩雀 Taliyah
-  164: 'fighter', // 青钢影 Camille
-  166: 'carry', // 影哨 Akshan
-  200: 'fighter', // 虚空女皇 Belveth
-  201: 'tank', // 弗雷尔卓德之心 Braum
-  202: 'carry', // 戏命师 Jhin
-  203: 'carry', // 永猎双子 Kindred
-  221: 'carry', // 祖安花火 Zeri
-  222: 'carry', // 暴走萝莉 Jinx
-  223: 'tank', // 河流之王 TahmKench
-  233: 'fighter', // 狂厄蔷薇 Briar
-  234: 'fighter', // 破败之王 Viego
-  235: 'carry', // 涤魂圣枪 Senna
-  236: 'carry', // 圣枪游侠 Lucian
-  238: 'carry', // 影流之主 Zed
-  240: 'fighter', // 暴怒骑士 Kled
-  245: 'carry', // 时间刺客 Ekko
-  246: 'carry', // 元素女皇 Qiyana
-  254: 'fighter', // 皮城执法官 Vi
-  266: 'fighter', // 暗裔剑魔 Aatrox
-  267: 'support', // 唤潮鲛姬 Nami
-  268: 'carry', // 沙漠皇帝 Azir
-  350: 'support', // 魔法猫咪 Yuumi
-  360: 'carry', // 沙漠玫瑰 Samira
-  412: 'tank', // 魂锁典狱长 Thresh
-  420: 'fighter', // 海兽祭司 Illaoi
-  421: 'fighter', // 虚空遁地兽 RekSai
-  427: 'support', // 翠神 Ivern
-  429: 'carry', // 复仇之矛 Kalista
-  432: 'support', // 星界游神 Bard
-  497: 'support', // 幻翎 Rakan
-  498: 'carry', // 逆羽 Xayah
-  516: 'tank', // 山隐之焰 Ornn
-  517: 'carry', // 解脱者 Sylas
-  518: 'carry', // 万花通灵 Neeko
-  523: 'carry', // 残月之肃 Aphelios
-  526: 'tank', // 镕铁少女 Rell
-  555: 'support', // 血港鬼影 Pyke
-  711: 'carry', // 愁云使者 Vex
-  777: 'fighter', // 封魔剑魂 Yone
-  799: 'fighter', // 铁血狼母 Ambessa
-  800: 'carry', // 流光镜影 Mel
-  804: 'carry', // 不破之誓 Yunara
-  805: 'carry', // 灰烬驱魔人 Locke
-  875: 'fighter', // 腕豪 Sett
-  876: 'fighter', // 含羞蓓蕾 Lillia
-  887: 'fighter', // 灵罗娃娃 Gwen
-  888: 'support', // 炼金男爵 Renata
-  893: 'carry', // 双界灵兔 Aurora
-  895: 'fighter', // 不羁之悦 Nilah
-  897: 'tank', // 纳祖芒荣耀 KSante
-  901: 'carry', // 炽炎雏龙 Smolder
-  902: 'support', // 明烛 Milio
-  904: 'fighter', // 不落魔锋 Zaahen
-  910: 'carry', // 异画师 Hwei
-  950: 'carry', // 百裂冥犬 Naafiri
-  60001: 'carry', // 黑暗之女 Jade_Annie
-  60002: 'fighter', // 狂战士 Jade_Olaf
-  60003: 'tank', // 哨兵之殇 Jade_Galio
-  60004: 'carry', // 卡牌大师 Jade_TwistedFate
-  60005: 'fighter', // 德邦总管 Jade_XinZhao
-  60009: 'carry', // 末日使者 Jade_Fiddlesticks
-  60010: 'carry', // 审判天使 Jade_Kayle
-  60011: 'fighter', // 无极剑圣 Jade_MasterYi
-  60012: 'tank', // 牛头酋长 Jade_Alistar
-  60013: 'carry', // 流浪法师 Jade_Ryze
-  60014: 'tank', // 亡灵勇士 Jade_Sion
-  60015: 'carry', // 战争女神 Jade_Sivir
-  60016: 'support', // 众星之子 Jade_Soraka
-  60017: 'carry', // 迅捷斥候 Jade_Teemo
-  60018: 'carry', // 麦林炮手 Jade_Tristana
-  60019: 'fighter', // 嗜血猎手 Jade_Warwick
-  60020: 'tank', // 雪人骑士 Jade_Nunu
-  60021: 'carry', // 赏金猎人 Jade_MissFortune
-  60022: 'carry', // 寒冰射手 Jade_Ashe
-  60023: 'fighter', // 蛮族之王 Jade_Tryndamere
-  60024: 'fighter', // 武器大师 Jade_Jax
-  60025: 'carry', // 堕落天使 Jade_Morgana
-  60026: 'support', // 时光守护者 Jade_Zilean
-  60027: 'tank', // 炼金术士 Jade_Singed
-  60028: 'carry', // 寡妇制造者 Jade_Evelynn
-  60029: 'carry', // 瘟疫之源 Jade_Twitch
-  60030: 'carry', // 死亡颂唱者 Jade_Karthus
-  60031: 'tank', // 虚空恐惧 Jade_Chogath
-  60032: 'tank', // 殇之木乃伊 Jade_Amumu
-  60033: 'tank', // 披甲龙龟 Jade_Rammus
-  60034: 'carry', // 冰晶凤凰 Jade_Anivia
-  60035: 'carry', // 恶魔小丑 Jade_Shaco
-  60036: 'tank', // 祖安狂人 Jade_DrMundo
-  60037: 'support', // 琴瑟仙女 Jade_Sona
-  60038: 'carry', // 虚空行者 Jade_Kassadin
-  60039: 'fighter', // 刀锋意志 Jade_Irelia
-  60040: 'support', // 风暴之怒 Jade_Janna
-  60041: 'fighter', // 海洋之灾 Jade_Gangplank
-  60042: 'carry', // 英勇投弹手 Jade_Corki
-  60043: 'support', // 天启者 Jade_Karma
-  60044: 'support', // 宝石骑士 Jade_Taric
-  60045: 'carry', // 邪恶小法师 Jade_Veigar
-  60051: 'carry', // 皮城女警 Jade_Caitlyn
-  60053: 'tank', // 蒸汽机器人 Jade_Blitzcrank
-  60054: 'tank', // 熔岩巨兽 Jade_Malphite
-  60055: 'carry', // 不祥之刃 Jade_Katarina
-  60059: 'fighter', // 德玛西亚皇子 Jade_JarvanIV
-  60062: 'fighter', // 齐天大圣 Jade_Wukong
-  60063: 'carry', // 复仇焰魂 Jade_Brand
-  60064: 'fighter', // 盲僧 Jade_LeeSin
-  60067: 'carry', // 暗夜猎手 Jade_Vayne
-  60072: 'tank', // 水晶先锋 Jade_Skarner
-  60074: 'carry', // 大发明家 Jade_Heimerdinger
-  60075: 'fighter', // 沙漠死神 Jade_Nasus
-  60076: 'carry', // 狂野女猎手 Jade_Nidalee
-  60078: 'tank', // 钢铁大使 Jade_Poppy
-  60079: 'fighter', // 酒桶 Jade_Gragas
-  60080: 'fighter', // 战争之王 Jade_Pantheon
-  60081: 'carry', // 探险家 Jade_Ezreal
-  60082: 'fighter', // 金属大师 Jade_Mordekaiser
-  60083: 'fighter', // 掘墓者 Jade_Yorick
-  60084: 'carry', // 暗影之拳 Jade_Akali
-  60085: 'carry', // 狂暴之心 Jade_Kennen
-  60086: 'fighter', // 德玛西亚之力 Jade_Garen
-  60089: 'tank', // 曙光女神 Jade_Leona
-  60090: 'carry', // 虚空先知 Jade_Malzahar
-  60096: 'carry', // 深渊巨口 Jade_KogMaw
-  60098: 'tank', // 暮光之眼 Jade_Shen
-  60099: 'carry', // 光辉女郎 Jade_Lux
-  60102: 'fighter', // 龙血武姬 Jade_Shyvana
-  60103: 'carry', // 九尾妖狐 Jade_Ahri
-  60104: 'carry', // 法外狂徒 Jade_Graves
-  60105: 'carry', // 潮汐海灵 Jade_Fizz
-  60111: 'tank', // 深海泰坦 Jade_Nautilus
-  60114: 'fighter', // 无双剑姬 Jade_Fiora
-  60117: 'support', // 仙灵女巫 Jade_Lulu
-  60120: 'fighter', // 战争之影 Jade_Hecarim
-  60133: 'carry', // 德玛西亚之翼 Jade_Quinn
-  60236: 'carry', // 圣枪游侠 Jade_Lucian
-  60266: 'fighter', // 暗裔剑魔 Jade_Aatrox
-  60267: 'support', // 唤潮鲛姬 Jade_Nami
+/** 客户端官方英雄分类（一个英雄可以有多项） */
+export type ChampionClass =
+  | 'mage'
+  | 'marksman'
+  | 'assassin'
+  | 'fighter'
+  | 'tank'
+  | 'support';
+
+export interface ChampionRoleProfile {
+  /** 主定位：决定评分权重的大头和短板规则 */
+  primary: ChampionRole;
+  /** 副定位：按 30% 权重参与评分 */
+  secondary?: ChampionRole;
+}
+
+export const CHAMPION_ROLE_PROFILES: Record<number, ChampionRoleProfile> = {
+  1: { primary: 'carry' }, // 黑暗之女 Annie [mage,support]
+  2: { primary: 'fighter', secondary: 'tank' }, // 狂战士 Olaf [fighter,tank]
+  3: { primary: 'tank', secondary: 'carry' }, // 正义巨像 Galio [tank,mage]
+  4: { primary: 'carry' }, // 卡牌大师 TwistedFate [mage,marksman]
+  5: { primary: 'fighter', secondary: 'tank' }, // 德邦总管 XinZhao [fighter,tank]
+  6: { primary: 'fighter', secondary: 'tank' }, // 无畏战车 Urgot [fighter,tank]
+  7: { primary: 'carry' }, // 诡术妖姬 Leblanc [assassin,mage]
+  8: { primary: 'carry', secondary: 'fighter' }, // 猩红收割者 Vladimir [mage,fighter]
+  9: { primary: 'carry' }, // 远古恐惧 FiddleSticks [mage,support]
+  10: { primary: 'carry' }, // 正义天使 Kayle [marksman,mage]
+  11: { primary: 'fighter', secondary: 'carry' }, // 无极剑圣 MasterYi [fighter,assassin]
+  12: { primary: 'tank' }, // 牛头酋长 Alistar [tank,support]
+  13: { primary: 'carry' }, // 符文法师 Ryze [mage]
+  14: { primary: 'tank', secondary: 'fighter' }, // 亡灵战神 Sion [tank,fighter]
+  15: { primary: 'carry' }, // 战争女神 Sivir [marksman]
+  16: { primary: 'support', secondary: 'carry' }, // 众星之子 Soraka [support,mage]
+  17: { primary: 'carry' }, // 迅捷斥候 Teemo [marksman,mage]
+  18: { primary: 'carry' }, // 麦林炮手 Tristana [marksman,assassin]
+  19: { primary: 'fighter', secondary: 'tank' }, // 祖安怒兽 Warwick [fighter,tank]
+  20: { primary: 'tank', secondary: 'carry' }, // 雪原双子 Nunu [tank,mage]
+  21: { primary: 'carry' }, // 赏金猎人 MissFortune [marksman,mage]
+  22: { primary: 'carry' }, // 寒冰射手 Ashe [marksman,support]
+  23: { primary: 'fighter', secondary: 'carry' }, // 蛮族之王 Tryndamere [fighter,assassin]
+  24: { primary: 'fighter' }, // 武器大师 Jax [fighter]
+  25: { primary: 'carry' }, // 堕落天使 Morgana [support,mage]
+  26: { primary: 'support', secondary: 'carry' }, // 时光守护者 Zilean [support,mage]
+  27: { primary: 'tank', secondary: 'carry' }, // 炼金术士 Singed [tank,mage]
+  28: { primary: 'carry' }, // 痛苦之拥 Evelynn [assassin,mage]
+  29: { primary: 'carry' }, // 瘟疫之源 Twitch [marksman,assassin]
+  30: { primary: 'carry' }, // 死亡颂唱者 Karthus [mage]
+  31: { primary: 'tank', secondary: 'carry' }, // 虚空恐惧 Chogath [tank,mage]
+  32: { primary: 'tank' }, // 殇之木乃伊 Amumu [tank,support]
+  33: { primary: 'tank' }, // 披甲龙龟 Rammus [tank]
+  34: { primary: 'carry' }, // 冰晶凤凰 Anivia [mage]
+  35: { primary: 'carry' }, // 恶魔小丑 Shaco [assassin]
+  36: { primary: 'tank', secondary: 'fighter' }, // 祖安狂人 DrMundo [tank,fighter]
+  37: { primary: 'support', secondary: 'carry' }, // 琴瑟仙女 Sona [support,mage]
+  38: { primary: 'carry' }, // 虚空行者 Kassadin [assassin,mage]
+  39: { primary: 'fighter', secondary: 'carry' }, // 刀锋舞者 Irelia [fighter,assassin]
+  40: { primary: 'support', secondary: 'carry' }, // 风暴之怒 Janna [support,mage]
+  41: { primary: 'fighter' }, // 海洋之灾 Gangplank [fighter]
+  42: { primary: 'carry' }, // 英勇投弹手 Corki [marksman,mage]
+  43: { primary: 'support', secondary: 'carry' }, // 天启者 Karma [mage,support]
+  44: { primary: 'support', secondary: 'tank' }, // 瓦洛兰之盾 Taric [support,tank]
+  45: { primary: 'carry' }, // 邪恶小法师 Veigar [mage]
+  48: { primary: 'fighter', secondary: 'tank' }, // 巨魔之王 Trundle [fighter,tank]
+  50: { primary: 'carry' }, // 诺克萨斯统领 Swain [mage,support]
+  51: { primary: 'carry' }, // 皮城女警 Caitlyn [marksman]
+  53: { primary: 'tank' }, // 蒸汽机器人 Blitzcrank [tank,support]
+  54: { primary: 'tank', secondary: 'carry' }, // 熔岩巨兽 Malphite [tank,mage]
+  55: { primary: 'carry' }, // 不祥之刃 Katarina [assassin,mage]
+  56: { primary: 'fighter', secondary: 'carry' }, // 永恒梦魇 Nocturne [fighter,assassin]
+  57: { primary: 'tank' }, // 扭曲树精 Maokai [tank,support]
+  58: { primary: 'fighter', secondary: 'tank' }, // 荒漠屠夫 Renekton [fighter,tank]
+  59: { primary: 'fighter', secondary: 'tank' }, // 德玛西亚皇子 JarvanIV [fighter,tank]
+  60: { primary: 'carry' }, // 蜘蛛女皇 Elise [assassin,mage]
+  61: { primary: 'carry' }, // 发条魔灵 Orianna [mage,support]
+  62: { primary: 'fighter', secondary: 'tank' }, // 齐天大圣 MonkeyKing [fighter,tank]
+  63: { primary: 'carry' }, // 复仇焰魂 Brand [mage,support]
+  64: { primary: 'fighter', secondary: 'carry' }, // 盲僧 LeeSin [fighter,assassin]
+  67: { primary: 'carry' }, // 暗夜猎手 Vayne [marksman,assassin]
+  68: { primary: 'fighter', secondary: 'carry' }, // 机械公敌 Rumble [fighter,mage]
+  69: { primary: 'carry' }, // 魔蛇之拥 Cassiopeia [mage]
+  72: { primary: 'tank', secondary: 'fighter' }, // 上古领主 Skarner [tank,fighter]
+  74: { primary: 'carry' }, // 大发明家 Heimerdinger [mage,support]
+  75: { primary: 'fighter', secondary: 'tank' }, // 沙漠死神 Nasus [fighter,tank]
+  76: { primary: 'carry' }, // 狂野女猎手 Nidalee [assassin,mage]
+  77: { primary: 'fighter', secondary: 'tank' }, // 兽灵行者 Udyr [fighter,tank]
+  78: { primary: 'tank', secondary: 'fighter' }, // 圣锤之毅 Poppy [tank,fighter]
+  79: { primary: 'fighter', secondary: 'carry' }, // 酒桶 Gragas [fighter,mage]
+  80: { primary: 'fighter', secondary: 'carry' }, // 不屈之枪 Pantheon [fighter,assassin]
+  81: { primary: 'carry' }, // 探险家 Ezreal [marksman,mage]
+  82: { primary: 'fighter', secondary: 'carry' }, // 铁铠冥魂 Mordekaiser [fighter,mage]
+  83: { primary: 'fighter', secondary: 'tank' }, // 牧魂人 Yorick [fighter,tank]
+  84: { primary: 'carry' }, // 离群之刺 Akali [assassin]
+  85: { primary: 'carry' }, // 狂暴之心 Kennen [mage]
+  86: { primary: 'fighter', secondary: 'tank' }, // 德玛西亚之力 Garen [fighter,tank]
+  89: { primary: 'tank' }, // 曙光女神 Leona [tank,support]
+  90: { primary: 'carry' }, // 虚空先知 Malzahar [mage]
+  91: { primary: 'carry' }, // 刀锋之影 Talon [assassin]
+  92: { primary: 'fighter', secondary: 'carry' }, // 放逐之刃 Riven [fighter,assassin]
+  96: { primary: 'carry' }, // 深渊巨口 KogMaw [marksman,mage]
+  98: { primary: 'tank' }, // 暮光之眼 Shen [tank]
+  99: { primary: 'carry' }, // 光辉女郎 Lux [mage,support]
+  101: { primary: 'carry' }, // 远古巫灵 Xerath [mage,support]
+  102: { primary: 'fighter', secondary: 'tank' }, // 龙血武姬 Shyvana [fighter,tank]
+  103: { primary: 'carry' }, // 九尾妖狐 Ahri [mage,assassin]
+  104: { primary: 'carry' }, // 法外狂徒 Graves [marksman]
+  105: { primary: 'carry', secondary: 'fighter' }, // 潮汐海灵 Fizz [assassin,fighter]
+  106: { primary: 'fighter', secondary: 'tank' }, // 不灭狂雷 Volibear [fighter,tank]
+  107: { primary: 'carry', secondary: 'fighter' }, // 傲之追猎者 Rengar [assassin,fighter]
+  110: { primary: 'carry' }, // 惩戒之箭 Varus [marksman,mage]
+  111: { primary: 'tank' }, // 深海泰坦 Nautilus [tank,support]
+  112: { primary: 'carry' }, // 奥术先驱 Viktor [mage]
+  113: { primary: 'tank' }, // 北地之怒 Sejuani [tank]
+  114: { primary: 'fighter', secondary: 'carry' }, // 无双剑姬 Fiora [fighter,assassin]
+  115: { primary: 'carry' }, // 爆破鬼才 Ziggs [mage]
+  117: { primary: 'support', secondary: 'carry' }, // 仙灵女巫 Lulu [support,mage]
+  119: { primary: 'carry' }, // 荣耀行刑官 Draven [marksman]
+  120: { primary: 'fighter', secondary: 'tank' }, // 战争之影 Hecarim [fighter,tank]
+  121: { primary: 'carry' }, // 虚空掠夺者 Khazix [assassin]
+  122: { primary: 'fighter', secondary: 'tank' }, // 诺克萨斯之手 Darius [fighter,tank]
+  126: { primary: 'fighter', secondary: 'carry' }, // 未来守护者 Jayce [fighter,marksman]
+  127: { primary: 'carry' }, // 冰霜女巫 Lissandra [mage]
+  131: { primary: 'fighter', secondary: 'carry' }, // 皎月女神 Diana [fighter,assassin]
+  133: { primary: 'carry' }, // 德玛西亚之翼 Quinn [marksman,assassin]
+  134: { primary: 'carry' }, // 暗黑元首 Syndra [mage]
+  136: { primary: 'carry' }, // 铸星龙王 AurelionSol [mage]
+  141: { primary: 'fighter', secondary: 'carry' }, // 影流之镰 Kayn [fighter,assassin]
+  142: { primary: 'carry' }, // 暮光星灵 Zoe [mage]
+  143: { primary: 'carry' }, // 荆棘之兴 Zyra [mage,support]
+  145: { primary: 'carry' }, // 虚空之女 Kaisa [marksman,mage]
+  147: { primary: 'support', secondary: 'carry' }, // 星籁歌姬 Seraphine [support,mage]
+  150: { primary: 'fighter', secondary: 'tank' }, // 迷失之牙 Gnar [fighter,tank]
+  154: { primary: 'tank', secondary: 'fighter' }, // 生化魔人 Zac [tank,fighter]
+  157: { primary: 'fighter', secondary: 'carry' }, // 疾风剑豪 Yasuo [fighter,assassin]
+  161: { primary: 'carry' }, // 虚空之眼 Velkoz [mage,support]
+  163: { primary: 'carry' }, // 岩雀 Taliyah [mage,support]
+  164: { primary: 'fighter', secondary: 'carry' }, // 青钢影 Camille [fighter,assassin]
+  166: { primary: 'carry' }, // 影哨 Akshan [marksman,assassin]
+  200: { primary: 'fighter' }, // 虚空女皇 Belveth [fighter]
+  201: { primary: 'tank' }, // 弗雷尔卓德之心 Braum [tank,support]
+  202: { primary: 'carry' }, // 戏命师 Jhin [marksman,mage]
+  203: { primary: 'carry' }, // 永猎双子 Kindred [marksman]
+  221: { primary: 'carry' }, // 祖安花火 Zeri [marksman]
+  222: { primary: 'carry' }, // 暴走萝莉 Jinx [marksman]
+  223: { primary: 'tank' }, // 河流之王 TahmKench [tank,support]
+  233: { primary: 'fighter', secondary: 'carry' }, // 狂厄蔷薇 Briar [fighter,assassin]
+  234: { primary: 'fighter', secondary: 'carry' }, // 破败之王 Viego [fighter,assassin]
+  235: { primary: 'carry' }, // 涤魂圣枪 Senna [support,marksman]
+  236: { primary: 'carry' }, // 圣枪游侠 Lucian [marksman,assassin]
+  238: { primary: 'carry' }, // 影流之主 Zed [assassin]
+  240: { primary: 'fighter' }, // 暴怒骑士 Kled [fighter]
+  245: { primary: 'carry' }, // 时间刺客 Ekko [assassin,mage]
+  246: { primary: 'carry' }, // 元素女皇 Qiyana [assassin]
+  254: { primary: 'fighter', secondary: 'carry' }, // 皮城执法官 Vi [fighter,assassin]
+  266: { primary: 'fighter' }, // 暗裔剑魔 Aatrox [fighter]
+  267: { primary: 'support', secondary: 'carry' }, // 唤潮鲛姬 Nami [support,mage]
+  268: { primary: 'carry' }, // 沙漠皇帝 Azir [mage,marksman]
+  350: { primary: 'support', secondary: 'carry' }, // 魔法猫咪 Yuumi [support,mage]
+  360: { primary: 'carry' }, // 沙漠玫瑰 Samira [marksman,assassin]
+  412: { primary: 'tank' }, // 魂锁典狱长 Thresh [support,tank]
+  420: { primary: 'fighter', secondary: 'tank' }, // 海兽祭司 Illaoi [fighter,tank]
+  421: { primary: 'fighter', secondary: 'tank' }, // 虚空遁地兽 RekSai [fighter,tank]
+  427: { primary: 'support', secondary: 'carry' }, // 翠神 Ivern [support,mage]
+  429: { primary: 'carry' }, // 复仇之矛 Kalista [marksman]
+  432: { primary: 'support', secondary: 'carry' }, // 星界游神 Bard [support,mage]
+  497: { primary: 'support' }, // 幻翎 Rakan [support]
+  498: { primary: 'carry' }, // 逆羽 Xayah [marksman]
+  516: { primary: 'tank' }, // 山隐之焰 Ornn [tank]
+  517: { primary: 'carry' }, // 解脱者 Sylas [mage,assassin]
+  518: { primary: 'carry' }, // 万花通灵 Neeko [mage,support]
+  523: { primary: 'carry' }, // 残月之肃 Aphelios [marksman]
+  526: { primary: 'tank' }, // 镕铁少女 Rell [tank,support]
+  555: { primary: 'support', secondary: 'carry' }, // 血港鬼影 Pyke [support,assassin]
+  711: { primary: 'carry' }, // 愁云使者 Vex [mage]
+  777: { primary: 'fighter', secondary: 'carry' }, // 封魔剑魂 Yone [fighter,assassin]
+  799: { primary: 'fighter', secondary: 'carry' }, // 铁血狼母 Ambessa [fighter,assassin]
+  800: { primary: 'carry' }, // 流光镜影 Mel [mage,support]
+  804: { primary: 'carry' }, // 不破之誓 Yunara [marksman]
+  805: { primary: 'carry' }, // 灰烬驱魔人 Locke [assassin,mage]
+  875: { primary: 'fighter', secondary: 'tank' }, // 腕豪 Sett [fighter,tank]
+  876: { primary: 'fighter', secondary: 'carry' }, // 含羞蓓蕾 Lillia [fighter,mage]
+  887: { primary: 'fighter' }, // 灵罗娃娃 Gwen [fighter]
+  888: { primary: 'support', secondary: 'carry' }, // 炼金男爵 Renata [support,mage]
+  893: { primary: 'carry' }, // 双界灵兔 Aurora [mage,assassin]
+  895: { primary: 'fighter', secondary: 'carry' }, // 不羁之悦 Nilah [fighter,assassin]
+  897: { primary: 'tank', secondary: 'fighter' }, // 纳祖芒荣耀 KSante [tank,fighter]
+  901: { primary: 'carry' }, // 炽炎雏龙 Smolder [marksman,mage]
+  902: { primary: 'support', secondary: 'carry' }, // 明烛 Milio [support,mage]
+  904: { primary: 'fighter' }, // 不落魔锋 Zaahen [fighter]
+  910: { primary: 'carry' }, // 异画师 Hwei [mage,support]
+  950: { primary: 'carry', secondary: 'fighter' }, // 百裂冥犬 Naafiri [assassin,fighter]
+  60001: { primary: 'carry' }, // 黑暗之女 Jade_Annie [mage,support]
+  60002: { primary: 'fighter', secondary: 'tank' }, // 狂战士 Jade_Olaf [fighter,tank]
+  60003: { primary: 'tank', secondary: 'carry' }, // 哨兵之殇 Jade_Galio [tank,mage]
+  60004: { primary: 'carry' }, // 卡牌大师 Jade_TwistedFate [mage,marksman]
+  60005: { primary: 'fighter', secondary: 'tank' }, // 德邦总管 Jade_XinZhao [fighter,tank]
+  60006: { primary: 'fighter', secondary: 'tank' }, // 首领之傲 Jade_Urgot [fighter,tank]
+  60009: { primary: 'carry' }, // 末日使者 Jade_Fiddlesticks [mage,support]
+  60010: { primary: 'carry' }, // 审判天使 Jade_Kayle [marksman,mage]
+  60011: { primary: 'fighter', secondary: 'carry' }, // 无极剑圣 Jade_MasterYi [fighter,assassin]
+  60012: { primary: 'tank' }, // 牛头酋长 Jade_Alistar [tank,support]
+  60013: { primary: 'carry' }, // 流浪法师 Jade_Ryze [mage]
+  60014: { primary: 'tank', secondary: 'fighter' }, // 亡灵勇士 Jade_Sion [tank,fighter]
+  60015: { primary: 'carry' }, // 战争女神 Jade_Sivir [marksman]
+  60016: { primary: 'support', secondary: 'carry' }, // 众星之子 Jade_Soraka [support,mage]
+  60017: { primary: 'carry' }, // 迅捷斥候 Jade_Teemo [marksman,mage]
+  60018: { primary: 'carry' }, // 麦林炮手 Jade_Tristana [marksman,assassin]
+  60019: { primary: 'fighter', secondary: 'tank' }, // 嗜血猎手 Jade_Warwick [fighter,tank]
+  60020: { primary: 'tank', secondary: 'carry' }, // 雪人骑士 Jade_Nunu [tank,mage]
+  60021: { primary: 'carry' }, // 赏金猎人 Jade_MissFortune [marksman,mage]
+  60022: { primary: 'carry' }, // 寒冰射手 Jade_Ashe [marksman,support]
+  60023: { primary: 'fighter', secondary: 'carry' }, // 蛮族之王 Jade_Tryndamere [fighter,assassin]
+  60024: { primary: 'fighter' }, // 武器大师 Jade_Jax [fighter]
+  60025: { primary: 'carry' }, // 堕落天使 Jade_Morgana [support,mage]
+  60026: { primary: 'support', secondary: 'carry' }, // 时光守护者 Jade_Zilean [support,mage]
+  60027: { primary: 'tank', secondary: 'carry' }, // 炼金术士 Jade_Singed [tank,mage]
+  60028: { primary: 'carry' }, // 寡妇制造者 Jade_Evelynn [assassin,mage]
+  60029: { primary: 'carry' }, // 瘟疫之源 Jade_Twitch [marksman,assassin]
+  60030: { primary: 'carry' }, // 死亡颂唱者 Jade_Karthus [mage]
+  60031: { primary: 'tank', secondary: 'carry' }, // 虚空恐惧 Jade_Chogath [tank,mage]
+  60032: { primary: 'tank' }, // 殇之木乃伊 Jade_Amumu [tank,support]
+  60033: { primary: 'tank' }, // 披甲龙龟 Jade_Rammus [tank]
+  60034: { primary: 'carry' }, // 冰晶凤凰 Jade_Anivia [mage]
+  60035: { primary: 'carry' }, // 恶魔小丑 Jade_Shaco [assassin]
+  60036: { primary: 'tank', secondary: 'fighter' }, // 祖安狂人 Jade_DrMundo [tank,fighter]
+  60037: { primary: 'support', secondary: 'carry' }, // 琴瑟仙女 Jade_Sona [support,mage]
+  60038: { primary: 'carry' }, // 虚空行者 Jade_Kassadin [assassin,mage]
+  60039: { primary: 'fighter', secondary: 'carry' }, // 刀锋意志 Jade_Irelia [fighter,assassin]
+  60040: { primary: 'support', secondary: 'carry' }, // 风暴之怒 Jade_Janna [support,mage]
+  60041: { primary: 'fighter' }, // 海洋之灾 Jade_Gangplank [fighter]
+  60042: { primary: 'carry' }, // 英勇投弹手 Jade_Corki [marksman,mage]
+  60043: { primary: 'support', secondary: 'carry' }, // 天启者 Jade_Karma [mage,support]
+  60044: { primary: 'support', secondary: 'tank' }, // 宝石骑士 Jade_Taric [support,tank]
+  60045: { primary: 'carry' }, // 邪恶小法师 Jade_Veigar [mage]
+  60050: { primary: 'carry' }, // 策士统领 Jade_Swain [mage,support]
+  60051: { primary: 'carry' }, // 皮城女警 Jade_Caitlyn [marksman]
+  60053: { primary: 'tank' }, // 蒸汽机器人 Jade_Blitzcrank [tank,support]
+  60054: { primary: 'tank', secondary: 'carry' }, // 熔岩巨兽 Jade_Malphite [tank,mage]
+  60055: { primary: 'carry' }, // 不祥之刃 Jade_Katarina [assassin,mage]
+  60059: { primary: 'fighter', secondary: 'tank' }, // 德玛西亚皇子 Jade_JarvanIV [fighter,tank]
+  60060: { primary: 'carry' }, // 蜘蛛女皇 Jade_Elise [assassin,mage]
+  60062: { primary: 'fighter', secondary: 'tank' }, // 齐天大圣 Jade_Wukong [fighter,tank]
+  60063: { primary: 'carry' }, // 复仇焰魂 Jade_Brand [mage,support]
+  60064: { primary: 'fighter', secondary: 'carry' }, // 盲僧 Jade_LeeSin [fighter,assassin]
+  60067: { primary: 'carry' }, // 暗夜猎手 Jade_Vayne [marksman,assassin]
+  60072: { primary: 'tank', secondary: 'fighter' }, // 水晶先锋 Jade_Skarner [tank,fighter]
+  60074: { primary: 'carry' }, // 大发明家 Jade_Heimerdinger [mage,support]
+  60075: { primary: 'fighter', secondary: 'tank' }, // 沙漠死神 Jade_Nasus [fighter,tank]
+  60076: { primary: 'carry' }, // 狂野女猎手 Jade_Nidalee [assassin,mage]
+  60077: { primary: 'fighter', secondary: 'tank' }, // 野兽之灵 Jade_Udyr [fighter,tank]
+  60078: { primary: 'tank', secondary: 'fighter' }, // 钢铁大使 Jade_Poppy [tank,fighter]
+  60079: { primary: 'fighter', secondary: 'carry' }, // 酒桶 Jade_Gragas [fighter,mage]
+  60080: { primary: 'fighter', secondary: 'carry' }, // 战争之王 Jade_Pantheon [fighter,assassin]
+  60081: { primary: 'carry' }, // 探险家 Jade_Ezreal [marksman,mage]
+  60082: { primary: 'fighter', secondary: 'carry' }, // 金属大师 Jade_Mordekaiser [fighter,mage]
+  60083: { primary: 'fighter', secondary: 'tank' }, // 掘墓者 Jade_Yorick [fighter,tank]
+  60084: { primary: 'carry' }, // 暗影之拳 Jade_Akali [assassin]
+  60085: { primary: 'carry' }, // 狂暴之心 Jade_Kennen [mage]
+  60086: { primary: 'fighter', secondary: 'tank' }, // 德玛西亚之力 Jade_Garen [fighter,tank]
+  60089: { primary: 'tank' }, // 曙光女神 Jade_Leona [tank,support]
+  60090: { primary: 'carry' }, // 虚空先知 Jade_Malzahar [mage]
+  60091: { primary: 'carry' }, // 刀锋之影 Jade_Talon [assassin]
+  60096: { primary: 'carry' }, // 深渊巨口 Jade_KogMaw [marksman,mage]
+  60098: { primary: 'tank' }, // 暮光之眼 Jade_Shen [tank]
+  60099: { primary: 'carry' }, // 光辉女郎 Jade_Lux [mage,support]
+  60101: { primary: 'carry' }, // 远古巫灵 Jade_Xerath [mage,support]
+  60102: { primary: 'fighter', secondary: 'tank' }, // 龙血武姬 Jade_Shyvana [fighter,tank]
+  60103: { primary: 'carry' }, // 九尾妖狐 Jade_Ahri [mage,assassin]
+  60104: { primary: 'carry' }, // 法外狂徒 Jade_Graves [marksman]
+  60105: { primary: 'carry', secondary: 'fighter' }, // 潮汐海灵 Jade_Fizz [assassin,fighter]
+  60106: { primary: 'fighter', secondary: 'tank' }, // 雷霆咆哮 Jade_Volibear [fighter,tank]
+  60111: { primary: 'tank' }, // 深海泰坦 Jade_Nautilus [tank,support]
+  60114: { primary: 'fighter', secondary: 'carry' }, // 无双剑姬 Jade_Fiora [fighter,assassin]
+  60117: { primary: 'support', secondary: 'carry' }, // 仙灵女巫 Jade_Lulu [support,mage]
+  60120: { primary: 'fighter', secondary: 'tank' }, // 战争之影 Jade_Hecarim [fighter,tank]
+  60133: { primary: 'carry' }, // 德玛西亚之翼 Jade_Quinn [marksman,assassin]
+  60236: { primary: 'carry' }, // 圣枪游侠 Jade_Lucian [marksman,assassin]
+  60266: { primary: 'fighter' }, // 暗裔剑魔 Jade_Aatrox [fighter]
+  60267: { primary: 'support', secondary: 'carry' }, // 唤潮鲛姬 Jade_Nami [support,mage]
 };
 
+/** 主定位；时段统计、阵容估算等只需要一个分类的地方用它 */
 export function championRole(championId: number): ChampionRole {
-  return CHAMPION_ROLES[championId] ?? 'default';
+  return CHAMPION_ROLE_PROFILES[championId]?.primary ?? 'default';
+}
+
+/** 主 + 副定位；评分按 70% / 30% 混合 */
+export function championRoleProfile(championId: number): ChampionRoleProfile {
+  return CHAMPION_ROLE_PROFILES[championId] ?? { primary: 'default' };
 }

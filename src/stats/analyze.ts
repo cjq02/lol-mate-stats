@@ -10,7 +10,7 @@ import type {
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
 import { queueName } from './constants.js';
-import { championRole } from './champion-roles.js';
+import { championRoleProfile } from './champion-roles.js';
 import { gameTags, percentileScores } from './rating.js';
 
 export interface IdentityKey {
@@ -349,15 +349,19 @@ export function computeMatchScores(
     if (base) entries.push({ participant, base });
   }
   const scores = percentileScores(
-    entries.map(({ participant, base }) => ({
-      kda: base.kdaRaw,
-      killParticipation: base.killParticipationRaw,
-      damageShare: base.damageShareRaw,
-      tankShare: base.tankShareRaw,
-      healShare: base.healShareRaw,
-      role: championRole(base.championId),
-      deaths: base.deaths,
-    })),
+    entries.map(({ participant, base }) => {
+      const profile = championRoleProfile(base.championId);
+      return {
+        kda: base.kdaRaw,
+        killParticipation: base.killParticipationRaw,
+        damageShare: base.damageShareRaw,
+        tankShare: base.tankShareRaw,
+        healShare: base.healShareRaw,
+        role: profile.primary,
+        secondaryRole: profile.secondary,
+        deaths: base.deaths,
+      };
+    }),
   );
   const result = new Map<number, number>();
   entries.forEach(({ base }, index) => {

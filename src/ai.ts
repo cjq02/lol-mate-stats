@@ -9,9 +9,14 @@ import type {
   PlayerReport,
   Snapshot,
 } from './types.js';
-import { championRole, type ChampionRole } from './stats/champion-roles.js';
+import {
+  championRole,
+  championRoleProfile,
+  type ChampionRole,
+  type ChampionRoleProfile,
+} from './stats/champion-roles.js';
 import { queueName } from './stats/constants.js';
-import { roleScoreWeights } from './stats/rating.js';
+import { roleProfileWeights } from './stats/rating.js';
 
 export interface AiConfig {
   enabled: boolean;
@@ -477,9 +482,16 @@ const ROLE_SCORE_FOCUS: Record<ChampionRole, string> = {
   default: '优先输出占比、KDA 和承伤，参团也别落下。',
 };
 
-/** 把评分权重换算成占比，方便提示词直接引用 */
-function scoreWeightText(role: ChampionRole): string {
-  const weights = roleScoreWeights(role);
+/** 主 + 副定位的中文描述，例如“战士（副 输出核心）” */
+function roleText(profile: ChampionRoleProfile): string {
+  const primary = ROLE_NAMES[profile.primary];
+  if (!profile.secondary || profile.secondary === profile.primary) return primary;
+  return `${primary}（副 ${ROLE_NAMES[profile.secondary]}）`;
+}
+
+/** 把评分权重换算成占比，方便提示词直接引用（主副定位已按 7:3 混合） */
+function scoreWeightText(profile: ChampionRoleProfile): string {
+  const weights = roleProfileWeights(profile);
   const total = weights.kda + weights.kp + weights.damage + weights.taken + weights.heal;
   const share = (value: number): string => `${Math.round((value / total) * 100)}%`;
   return [
@@ -539,7 +551,7 @@ export function buildLiveAnalysisMessages(
   const champion = self?.championName ?? local?.championName ?? '未知英雄';
   const position = lane(self?.position);
   const selfLine = self ? liveText(self, itemName) : '未找到本人实时数据';
-  const role = championRole(self?.championId ?? local?.championId ?? 0);
+  const role = championRoleProfile(self?.championId ?? local?.championId ?? 0);
   const rankingText = [
     rankLine(players, self, 'KDA', (row) => row.live?.kda, (value) => fix(value, 2)),
     rankLine(players, self, '参团', (row) => row.live?.killParticipation, (value) =>
@@ -587,9 +599,9 @@ export function buildLiveAnalysisMessages(
     events ? `【本局事件】\n${events}` : '',
     `【我的英雄】${champion} / ${position}；${selfLine}`,
     liveTimelineText(snapshot.liveTimeline),
-    `【评分目标】类型：${ROLE_NAMES[role]}；权重（局内百分位）：${scoreWeightText(
+    `【评分目标】类型：${roleText(role)}；权重（局内百分位）：${scoreWeightText(
       role,
-    )}。${ROLE_SCORE_FOCUS[role]}`,
+    )}。${ROLE_SCORE_FOCUS[role.primary]}`,
     rankingText ? `【当前局内排名】${rankingText}` : '',
     '【实时限制】实时接口拿不到伤害、承伤、治疗总量，也拿不到每条命伤害/经济，只能按经济、装备、等级、KDA、参团、存活时间和阵容推断；赛后结算才看真实占比。',
     recentText(self),
@@ -650,7 +662,7 @@ export function buildChampSelectAnalysisMessages(
   const championName =
     self?.championName ?? local?.championName ?? (championId ? `英雄 ${championId}` : '未选英雄');
   const position = lane(self?.position ?? self?.recent?.mainPosition);
-  const role = championRole(championId);
+  const role = championRoleProfile(championId);
   const championLine = championId
     ? `${championName} / ${position}；${championUsageText(self)}`
     : '尚未选择英雄';
@@ -696,9 +708,9 @@ export function buildChampSelectAnalysisMessages(
   const user = [
     `【选人阶段】队列：${queueName(snapshot.queueId)}${modeText}；我方 ${allies.length} 人；敌方英雄在选人阶段不可见，未知`,
     `【我的英雄】${championLine}`,
-    `【评分目标】类型：${ROLE_NAMES[role]}；权重（局内百分位）：${scoreWeightText(
+    `【评分目标】类型：${roleText(role)}；权重（局内百分位）：${scoreWeightText(
       role,
-    )}。${ROLE_SCORE_FOCUS[role]}`,
+    )}。${ROLE_SCORE_FOCUS[role.primary]}`,
     recentText(self),
     `【我的常用英雄】${topChampionsText(self)}`,
     `【我方阵容】\n${teamText || '- 暂无队友数据'}`,

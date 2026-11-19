@@ -1,6 +1,6 @@
 import '../env.js';
 import { closeDb, getDb } from '../stats/store.js';
-import { championRole } from '../stats/champion-roles.js';
+import { championRoleProfile } from '../stats/champion-roles.js';
 import { legacyPercentileScores, percentileScores } from '../stats/rating.js';
 import { mapLimit } from '../util.js';
 
@@ -135,13 +135,15 @@ async function main(): Promise<void> {
         const kills = Number(participant.kills);
         const deaths = Number(participant.deaths);
         const assists = Number(participant.assists);
+        const profile = championRoleProfile(Number(participant.champion_id));
         return {
           kda: (kills + assists) / Math.max(1, deaths),
           killParticipation: total.kills > 0 ? (kills + assists) / total.kills : 0,
           damageShare: total.damage > 0 ? Number(participant.damage) / total.damage : 0,
           tankShare: total.taken > 0 ? Number(participant.damage_taken) / total.taken : 0,
           healShare: total.heal > 0 ? Number(participant.heal) / total.heal : 0,
-          role: championRole(Number(participant.champion_id)),
+          role: profile.primary,
+          secondaryRole: profile.secondary,
           deaths,
         };
       });
