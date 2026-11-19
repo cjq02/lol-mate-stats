@@ -71,7 +71,7 @@
 - 重开不计入胜率、场次、评分和坑指数，并自动往前补足正常对局。
 - 样本不足 3 场时坑指数封顶 45；极端局评分封顶 12，这些保护逻辑不要随手删除。
 - 新增模式或队列先改 `src/stats/constants.ts`，不要硬编码 queueId。
-- 修改公式、阈值或标签时，必须同步更新三处：`rating.ts`、`rating.test.ts`、`README.md` 的公式与阈值说明。
+- 修改公式、阈值或标签时，必须同步更新三处：`rating.ts`、`rating.test.ts`、`README.md` 的公式与阈值说明，并递增 `store.ts` 的 `MATCH_DETAIL_CACHE_VERSION`，避免旧详情缓存继续显示旧评分。
 
 ## 测试
 

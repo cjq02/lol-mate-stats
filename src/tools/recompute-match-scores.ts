@@ -167,9 +167,16 @@ async function main(): Promise<void> {
     }
   });
 
-  // 旧的 24 小时报告缓存里还带着旧评分，清掉让下一次读取重新计算
+  // 旧的 24 小时报告缓存和详情缓存里还带着旧评分，清掉让下一次读取重新计算
   await db.query('DELETE FROM reports');
-  console.log(`完成：${gameIds.length} 场对局，${updated} 条参与者评分已重算；报告缓存已清空`);
+  if (onlyGame !== undefined) {
+    await db.query('DELETE FROM match_details WHERE game_id = ?', [onlyGame]);
+  } else {
+    await db.query('DELETE FROM match_details');
+  }
+  console.log(
+    `完成：${gameIds.length} 场对局，${updated} 条参与者评分已重算；报告缓存和详情缓存已失效`,
+  );
   await closeDb();
 }
 
