@@ -112,13 +112,22 @@ const ASSET_CACHE_LIMIT = 300;
 
 /** 悬浮说明：英雄角色/技能与装备描述，同样来自客户端本地资源 */
 const MAX_CHAMPION_INFO_IDS = 40;
+/** 技能数值数组带 6 项，前 5 项对应 1–5 级，只展示常用等级 */
+const SPELL_RANK_COUNT = 5;
 type ChampionInfo = {
   id: number;
   name: string;
   tags: string[];
   roles: string[];
   passive: { name: string; description: string; icon: string } | null;
-  spells: Array<{ key: string; name: string; description: string; icon: string }>;
+  spells: Array<{
+    key: string;
+    name: string;
+    description: string;
+    icon: string;
+    cooldown: number[];
+    cost: number[];
+  }>;
 };
 type ItemDetailTable = Record<string, { name: string; description: string; price: number }>;
 const championInfoCache = new Map<number, { at: number; info: ChampionInfo | null }>();
@@ -1131,6 +1140,16 @@ function championInfoDiskPath(id: number): string {
   return join(ASSET_DIR, `champion-${id}.json`);
 }
 
+/** 客户端的 cooldown/cost 字符串是占位符，真正数值在每级系数数组里 */
+function spellRanks(values: unknown): number[] {
+  if (!Array.isArray(values)) return [];
+  return values
+    .slice(0, SPELL_RANK_COUNT)
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0)
+    .map((value) => Math.round(value * 100) / 100);
+}
+
 function parseChampionInfo(body: Buffer, id: number): ChampionInfo | null {
   const raw = JSON.parse(body.toString('utf8')) as {
     name?: string;
@@ -1142,6 +1161,8 @@ function parseChampionInfo(body: Buffer, id: number): ChampionInfo | null {
       name?: string;
       description?: string;
       abilityIconPath?: string;
+      cooldownCoefficients?: number[];
+      costCoefficients?: number[];
     }>;
   };
   if (!raw || typeof raw !== 'object') return null;
@@ -1162,6 +1183,8 @@ function parseChampionInfo(body: Buffer, id: number): ChampionInfo | null {
       name: String(spell.name),
       description: cleanRichText(spell.description),
       icon: String(spell.abilityIconPath ?? ''),
+      cooldown: spellRanks(spell.cooldownCoefficients),
+      cost: spellRanks(spell.costCoefficients),
     }));
   return {
     id,

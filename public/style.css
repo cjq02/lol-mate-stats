@@ -2109,6 +2109,12 @@ body::before {
   color: #dbe6ff;
 }
 
+.info-tip-numbers {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: #8fd8ff;
+}
+
 .info-tip-row em,
 .info-tip-desc {
   font-style: normal;

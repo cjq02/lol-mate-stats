@@ -532,7 +532,14 @@ function showScoreTip(ring) {
 
 /* ------------------------- 英雄/装备悬浮说明 ------------------------- */
 
-/** 英雄：英雄名 + 官方角色 + 玩法标签 + 被动 + QWER */
+/** 每级数值相同就只显示一次，否则列出 1 级到 5 级 */
+function spellValuesText(values, suffix = '') {
+  if (!Array.isArray(values) || !values.length) return '';
+  const unique = [...new Set(values)];
+  return `${unique.join(' / ')}${suffix}`;
+}
+
+/** 英雄：英雄名 + 官方角色 + 玩法标签 + 被动 + QWER（含每级冷却与消耗） */
 function championTipHtml(info, anchorLabel = '') {
   if (!info) return '<div class="info-tip-empty">暂无英雄资料</div>';
   const roles = (info.roles ?? []).map((role) => SCORE_CLASS_LABELS[role] ?? role);
@@ -550,15 +557,26 @@ function championTipHtml(info, anchorLabel = '') {
       </div>`
     : '';
   const spells = (info.spells ?? [])
-    .map(
-      (spell) => `<div class="info-tip-row">${iconHtml(
+    .map((spell) => {
+      const cooldown = spellValuesText(spell.cooldown, ' 秒');
+      const free = Array.isArray(spell.cost) && spell.cost.every((value) => value === 0);
+      const cost = free ? '无消耗' : spellValuesText(spell.cost);
+      const numbers = [
+        cooldown ? `冷却 ${cooldown}` : '',
+        cost ? `消耗 ${cost}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return `<div class="info-tip-row">${iconHtml(
         spell.icon,
         spell.key || spell.name,
         'tip',
       )}<span><b>${escapeHtml(
         spell.key ? `${spell.key.toUpperCase()} · ${spell.name}` : spell.name,
-      )}</b><em>${escapeHtml(spell.description)}</em></span></div>`,
-    )
+      )}</b>${
+        numbers ? `<small class="info-tip-numbers">${escapeHtml(numbers)}</small>` : ''
+      }<em>${escapeHtml(spell.description)}</em></span></div>`;
+    })
     .join('');
   const meta = [
     roles.length
