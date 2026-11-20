@@ -524,6 +524,8 @@ function showScoreTip(ring) {
   } catch {
     return;
   }
+  // 同一时间只留一个悬浮弹窗，避免英雄说明和评分说明叠在一起
+  hideInfoTip();
   scoreTipRing = ring;
   els.scoreTip.innerHTML = scoreTipHtml(payload);
   els.scoreTip.classList.remove('hidden');
@@ -644,6 +646,7 @@ async function showInfoTip(anchor) {
   if (!Number.isFinite(id) || id <= 0) return;
 
   const anchorLabel = anchor.getAttribute('title') ?? '';
+  hideScoreTip();
   infoTipAnchor = anchor;
   restoreNativeTitle();
   suppressNativeTitle(anchor);
@@ -5887,6 +5890,9 @@ els.matchTabs.addEventListener('click', (event) => {
 // 评分、英雄头像和装备的悬浮说明都用事件委托，避免给每张卡片重复绑定
 document.addEventListener('mouseover', (event) => {
   if (!(event.target instanceof Element)) return;
+  // 弹窗不随鼠标移开消失，锚点被重新渲染掉了就顺手收起来，避免悬空
+  if (infoTipAnchor && !infoTipAnchor.isConnected) hideInfoTip();
+  if (scoreTipRing && !scoreTipRing.isConnected) hideScoreTip();
   const champ = event.target.closest('[data-champ-id]');
   if (champ) {
     void showInfoTip(champ);
@@ -5900,20 +5906,11 @@ document.addEventListener('mouseover', (event) => {
   const ring = event.target.closest('.ring[data-score-tip]');
   if (ring) showScoreTip(ring);
 });
-document.addEventListener('mouseout', (event) => {
-  if (!(event.target instanceof Element)) return;
-  const anchor = event.target.closest('[data-champ-id], [data-item-id]');
-  if (anchor) {
-    if (event.relatedTarget instanceof Node && anchor.contains(event.relatedTarget)) return;
-    hideInfoTip();
-    return;
-  }
-  const ring = event.target.closest('.ring[data-score-tip]');
-  if (!ring) return;
-  if (event.relatedTarget instanceof Node && ring.contains(event.relatedTarget)) return;
+document.addEventListener('click', (event) => {
+  if (event.target instanceof Element && event.target.closest('.info-tip, .score-tip')) return;
+  hideInfoTip();
   hideScoreTip();
 });
-document.addEventListener('click', hideInfoTip);
 window.addEventListener(
   'scroll',
   () => {
