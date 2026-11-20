@@ -532,12 +532,11 @@ function showScoreTip(ring) {
 
 /* ------------------------- 英雄/装备悬浮说明 ------------------------- */
 
-/** 英雄：中文角色标签 + 被动 + QWER，技能与图标都来自客户端本地资源 */
-function championTipHtml(info) {
+/** 英雄：英雄名 + 官方角色 + 玩法标签 + 被动 + QWER */
+function championTipHtml(info, anchorLabel = '') {
   if (!info) return '<div class="info-tip-empty">暂无英雄资料</div>';
-  const tags = info.tags?.length
-    ? info.tags
-    : (info.roles ?? []).map((role) => SCORE_CLASS_LABELS[role] ?? role);
+  const roles = (info.roles ?? []).map((role) => SCORE_CLASS_LABELS[role] ?? role);
+  const tags = info.tags ?? [];
   const passive = info.passive
     ? `<div class="info-tip-block">
         <span class="info-tip-label">被动</span>
@@ -561,9 +560,19 @@ function championTipHtml(info) {
       )}</b><em>${escapeHtml(spell.description)}</em></span></div>`,
     )
     .join('');
+  const meta = [
+    roles.length
+      ? `<div class="info-tip-meta"><span>角色</span>${escapeHtml(roles.join(' / '))}</div>`
+      : '',
+    tags.length
+      ? `<div class="info-tip-meta"><span>标签</span>${escapeHtml(tags.join(' / '))}</div>`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('');
   return `<div class="info-tip-head">${escapeHtml(
-    tags.join(' / ') || '英雄',
-  )}</div>${passive}${
+    info.name || anchorLabel || '英雄',
+  )}</div>${meta ? `<div class="info-tip-metas">${meta}</div>` : ''}${passive}${
     spells ? `<div class="info-tip-block">${spells}</div>` : ''
   }`;
 }
@@ -616,6 +625,7 @@ async function showInfoTip(anchor) {
   const id = Number(kind === 'champ' ? champId : itemId);
   if (!Number.isFinite(id) || id <= 0) return;
 
+  const anchorLabel = anchor.getAttribute('title') ?? '';
   infoTipAnchor = anchor;
   restoreNativeTitle();
   suppressNativeTitle(anchor);
@@ -634,7 +644,7 @@ async function showInfoTip(anchor) {
       if (token !== infoTipToken || anchor !== infoTipAnchor) return;
       info = await loadChampionInfo(id);
     }
-    html = championTipHtml(info);
+    html = championTipHtml(info, anchorLabel);
   } else {
     await loadItemDetails();
     html = itemTipHtml(id);

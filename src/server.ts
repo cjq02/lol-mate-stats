@@ -114,6 +114,7 @@ const ASSET_CACHE_LIMIT = 300;
 const MAX_CHAMPION_INFO_IDS = 40;
 type ChampionInfo = {
   id: number;
+  name: string;
   tags: string[];
   roles: string[];
   passive: { name: string; description: string; icon: string } | null;
@@ -1132,6 +1133,7 @@ function championInfoDiskPath(id: number): string {
 
 function parseChampionInfo(body: Buffer, id: number): ChampionInfo | null {
   const raw = JSON.parse(body.toString('utf8')) as {
+    name?: string;
     championTagInfo?: { championTagPrimary?: string; championTagSecondary?: string };
     roles?: string[];
     passive?: { name?: string; description?: string; abilityIconPath?: string };
@@ -1163,6 +1165,7 @@ function parseChampionInfo(body: Buffer, id: number): ChampionInfo | null {
     }));
   return {
     id,
+    name: String(raw.name ?? ''),
     tags,
     roles: (Array.isArray(raw.roles) ? raw.roles : []).map((role) => String(role)),
     passive,
