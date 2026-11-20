@@ -110,6 +110,19 @@ let itemsCache: { at: number; items: ItemTable } | undefined;
 let itemPrefetch: Promise<void> | undefined;
 const ASSET_CACHE_LIMIT = 300;
 
+/** 悬浮说明：英雄角色/技能与装备描述，同样来自客户端本地资源 */
+const MAX_CHAMPION_INFO_IDS = 40;
+type ChampionInfo = {
+  id: number;
+  tags: string[];
+  roles: string[];
+  passive: { name: string; description: string; icon: string } | null;
+  spells: Array<{ key: string; name: string; description: string; icon: string }>;
+};
+type ItemDetailTable = Record<string, { name: string; description: string; price: number }>;
+const championInfoCache = new Map<number, { at: number; info: ChampionInfo | null }>();
+let itemDetailsCache: { at: number; items: ItemDetailTable } | undefined;
+
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
   const source = options.source;
   const host = options.host ?? '127.0.0.1';
@@ -937,6 +950,37 @@ async function handleRequest(
     return;
   }
 
+  // 悬浮英雄头像时的角色/技能资料；一次可查多个 id，限制数量避免被滥用
+  if (method === 'GET' && url.pathname === '/api/champion-info') {
+    const ids = [
+      ...new Set(
+        (url.searchParams.get('ids') ?? '')
+          .split(',')
+          .map((value) => Number(value.trim()))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    ].slice(0, MAX_CHAMPION_INFO_IDS);
+    const champions: Record<string, ChampionInfo | null> = {};
+    await Promise.all(
+      ids.map(async (id) => {
+        champions[String(id)] = await loadChampionInfo(source, id);
+      }),
+    );
+    sendJson(res, 200, { ok: true, champions });
+    return;
+  }
+
+  // 与 /api/items 分开，避免装备图标的调用方也背上全部描述文本
+  if (method === 'GET' && url.pathname === '/api/item-details') {
+    const items = await loadItemDetails(source);
+    if (!items) {
+      sendJson(res, 404, { ok: false, error: '无法读取装备描述' });
+      return;
+    }
+    sendJson(res, 200, { ok: true, items });
+    return;
+  }
+
   if (method === 'GET' && url.pathname === '/api/asset') {
     const path = url.searchParams.get('path') ?? '';
     if (!path.startsWith('/lol-game-data/assets/') || path.includes('..')) {
@@ -1053,6 +1097,172 @@ function parseItemTable(body: Buffer): ItemTable {
     }
   }
   return items;
+}
+
+/* --------------------------- 悬浮说明数据 --------------------------- */
+
+/** 装备描述里的富文本标签只保留文本和换行，前端统一 escapeHtml 后再展示 */
+const RICH_TEXT_BREAK = /<br\s*\/?>/gi;
+const RICH_TEXT_TAG = /<[^>]*>/g;
+const RICH_TEXT_ENTITIES: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+};
+
+function cleanRichText(value: unknown): string {
+  let text = String(value ?? '');
+  text = text.replace(RICH_TEXT_BREAK, '\n').replace(RICH_TEXT_TAG, '');
+  for (const [entity, character] of Object.entries(RICH_TEXT_ENTITIES)) {
+    text = text.split(entity).join(character);
+  }
+  return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function championInfoAssetPath(id: number): string {
+  return `/lol-game-data/assets/v1/champions/${id}.json`;
+}
+
+function championInfoDiskPath(id: number): string {
+  return join(ASSET_DIR, `champion-${id}.json`);
+}
+
+function parseChampionInfo(body: Buffer, id: number): ChampionInfo | null {
+  const raw = JSON.parse(body.toString('utf8')) as {
+    championTagInfo?: { championTagPrimary?: string; championTagSecondary?: string };
+    roles?: string[];
+    passive?: { name?: string; description?: string; abilityIconPath?: string };
+    spells?: Array<{
+      spellKey?: string;
+      name?: string;
+      description?: string;
+      abilityIconPath?: string;
+    }>;
+  };
+  if (!raw || typeof raw !== 'object') return null;
+  const tags = [raw.championTagInfo?.championTagPrimary, raw.championTagInfo?.championTagSecondary]
+    .map((tag) => String(tag ?? '').trim())
+    .filter(Boolean);
+  const passive = raw.passive?.name
+    ? {
+        name: String(raw.passive.name),
+        description: cleanRichText(raw.passive.description),
+        icon: String(raw.passive.abilityIconPath ?? ''),
+      }
+    : null;
+  const spells = (Array.isArray(raw.spells) ? raw.spells : [])
+    .filter((spell) => spell && spell.name)
+    .map((spell) => ({
+      key: String(spell.spellKey ?? '').toLowerCase(),
+      name: String(spell.name),
+      description: cleanRichText(spell.description),
+      icon: String(spell.abilityIconPath ?? ''),
+    }));
+  return {
+    id,
+    tags,
+    roles: (Array.isArray(raw.roles) ? raw.roles : []).map((role) => String(role)),
+    passive,
+    spells,
+  };
+}
+
+/** 优先读客户端英雄详情；读不到时用落盘副本，客户端关闭后仍可悬浮查看 */
+async function loadChampionInfo(
+  source: DataSource,
+  id: number,
+): Promise<ChampionInfo | null> {
+  const now = Date.now();
+  const cached = championInfoCache.get(id);
+  if (cached && now - cached.at < ASSET_TTL) return cached.info;
+
+  let body: Buffer | null = null;
+  const asset = await source.getAsset(championInfoAssetPath(id)).catch(() => null);
+  if (asset) {
+    body = asset.body;
+    void (async () => {
+      try {
+        await mkdir(ASSET_DIR, { recursive: true });
+        await writeFile(championInfoDiskPath(id), body);
+      } catch {
+        /* 忽略磁盘写入失败 */
+      }
+    })();
+  } else {
+    try {
+      body = await readFile(championInfoDiskPath(id));
+    } catch {
+      body = null;
+    }
+  }
+
+  let info: ChampionInfo | null = null;
+  if (body) {
+    try {
+      info = parseChampionInfo(body, id);
+    } catch {
+      /* 解析失败时返回空资料，不影响其它英雄 */
+    }
+  }
+  // 空结果不缓存，客户端刚启动时可能还没准备好，下一次悬浮会重新读取
+  if (info) championInfoCache.set(id, { at: now, info });
+  return info;
+}
+
+function parseItemDetails(body: Buffer): ItemDetailTable {
+  const list = JSON.parse(body.toString('utf8')) as Array<{
+    id?: number;
+    name?: string;
+    description?: string;
+    price?: number;
+    priceTotal?: number;
+  }>;
+  const items: ItemDetailTable = {};
+  for (const item of list) {
+    if (typeof item?.id === 'number' && item.id > 0) {
+      items[String(item.id)] = {
+        name: String(item.name ?? ''),
+        description: cleanRichText(item.description),
+        price: Number(item.priceTotal ?? item.price ?? 0) || 0,
+      };
+    }
+  }
+  return items;
+}
+
+/** 装备描述和图标共用同一份 items.json，但单独缓存，避免撑大 /api/items 的响应 */
+async function loadItemDetails(source: DataSource): Promise<ItemDetailTable | null> {
+  const now = Date.now();
+  if (itemDetailsCache && now - itemDetailsCache.at < ASSET_TTL) {
+    return Object.keys(itemDetailsCache.items).length ? itemDetailsCache.items : null;
+  }
+
+  const asset = await source.getAsset(ITEMS_ASSET_PATH).catch(() => null);
+  if (asset) {
+    try {
+      const items = parseItemDetails(asset.body);
+      if (Object.keys(items).length) {
+        itemDetailsCache = { at: now, items };
+        return items;
+      }
+    } catch {
+      /* 解析失败时尝试磁盘副本 */
+    }
+  }
+
+  try {
+    const items = parseItemDetails(await readFile(ITEMS_DISK_PATH));
+    if (Object.keys(items).length) {
+      itemDetailsCache = { at: now - ASSET_TTL + 60_000, items };
+      return items;
+    }
+  } catch {
+    /* 没有磁盘副本 */
+  }
+  return null;
 }
 
 async function persistItems(body: Buffer): Promise<void> {

@@ -46,6 +46,7 @@ const els = {
   matchMeta: document.getElementById('match-meta'),
   matchProgress: document.getElementById('match-progress'),
   scoreTip: document.getElementById('score-tip'),
+  infoTip: document.getElementById('info-tip'),
   matchSummary: document.getElementById('match-summary'),
   matchesSummary: document.getElementById('matches-summary'),
   matchesRangeTabs: document.getElementById('matches-range-tabs'),
@@ -299,6 +300,9 @@ const state = {
   /** 查看玩家战绩时的分页状态 */
   playerMatches: null,
   itemIcons: null,
+  /** 悬浮英雄头像/装备时按需加载的角色技能与装备描述 */
+  championInfo: {},
+  itemDetails: null,
   searchPlayers: [],
   matchesRefreshHandler: null,
   matchesRefreshing: false,
@@ -490,6 +494,21 @@ function scoreTipHtml(payload) {
     </div>`;
 }
 
+/** 悬浮层统一贴着锚点放，优先在上方，空间不够再落到下方 */
+function placeTip(tip, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const size = tip.getBoundingClientRect();
+  const margin = 10;
+  const left = Math.min(
+    Math.max(margin, rect.left + rect.width / 2 - size.width / 2),
+    Math.max(margin, window.innerWidth - size.width - margin),
+  );
+  const above = rect.top - size.height - 10;
+  const top = above >= margin ? above : rect.bottom + 10;
+  tip.style.left = `${Math.round(left)}px`;
+  tip.style.top = `${Math.round(top)}px`;
+}
+
 let scoreTipRing = null;
 
 function hideScoreTip() {
@@ -508,17 +527,121 @@ function showScoreTip(ring) {
   scoreTipRing = ring;
   els.scoreTip.innerHTML = scoreTipHtml(payload);
   els.scoreTip.classList.remove('hidden');
-  const rect = ring.getBoundingClientRect();
-  const tip = els.scoreTip.getBoundingClientRect();
-  const margin = 10;
-  const left = Math.min(
-    Math.max(margin, rect.left + rect.width / 2 - tip.width / 2),
-    window.innerWidth - tip.width - margin,
-  );
-  const above = rect.top - tip.height - 10;
-  const top = above >= margin ? above : rect.bottom + 10;
-  els.scoreTip.style.left = `${Math.round(left)}px`;
-  els.scoreTip.style.top = `${Math.round(top)}px`;
+  placeTip(els.scoreTip, ring);
+}
+
+/* ------------------------- 英雄/装备悬浮说明 ------------------------- */
+
+/** 英雄：中文角色标签 + 被动 + QWER，技能与图标都来自客户端本地资源 */
+function championTipHtml(info) {
+  if (!info) return '<div class="info-tip-empty">暂无英雄资料</div>';
+  const tags = info.tags?.length
+    ? info.tags
+    : (info.roles ?? []).map((role) => SCORE_CLASS_LABELS[role] ?? role);
+  const passive = info.passive
+    ? `<div class="info-tip-block">
+        <span class="info-tip-label">被动</span>
+        <div class="info-tip-row">${iconHtml(
+          info.passive.icon,
+          info.passive.name,
+          'tip',
+        )}<span><b>${escapeHtml(info.passive.name)}</b><em>${escapeHtml(
+          info.passive.description,
+        )}</em></span></div>
+      </div>`
+    : '';
+  const spells = (info.spells ?? [])
+    .map(
+      (spell) => `<div class="info-tip-row">${iconHtml(
+        spell.icon,
+        spell.key || spell.name,
+        'tip',
+      )}<span><b>${escapeHtml(
+        spell.key ? `${spell.key.toUpperCase()} · ${spell.name}` : spell.name,
+      )}</b><em>${escapeHtml(spell.description)}</em></span></div>`,
+    )
+    .join('');
+  return `<div class="info-tip-head">${escapeHtml(
+    tags.join(' / ') || '英雄',
+  )}</div>${passive}${
+    spells ? `<div class="info-tip-block">${spells}</div>` : ''
+  }`;
+}
+
+/** 装备：描述已由后端去掉富文本标签，这里只负责转义和换行 */
+function itemTipHtml(id) {
+  const detail = state.itemDetails?.[String(id)];
+  if (!detail) return '<div class="info-tip-empty">暂无装备资料</div>';
+  const price = detail.price ? `<span class="info-tip-price">${detail.price} 金币</span>` : '';
+  return `<div class="info-tip-head">${escapeHtml(detail.name || '装备')}${price}</div>${
+    detail.description
+      ? `<div class="info-tip-desc">${escapeHtml(detail.description)}</div>`
+      : '<div class="info-tip-empty">暂无装备描述</div>'
+  }`;
+}
+
+let infoTipAnchor = null;
+let infoTipToken = 0;
+let infoTipTitleTarget = null;
+let infoTipTitleValue = '';
+
+/** 有原生 title 的父元素会同时弹出浏览器提示，悬浮期间先收起来 */
+function suppressNativeTitle(anchor) {
+  const target = anchor.closest('[title]');
+  if (!target) return;
+  infoTipTitleTarget = target;
+  infoTipTitleValue = target.getAttribute('title') ?? '';
+  target.removeAttribute('title');
+}
+
+function restoreNativeTitle() {
+  infoTipTitleTarget?.setAttribute('title', infoTipTitleValue);
+  infoTipTitleTarget = null;
+  infoTipTitleValue = '';
+}
+
+function hideInfoTip() {
+  infoTipAnchor = null;
+  infoTipToken += 1;
+  restoreNativeTitle();
+  els.infoTip?.classList.add('hidden');
+}
+
+async function showInfoTip(anchor) {
+  if (!els.infoTip || anchor === infoTipAnchor) return;
+  const champId = anchor.dataset.champId;
+  const itemId = anchor.dataset.itemId;
+  const kind = champId ? 'champ' : itemId ? 'item' : null;
+  if (!kind) return;
+  const id = Number(kind === 'champ' ? champId : itemId);
+  if (!Number.isFinite(id) || id <= 0) return;
+
+  infoTipAnchor = anchor;
+  restoreNativeTitle();
+  suppressNativeTitle(anchor);
+  const token = ++infoTipToken;
+  els.infoTip.innerHTML = '<div class="info-tip-loading">加载中…</div>';
+  els.infoTip.classList.remove('hidden');
+  placeTip(els.infoTip, anchor);
+
+  let html = '';
+  if (kind === 'champ') {
+    let info = await loadChampionInfo(id);
+    // 客户端刚启动时资源可能还没就绪，停留在当前图标上时再试一次
+    if (!info) {
+      championInfoRetryAt.delete(id);
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      if (token !== infoTipToken || anchor !== infoTipAnchor) return;
+      info = await loadChampionInfo(id);
+    }
+    html = championTipHtml(info);
+  } else {
+    await loadItemDetails();
+    html = itemTipHtml(id);
+  }
+  if (token !== infoTipToken || anchor !== infoTipAnchor) return;
+  els.infoTip.innerHTML = html;
+  placeTip(els.infoTip, anchor);
 }
 
 /** 时段统计看的是平均分，实际集中在 50-75，单独用更细的分段颜色 */
@@ -649,15 +772,24 @@ function champPath(championId) {
   return `/lol-game-data/assets/v1/champion-icons/${championId}.png`;
 }
 
-function iconHtml(assetPath, label, size, title) {
+function iconHtml(assetPath, label, size, title, attrs = '') {
   const text = String(label ?? '?');
   const hue = hueFor(text);
   const image = assetPath
     ? `<img src="/api/asset?path=${encodeURIComponent(assetPath)}" alt="" loading="lazy" onerror="this.remove()" />`
     : '';
-  return `<span class="icon ${size}" title="${escapeHtml(title ?? '')}" style="--hue:${hue}"><span class="fb">${escapeHtml(
+  return `<span class="icon ${size}"${attrs} title="${escapeHtml(
+    title ?? '',
+  )}" style="--hue:${hue}"><span class="fb">${escapeHtml(
     text.slice(0, 1),
   )}</span>${image}</span>`;
+}
+
+/** 英雄图标带上 id，悬浮时展示角色与技能 */
+function champIconHtml(championId, label, size, title) {
+  const id = Number(championId);
+  const attrs = Number.isFinite(id) && id > 0 ? ` data-champ-id="${id}"` : '';
+  return iconHtml(champPath(championId), label, size, title, attrs);
 }
 
 let itemIconsRequest = null;
@@ -693,6 +825,69 @@ function loadItemIcons() {
       itemIconsRequest = null;
     });
   return itemIconsRequest;
+}
+
+let itemDetailsRequest = null;
+let itemDetailsRetryAt = 0;
+function loadItemDetails() {
+  if (state.itemDetails && Object.keys(state.itemDetails).length) {
+    return Promise.resolve(state.itemDetails);
+  }
+  if (itemDetailsRequest) return itemDetailsRequest;
+  if (Date.now() < itemDetailsRetryAt) return Promise.resolve(null);
+
+  itemDetailsRequest = fetch('/api/item-details', { cache: 'no-store' })
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      const items = payload?.items && typeof payload.items === 'object' ? payload.items : {};
+      if (!Object.keys(items).length) throw new Error('装备描述为空');
+      state.itemDetails = items;
+      itemDetailsRetryAt = 0;
+      return items;
+    })
+    .catch(() => {
+      itemDetailsRetryAt = Date.now() + 5_000;
+      return null;
+    })
+    .finally(() => {
+      itemDetailsRequest = null;
+    });
+  return itemDetailsRequest;
+}
+
+/** 悬浮到某个英雄时才请求它的资料，结果按 id 缓存在内存里 */
+const championInfoRequests = new Map();
+const championInfoRetryAt = new Map();
+function loadChampionInfo(id) {
+  if (state.championInfo[id]) return Promise.resolve(state.championInfo[id]);
+  if (championInfoRequests.has(id)) return championInfoRequests.get(id);
+  if (Date.now() < (championInfoRetryAt.get(id) ?? 0)) return Promise.resolve(null);
+
+  const request = fetch(`/api/champion-info?ids=${encodeURIComponent(id)}`, {
+    cache: 'no-store',
+  })
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      const info = payload?.champions?.[String(id)] ?? null;
+      if (info) state.championInfo[id] = info;
+      championInfoRetryAt.delete(id);
+      return info;
+    })
+    .catch(() => {
+      championInfoRetryAt.set(id, Date.now() + 5_000);
+      return null;
+    })
+    .finally(() => {
+      championInfoRequests.delete(id);
+    });
+  championInfoRequests.set(id, request);
+  return request;
 }
 
 function refreshItemViews() {
@@ -836,8 +1031,8 @@ function renderAramChampions(snapshot) {
       showScore ? `，均分 ${avgScore.toFixed(1)}` : ''
     }`;
     button.innerHTML = `
-      <span class="aram-champ-icon">${iconHtml(
-        champPath(option.championId),
+      <span class="aram-champ-icon">${champIconHtml(
+        option.championId,
         option.championName,
         'sm',
       )}</span>
@@ -959,7 +1154,8 @@ function itemIconsHtml(itemIds) {
   return `<div class="items">${itemIds
     .map((itemId) => {
       const meta = state.itemIcons?.[String(itemId)];
-      return iconHtml(meta?.icon ?? null, meta?.name ?? String(itemId), 'sm', meta?.name);
+      const attrs = ` data-item-id="${Number(itemId) || 0}"`;
+      return iconHtml(meta?.icon ?? null, meta?.name ?? String(itemId), 'sm', meta?.name, attrs);
     })
     .join('')}</div>`;
 }
@@ -1159,11 +1355,11 @@ function buildCard(player, isLocal, options = {}) {
     .slice(0, 10)
     .map((game) => {
       const title = `${game.win ? '胜' : '负'} · ${game.championName} · ${game.kills}/${game.deaths}/${game.assists} · 评分 ${game.score} · ${game.queueName}`;
-      return `<div class="game ${game.win ? 'win' : 'loss'}" title="${escapeHtml(title)}">${iconHtml(
-        champPath(game.championId),
-        game.championName,
-        'chip',
-      )}<span class="res">${game.win ? 'W' : 'L'}</span></div>`;
+      return `<div class="game ${game.win ? 'win' : 'loss'}" title="${escapeHtml(
+        title,
+      )}">${champIconHtml(game.championId, game.championName, 'chip')}<span class="res">${
+        game.win ? 'W' : 'L'
+      }</span></div>`;
     })
     .join('');
 
@@ -1207,8 +1403,8 @@ function buildCard(player, isLocal, options = {}) {
     ? `<div class="champs"><span>常用</span>${recent.topChampions
         .map(
           (champion) =>
-            `<span class="champ-mini">${iconHtml(
-              champPath(champion.championId),
+            `<span class="champ-mini">${champIconHtml(
+              champion.championId,
               champion.name,
               'sm',
             )}<b>${escapeHtml(champion.name)}</b><em>${champion.games}场 ${winRatePct(champion.winRate)}</em></span>`,
@@ -1241,8 +1437,8 @@ function buildCard(player, isLocal, options = {}) {
   const championId = thisGame?.championId ?? player.championId;
   const championName = thisGame?.championName ?? player.championName;
   const showChampionMatches = Boolean(isLocal && championId && !player.isBot);
-  const pickedContent = `${iconHtml(
-    championId ? champPath(championId) : null,
+  const pickedContent = `${champIconHtml(
+    championId,
     championName ?? '?',
     'champ',
   )}<span class="champ-name">${escapeHtml(championName ?? '未选英雄')}</span>${
@@ -2759,8 +2955,8 @@ function matchRow(game, showScore) {
     selfBadTag ? ` has-self-bad self-bad-${selfBadLevel}` : ''
   }" type="button" data-game-id="${game.gameId}">
     <span class="result">${remake ? '重开' : game.win ? '胜' : '负'}</span>
-    <span class="who">${iconHtml(
-      champPath(game.championId),
+    <span class="who">${champIconHtml(
+      game.championId,
       game.championName,
       'sm',
     )}<b>${escapeHtml(game.championName ?? '未知英雄')}</b>${selfAfkBadge}${bestBadge}${selfBadBadge}<small>${escapeHtml(
@@ -4273,8 +4469,8 @@ function timelinePlayersHtml(timeline, self, activeId) {
       const title = `${name} · ${champion}`;
       return `<button class="${classes.join(' ')}" type="button" role="tab" aria-selected="${
         id === Number(activeId)
-      }" data-timeline-player="${id}" title="${escapeHtml(title)}">${iconHtml(
-        player.championId ? champPath(player.championId) : null,
+      }" data-timeline-player="${id}" title="${escapeHtml(title)}">${champIconHtml(
+        player.championId,
         champion,
         'sm',
         title,
@@ -4291,8 +4487,8 @@ function timelineChampionIcon(participantId, playersById, selfParticipantId) {
   if (!player) return '';
   const label = player.championName ?? `玩家 ${participantId}`;
   const self = Number(participantId) === Number(selfParticipantId) ? ' self' : '';
-  return `<span class="timeline-champ${self}">${iconHtml(
-    player.championId ? champPath(player.championId) : null,
+  return `<span class="timeline-champ${self}">${champIconHtml(
+    player.championId,
     label,
     'sm',
     label,
@@ -4376,12 +4572,7 @@ function timelineVersusHtml(player, timeline) {
 function timelineSelfBadge(selfParticipantId, playersById) {
   const player = playersById.get(Number(selfParticipantId));
   const label = player?.championName ?? '我';
-  const icon = iconHtml(
-    player?.championId ? champPath(player.championId) : null,
-    label,
-    'sm',
-    `我 · ${label}`,
-  );
+  const icon = champIconHtml(player?.championId, label, 'sm', `我 · ${label}`);
   return `<span class="timeline-event-champ self" title="我 · ${escapeHtml(
     label,
   )}">${icon}</span>`;
@@ -4403,7 +4594,7 @@ function timelineEventChamp(
   const label = championName || player?.championName || `#${championId || '?'}`;
   const icon = participantId
     ? timelineChampionIcon(participantId, playersById)
-    : iconHtml(championId ? champPath(championId) : null, label, 'sm', label);
+    : champIconHtml(championId, label, 'sm', label);
   return `<span class="timeline-event-champ" title="${escapeHtml(label)}">${icon}</span>`;
 }
 
@@ -5059,7 +5250,7 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
         Number(item.championId) || 0
       }" data-champion-name="${escapeHtml(name)}">
         <span class="champion-rank-no ${rankingClass(rank)}">${rank}</span>
-        ${iconHtml(champPath(item.championId), name, 'sm')}
+        ${champIconHtml(item.championId, name, 'sm')}
         <span class="champion-rank-main">
           <b>${escapeHtml(name)}</b>
           <small>${Number(item.games) || 0} 场 · 胜率 ${winRatePct(
@@ -5665,20 +5856,44 @@ els.matchTabs.addEventListener('click', (event) => {
   renderMatchTab(button.dataset.matchTab);
 });
 
-// 本局评分的悬浮说明：只在带 data-score-tip 的评分环上显示
+// 评分、英雄头像和装备的悬浮说明都用事件委托，避免给每张卡片重复绑定
 document.addEventListener('mouseover', (event) => {
   if (!(event.target instanceof Element)) return;
+  const champ = event.target.closest('[data-champ-id]');
+  if (champ) {
+    void showInfoTip(champ);
+    return;
+  }
+  const item = event.target.closest('[data-item-id]');
+  if (item) {
+    void showInfoTip(item);
+    return;
+  }
   const ring = event.target.closest('.ring[data-score-tip]');
   if (ring) showScoreTip(ring);
 });
 document.addEventListener('mouseout', (event) => {
   if (!(event.target instanceof Element)) return;
+  const anchor = event.target.closest('[data-champ-id], [data-item-id]');
+  if (anchor) {
+    if (event.relatedTarget instanceof Node && anchor.contains(event.relatedTarget)) return;
+    hideInfoTip();
+    return;
+  }
   const ring = event.target.closest('.ring[data-score-tip]');
   if (!ring) return;
   if (event.relatedTarget instanceof Node && ring.contains(event.relatedTarget)) return;
   hideScoreTip();
 });
-window.addEventListener('scroll', hideScoreTip, true);
+document.addEventListener('click', hideInfoTip);
+window.addEventListener(
+  'scroll',
+  () => {
+    hideScoreTip();
+    hideInfoTip();
+  },
+  true,
+);
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !els.timelineModal.classList.contains('hidden')) {
