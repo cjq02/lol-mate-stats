@@ -3209,9 +3209,9 @@ body::before {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 13px;
-  min-width: 196px;
-  padding: 13px 18px;
+  gap: 10px;
+  min-width: 176px;
+  padding: 11px 15px;
   border-radius: 15px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.025);
@@ -3235,19 +3235,19 @@ body::before {
 }
 
 .aram-champion .aram-champ-icon .icon {
-  width: 54px;
-  height: 54px;
+  width: 50px;
+  height: 50px;
   border-radius: 11px;
 }
 
 .aram-champion .aram-champ-icon .icon .fb {
-  font-size: 20px;
+  font-size: 19px;
 }
 
 .aram-champ-main {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -3255,7 +3255,7 @@ body::before {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: #dbe6ff;
   white-space: nowrap;
@@ -3284,7 +3284,7 @@ body::before {
 .aram-champ-stats {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: 10px;
   white-space: nowrap;
 }
 
@@ -3292,17 +3292,17 @@ body::before {
   display: inline-flex;
   align-items: baseline;
   gap: 3px;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--muted);
 }
 
 .aram-stat small {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--muted);
 }
 
 .aram-stat b {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
   color: #e2ebff;
 }
@@ -3311,19 +3311,18 @@ body::before {
   color: #5eead4;
 }
 
-.aram-stat.score {
-  padding-left: 10px;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.aram-stat.score b {
-  font-variant-numeric: tabular-nums;
-}
-
-.aram-stat em {
-  font-style: normal;
-  font-size: 11.5px;
+.aram-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11px;
   color: var(--muted);
+}
+
+.aram-score b {
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
 }
 
 .board {
@@ -4125,6 +4124,40 @@ body::before {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
+}
+
+/* 对局阶段：默认只保留坑场次，其余指标点按钮展开 */
+.card.metrics-collapsed .metrics {
+  display: none;
+}
+
+.metrics-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.metrics-summary .metric {
+  flex: 0 0 auto;
+}
+
+.metrics-toggle {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease;
+}
+
+.metrics-toggle:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
 }
 
 .metric {

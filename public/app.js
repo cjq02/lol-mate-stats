@@ -821,7 +821,7 @@ function renderAramChampions(snapshot) {
     return;
   }
 
-  els.aramHint.textContent = `当前英雄 + 替补席 ${options.length} 个 · 点击查看我的英雄战绩`;
+  els.aramHint.textContent = `当前英雄 + 替补席 ${options.length} 个 · 点击查看战绩，悬停看场次`;
   const nodes = options.map((option) => {
     const mine = option.games > 0 ? winRatePct(option.winRate) : '未使用';
     const overall = option.globalGames > 0 ? winRatePct(option.globalWinRate) : '-';
@@ -842,24 +842,20 @@ function renderAramChampions(snapshot) {
         'sm',
       )}</span>
       <span class="aram-champ-main">
+        <span class="aram-champ-stats">
+          <span class="aram-stat"><small>整体</small><b>${overall}</b></span>
+          <span class="aram-stat mine"><small>我的</small><b>${mine}</b></span>
+        </span>
         <span class="aram-champ-name">${escapeHtml(option.championName)}${
           option.isCurrent ? '<em class="aram-current">当前</em>' : ''
         }${option.isPriority ? '<em class="aram-priority">优先</em>' : ''}</span>
-        <span class="aram-champ-stats">
-          <span class="aram-stat"><small>整体</small><b>${overall}</b>${
-            option.globalGames ? `<em>${option.globalGames}场</em>` : ''
-          }</span>
-          <span class="aram-stat mine"><small>我的</small><b>${mine}</b>${
-            option.games ? `<em>${option.games}场</em>` : ''
-          }</span>
-          ${
-            showScore
-              ? `<span class="aram-stat score"><small>均分</small><b style="color:${ratingColor(
-                  avgScore,
-                )}">${avgScore.toFixed(1)}</b></span>`
-              : ''
-          }
-        </span>
+        ${
+          showScore
+            ? `<span class="aram-score" title="我的平均评分"><small>均分</small><b style="color:${ratingColor(
+                avgScore,
+              )}">${avgScore.toFixed(1)}</b></span>`
+            : ''
+        }
       </span>
     `;
     button.addEventListener('click', () =>
@@ -1059,8 +1055,10 @@ function buildCard(player, isLocal, options = {}) {
 
   const card = document.createElement('article');
   card.className = `card${isLocal ? ' is-local' : ''}${
-    !thisGame && risk?.level === 'severe' ? ' is-risk' : ''
-  }${player.isEnemy ? ' is-enemy' : ''}${
+    options.liveView ? ' metrics-collapsed' : ''
+  }${!thisGame && risk?.level === 'severe' ? ' is-risk' : ''}${
+    player.isEnemy ? ' is-enemy' : ''
+  }${
     bestTag === 'MVP' ? ' is-mvp' : bestTag === 'SVP' ? ' is-svp' : ''
   }${
     badTag === '巨坑'
@@ -1169,35 +1167,39 @@ function buildCard(player, isLocal, options = {}) {
     })
     .join('');
 
+  const pitMetric = recent
+    ? `<div class="metric bad-metric${
+        pitGames / Math.max(1, recent.games) >= 0.5 ? ' is-high' : ''
+      }" title="近 ${recent.games} 场中 ${pitGames} 场单场评分 < 35，包含小坑 / 很坑 / 巨坑"><span>坑场次</span><b>${pitGames} / ${recent.games}</b></div>`
+    : '';
+  const metricCells = recent
+    ? [
+        `<div class="metric"><span>近期胜率</span><b>${winRatePct(recent.winRate)}</b></div>`,
+        `<div class="metric"><span>KDA</span><b>${num(recent.avgKda, 2)}</b></div>`,
+        `<div class="metric"><span>参团率</span><b>${pct(recent.avgKillParticipation)}</b></div>`,
+        `<div class="metric"><span>分均伤害</span><b>${Math.round(recent.avgDamagePerMin ?? 0)}</b></div>`,
+        `<div class="metric"><span>伤害占比</span><b>${pct(recent.avgDamageShare)}</b></div>`,
+        `<div class="metric"><span>分均补刀</span><b>${num(recent.avgCsPerMin, 1)}</b></div>`,
+        visionGame
+          ? `<div class="metric"><span>分均视野</span><b>${num(recent.avgVisionPerMin, 2)}</b></div>`
+          : '',
+        `<div class="metric"><span>场均死亡</span><b>${num(recent.avgDeaths, 1)}</b></div>`,
+        `<div class="metric"><span>场均伤害</span><b>${kilo(recent.avgDamage)}</b></div>`,
+        `<div class="metric"><span>场均治疗</span><b>${kilo(recent.avgHeal ?? 0)}</b></div>`,
+        recent.afkGames
+          ? `<div class="metric afk-metric"><span>疑似挂机</span><b>${recent.afkGames} 场</b></div>`
+          : '',
+      ].join('')
+    : '';
+
+  // 对局阶段卡片太高：除坑场次外，其余指标默认收起，点按钮再展开
+  const metricsSummary = options.liveView
+    ? `<div class="metrics-summary">${pitMetric}<button type="button" class="metrics-toggle" data-action="metrics" aria-expanded="false">展开其余指标</button></div>`
+    : '';
   const metrics = recent
-    ? `<div class="metrics">
-        <div class="metric"><span>近期胜率</span><b>${winRatePct(recent.winRate)}</b></div>
-        <div class="metric"><span>KDA</span><b>${num(recent.avgKda, 2)}</b></div>
-        <div class="metric"><span>参团率</span><b>${pct(recent.avgKillParticipation)}</b></div>
-        <div class="metric"><span>分均伤害</span><b>${Math.round(recent.avgDamagePerMin ?? 0)}</b></div>
-        <div class="metric"><span>伤害占比</span><b>${pct(recent.avgDamageShare)}</b></div>
-        <div class="metric"><span>分均补刀</span><b>${num(recent.avgCsPerMin, 1)}</b></div>
-        ${
-          visionGame
-            ? `<div class="metric"><span>分均视野</span><b>${num(recent.avgVisionPerMin, 2)}</b></div>`
-            : ''
-        }
-        <div class="metric"><span>场均死亡</span><b>${num(recent.avgDeaths, 1)}</b></div>
-        <div class="metric"><span>场均伤害</span><b>${kilo(recent.avgDamage)}</b></div>
-        <div class="metric"><span>场均治疗</span><b>${kilo(recent.avgHeal ?? 0)}</b></div>
-        ${
-          risk
-            ? `<div class="metric bad-metric${
-                pitGames / Math.max(1, recent.games) >= 0.5 ? ' is-high' : ''
-              }" title="近 ${recent.games} 场中 ${pitGames} 场单场评分 < 35，包含小坑 / 很坑 / 巨坑"><span>坑场次</span><b>${pitGames} / ${recent.games}</b></div>`
-            : ''
-        }
-        ${
-          recent.afkGames
-            ? `<div class="metric afk-metric"><span>疑似挂机</span><b>${recent.afkGames} 场</b></div>`
-            : ''
-        }
-      </div>`
+    ? options.liveView
+      ? `<div class="metrics recent-metrics">${metricCells}</div>`
+      : `<div class="metrics">${metricCells}${risk ? pitMetric : ''}</div>`
     : '';
 
   // 大乱斗英雄随机，“常用英雄”没有参考意义
@@ -1409,6 +1411,7 @@ function buildCard(player, isLocal, options = {}) {
     ${thisGame ? '' : gameChips ? `<div class="games">${gameChips}</div>` : ''}
     ${thisGame ? '' : sparkBlock}
     ${thisGame ? '' : loading}
+    ${thisGame ? '' : metricsSummary}
     ${thisGame ? '' : metrics}
     ${thisGame ? '' : riskNote}
     ${thisGame ? '' : afkNote}
@@ -1422,6 +1425,14 @@ function buildCard(player, isLocal, options = {}) {
   const matchesButton = card.querySelector('[data-action="matches"]');
   if (matchesButton) {
     matchesButton.addEventListener('click', () => openMatches(player, options.context));
+  }
+  const metricsToggle = card.querySelector('[data-action="metrics"]');
+  if (metricsToggle) {
+    metricsToggle.addEventListener('click', () => {
+      const collapsed = card.classList.toggle('metrics-collapsed');
+      metricsToggle.textContent = collapsed ? '展开其余指标' : '收起其余指标';
+      metricsToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    });
   }
   const championLinkEl = card.querySelector('[data-action="champion-matches"]');
   if (championLinkEl) {
