@@ -530,12 +530,46 @@ function rankLine(
   return `${label} 第 ${better + 1}/${values.length}（${format(selfValue)}）`;
 }
 
+const LIVE_ANALYSIS_REQUEST =
+  '【请分析】围绕我的评分权重和当前局内排名，告诉我这局最该补哪 2-3 项、具体差多少、怎么补；出装和打法都要服务于“赢下来 + 把评分打高”。请按系统要求输出 7 个部分。';
+
+/** 追问时覆盖前面的 7 部分格式要求 */
+const LIVE_FOLLOW_UP_GUARD =
+  '【追问模式】玩家这次只问一个问题：不要重复整篇复盘，也不要按 7 个部分展开；先用一句话给结论，再给 2-4 条可执行动作，总量控制在 150-350 字。缺少数据时明确说明是推断。';
 
 /** 把进行中的对局压缩成实时出装/打法建议的提示词 */
 export function buildLiveAnalysisMessages(
   snapshot: Snapshot,
   itemName: (id: number) => string = () => '',
 ): ChatMessage[] {
+  const { system, user } = buildLivePrompt(snapshot, itemName, LIVE_ANALYSIS_REQUEST);
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ];
+}
+
+/**
+ * 对局中的追问：复用同一份实时数据，但只回答玩家问的那一个问题。
+ * 不再要求 7 个部分的整篇复盘，避免每次追问都重刷一大段。
+ */
+export function buildLiveFollowUpMessages(
+  snapshot: Snapshot,
+  itemName: (id: number) => string,
+  question: string,
+): ChatMessage[] {
+  const { system, user } = buildLivePrompt(snapshot, itemName, `【本次追问】${question}`);
+  return [
+    { role: 'system', content: `${system}\n${LIVE_FOLLOW_UP_GUARD}` },
+    { role: 'user', content: user },
+  ];
+}
+
+function buildLivePrompt(
+  snapshot: Snapshot,
+  itemName: (id: number) => string,
+  request: string,
+): { system: string; user: string } {
   const players = snapshot.players ?? [];
   const local = snapshot.localPlayer;
   const self =
@@ -611,7 +645,7 @@ export function buildLiveAnalysisMessages(
     '【敌方】',
     teamText(enemies, false),
     `【敌方阵容构成】${teamCompositionText(enemies)}。请据此判断该走半肉还是全肉，并选择针对装。`,
-    '【请分析】围绕我的评分权重和当前局内排名，告诉我这局最该补哪 2-3 项、具体差多少、怎么补；出装和打法都要服务于“赢下来 + 把评分打高”。请按系统要求输出 7 个部分。',
+    request,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -641,10 +675,7 @@ export function buildLiveAnalysisMessages(
     '要求：每个部分都要展开写，结合双方具体英雄和当前数据，总字数控制在 1400-1800 字。',
   ].join('\n');
 
-  return [
-    { role: 'system', content: system },
-    { role: 'user', content: user },
-  ];
+  return { system, user };
 }
 
 /** 选人阶段：只有我方英雄和替补席，没有敌方与实时数据 */

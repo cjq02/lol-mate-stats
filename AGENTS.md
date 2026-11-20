@@ -43,6 +43,7 @@
 - `src/index.ts`：CLI 入口与 `start / once / scan / demo / doctor` 流程。
 - `src/tools/`：一次性迁移 / 重算工具，不参与常规启动。
 - `public/app.js`：单文件原生 JS。DOM 引用统一放在 `els` 表里，新增元素先加进 `els`。
+- 对局中 AI 弹窗保持「原分析 + 追问节点」结构：追问只增量追加，不整段重写；预设问题放在 `AI_LIVE_QUESTIONS`，问题节点用右侧列表渲染，不要写死到 HTML 里。
 - `scripts/`：独立分析脚本，不参与构建。
 
 ## 代码规范

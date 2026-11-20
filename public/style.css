@@ -925,6 +925,250 @@ body::before {
   color: #d7e2f6;
 }
 
+/* 对局中 AI：左侧阅读 + 追问，右侧问题节点 */
+.ai-layout {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ai-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ai-ask {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 26px 16px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.ai-ask-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-ask-chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.ai-ask-chip:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.ai-ask-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ai-ask-form {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-ask-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(4, 8, 18, 0.55);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.ai-ask-input::placeholder {
+  color: var(--muted-2);
+}
+
+.ai-ask-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(94, 234, 212, 0.12);
+}
+
+.ai-ask-input:disabled {
+  opacity: 0.6;
+}
+
+.ai-ask-send {
+  flex: 0 0 auto;
+  border-color: var(--line-strong);
+  background: rgba(94, 234, 212, 0.12);
+}
+
+.ai-nodes {
+  flex: 0 0 236px;
+  width: 236px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 14px;
+  border-left: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.ai-nodes-head {
+  flex: 0 0 auto;
+  margin-bottom: 10px;
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted-2);
+}
+
+.ai-node-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-node {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.ai-node:hover {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.ai-node.running {
+  color: var(--accent);
+}
+
+.ai-node-no {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(126, 163, 255, 0.14);
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.ai-node.running .ai-node-no {
+  background: rgba(94, 234, 212, 0.18);
+  color: var(--accent);
+}
+
+.ai-node-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.ai-nodes-empty {
+  margin: 2px 4px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted-2);
+}
+
+.ai-follows {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.ai-follow {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  scroll-margin-top: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ai-follow.running {
+  border-color: rgba(94, 234, 212, 0.35);
+}
+
+.ai-follow.flash {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(94, 234, 212, 0.12);
+}
+
+.ai-follow-q {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #dfe8fb;
+}
+
+.ai-follow-no {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(94, 234, 212, 0.14);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.ai-follow-a .ai-gap:first-child {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .ai-nodes {
+    display: none;
+  }
+
+  .ai-ask {
+    padding: 10px 16px 14px;
+  }
+}
+
 .ai-content {
   max-width: 100%;
   overflow-wrap: anywhere;

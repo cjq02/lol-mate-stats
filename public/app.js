@@ -57,6 +57,13 @@ const els = {
   aiTabs: document.getElementById('ai-tabs'),
   aiClose: document.getElementById('ai-close'),
   aiRerun: document.getElementById('ai-rerun'),
+  aiAsk: document.getElementById('ai-ask'),
+  aiAskChips: document.getElementById('ai-ask-chips'),
+  aiAskForm: document.getElementById('ai-ask-form'),
+  aiAskInput: document.getElementById('ai-ask-input'),
+  aiAskSend: document.getElementById('ai-ask-send'),
+  aiNodes: document.getElementById('ai-nodes'),
+  aiNodeList: document.getElementById('ai-node-list'),
   myMatches: document.getElementById('my-matches'),
   championRanking: document.getElementById('champion-ranking'),
   championRankingModal: document.getElementById('champion-ranking-modal'),
@@ -1732,6 +1739,48 @@ async function readNdjson(response, onEvent) {
 const AI_CONFIG_HINT =
   '在项目根目录的 .env 中设置 LOL_MATE_AI_API_KEY=你的 OpenCode Go API Key，然后重启面板。默认使用 deepseek-v4.1-flash。';
 
+/** 对局中追问的预设问题；点一下就直接问，不用整篇重新分析 */
+const AI_LIVE_QUESTIONS = [
+  '现在最该做的 3 件事',
+  '下一件装备出什么',
+  '对面谁最肥，怎么针对',
+  '这波团该不该接',
+  '我怎么站位才能少死',
+];
+
+/** 同一局关闭弹窗再打开时保留追问节点 */
+const liveFollowUpsBySession = new Map();
+
+function liveFollowUpsFor(sessionKey) {
+  if (!sessionKey) return [];
+  let list = liveFollowUpsBySession.get(sessionKey);
+  if (!list) {
+    list = [];
+    liveFollowUpsBySession.set(sessionKey, list);
+  }
+  return list;
+}
+
+/** 当前弹窗正在展示实时对局内容时，返回可用于追问的 sessionKey */
+function aiAskSessionKey(ai, showLive) {
+  if (!showLive || !state.snapshot?.inGame) return null;
+  const key = ai.kind === 'live' ? ai.sessionKey : ai.live?.sessionKey;
+  return key && key === state.snapshot.liveSessionId ? key : null;
+}
+
+function initAiAskChips() {
+  els.aiAskChips.replaceChildren(
+    ...AI_LIVE_QUESTIONS.map((question) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'ai-ask-chip';
+      button.textContent = question;
+      button.addEventListener('click', () => void askLiveFollowUp(question));
+      return button;
+    }),
+  );
+}
+
 function setAiButton(running) {
   const champSelect = Boolean(state.snapshot?.inChampSelect);
   const label = champSelect ? '✨ AI 选人' : '✨ AI 分析';
@@ -1766,6 +1815,14 @@ function hideAiView() {
 
 function resetAiView() {
   state.ai?.controller?.abort();
+  for (const list of liveFollowUpsBySession.values()) {
+    for (const entry of list) {
+      if (!entry.controller) continue;
+      entry.controller.abort();
+      entry.controller = null;
+      entry.running = false;
+    }
+  }
   stopAiTimer();
   state.ai = null;
   els.aiBody.replaceChildren();
@@ -1897,6 +1954,158 @@ function aiMarkdown(text) {
   return html;
 }
 
+function followAnswerHtml(entry) {
+  if (entry.error) return `<div class="ai-error">${escapeHtml(entry.error)}</div>`;
+  if (!entry.answer) {
+    return `<div class="ai-status"><span class="spinner"></span><span>${escapeHtml(
+      entry.status ?? '正在思考…',
+    )}</span></div>`;
+  }
+  const cursor = entry.running ? '<span class="ai-cursor"></span>' : '';
+  return `<div class="ai-content">${aiMarkdown(entry.answer)}${cursor}</div>`;
+}
+
+/** 单个追问节点：问题在上，回答增量追加在下 */
+function followUpHtml(entry, index) {
+  return `<section class="ai-follow${entry.running ? ' running' : ''}" id="ai-follow-${index}" data-follow-index="${index}">
+      <div class="ai-follow-q"><span class="ai-follow-no">Q${index + 1}</span><span>${escapeHtml(
+        entry.question,
+      )}</span></div>
+      <div class="ai-follow-a" data-follow-answer="${index}">${followAnswerHtml(entry)}</div>
+    </section>`;
+}
+
+function followUpsHtml(list) {
+  if (!list.length) return '';
+  return `<div class="ai-follows">${list.map(followUpHtml).join('')}</div>`;
+}
+
+function renderAiNodes(ai) {
+  const list = ai?.followUps ?? [];
+  els.aiNodeList.innerHTML = list.length
+    ? list
+        .map(
+          (entry, index) =>
+            `<button type="button" class="ai-node${entry.running ? ' running' : ''}" data-ai-node="${index}">
+              <span class="ai-node-no">${index + 1}</span>
+              <span class="ai-node-text">${escapeHtml(entry.question)}</span>
+            </button>`,
+        )
+        .join('')
+    : '<p class="ai-nodes-empty">还没有追问<br />点下方问题或自己输入</p>';
+}
+
+function renderAiAskPanel(ai, sessionKey) {
+  const visible = Boolean(sessionKey);
+  els.aiAsk.classList.toggle('hidden', !visible);
+  els.aiNodes.classList.toggle('hidden', !visible);
+  if (!visible) return;
+  const blocked = Boolean(ai.running || ai.askRunning);
+  els.aiAskInput.disabled = blocked;
+  els.aiAskSend.disabled = blocked;
+  for (const chip of els.aiAskChips.querySelectorAll('button')) chip.disabled = blocked;
+  renderAiNodes(ai);
+}
+
+/** 流式回答时只更新当前节点，避免整块重新渲染打断阅读 */
+function updateFollowEntry(ai, entry) {
+  if (state.ai !== ai) return;
+  const index = (ai.followUps ?? []).indexOf(entry);
+  if (index < 0) return;
+  const holder = els.aiBody.querySelector(`[data-follow-answer="${index}"]`);
+  if (!holder) {
+    renderAiView();
+    return;
+  }
+  const nearBottom =
+    els.aiBody.scrollHeight - els.aiBody.scrollTop - els.aiBody.clientHeight < 120;
+  holder.innerHTML = followAnswerHtml(entry);
+  holder.closest('.ai-follow')?.classList.toggle('running', Boolean(entry.running));
+  renderAiNodes(ai);
+  if (nearBottom) els.aiBody.scrollTop = els.aiBody.scrollHeight;
+}
+
+function scrollToFollow(index) {
+  const section = els.aiBody.querySelector(`[data-follow-index="${index}"]`);
+  if (!section) return;
+  section.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  section.classList.add('flash');
+  window.setTimeout(() => section.classList.remove('flash'), 1200);
+}
+
+/** 对局中追问：把回答增量追加到现有分析下方，不重新生成整篇 */
+async function askLiveFollowUp(rawQuestion) {
+  const ai = state.ai;
+  if (!ai || ai.askRunning) return;
+  const question = String(rawQuestion ?? '').trim().slice(0, 120);
+  if (!question) return;
+  const showLive = ai.kind === 'live' || activeAiTab(ai) === 'live';
+  const sessionKey = aiAskSessionKey(ai, showLive);
+  if (!sessionKey) return;
+
+  const list = ai.followUps ?? (ai.followUps = liveFollowUpsFor(sessionKey));
+  const entry = {
+    question,
+    answer: '',
+    status: '正在整理实时数据…',
+    error: '',
+    running: true,
+    controller: new AbortController(),
+  };
+  list.push(entry);
+  ai.askRunning = true;
+  els.aiAskInput.value = '';
+  renderAiView();
+  scrollToFollow(list.length - 1);
+
+  try {
+    const response = await fetch('/api/live/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+      signal: entry.controller.signal,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    await readNdjson(response, (event) => {
+      if (state.ai !== ai || entry.controller?.signal.aborted) return;
+      if (event.type === 'status') {
+        entry.status = event.text ?? '';
+        updateFollowEntry(ai, entry);
+      } else if (event.type === 'delta') {
+        entry.answer += event.text ?? '';
+        entry.status = '';
+        updateFollowEntry(ai, entry);
+      } else if (event.type === 'done') {
+        entry.running = false;
+        entry.status = '';
+        if (!entry.answer.trim()) entry.error = 'AI 没有返回内容，请再问一次。';
+        updateFollowEntry(ai, entry);
+      } else if (event.type === 'error') {
+        throw new Error(event.error ?? 'AI 追问失败');
+      }
+    });
+    if (entry.running) {
+      entry.running = false;
+      if (!entry.answer.trim()) entry.error = 'AI 没有返回内容，请再问一次。';
+    }
+  } catch (error) {
+    if (!entry.controller?.signal.aborted) {
+      entry.error = error instanceof Error ? error.message : String(error);
+      entry.running = false;
+    }
+  } finally {
+    entry.controller = null;
+    if (state.ai === ai) {
+      ai.askRunning = false;
+      renderAiView();
+    }
+  }
+}
+
 function activeAiTab(ai) {
   return ai.live?.content && ai.tab === 'live' ? 'live' : 'match';
 }
@@ -1910,6 +2119,9 @@ function renderAiView() {
   const hasLive = Boolean(ai.kind === 'match' && ai.live?.content?.trim());
   const tab = activeAiTab(ai);
   const liveTab = tab === 'live';
+  const showLive = ai.kind === 'live' || liveTab;
+  const askSessionKey = aiAskSessionKey(ai, showLive);
+  const followUps = ai.followUps ?? [];
 
   els.aiModalTitle.textContent = ai.title
     ? `✨ ${ai.kind === 'champSelect' ? 'AI 选人建议' : 'AI 复盘'} · ${ai.title}`
@@ -1937,10 +2149,10 @@ function renderAiView() {
   } else {
     renderAiMeta(ai);
   }
-
   const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+  const keepScroll = body.scrollTop;
   if (liveTab) {
-    body.innerHTML = `<div class="ai-content">${aiMarkdown(ai.live.content)}</div><div class="ai-foot">这段建议来自对局进行中的实时数据，赛后不会再更新</div>`;
+    body.innerHTML = `<div class="ai-content">${aiMarkdown(ai.live.content)}</div>${followUpsHtml(followUps)}<div class="ai-foot">这段建议来自对局进行中的实时数据，赛后不会再更新</div>`;
   } else if (ai.error) {
     const hint = state.aiStatus?.enabled === false ? `<p class="ai-hint">${escapeHtml(AI_CONFIG_HINT)}</p>` : '';
     body.innerHTML = `<div class="ai-error">${escapeHtml(ai.error)}</div>${hint}`;
@@ -1960,9 +2172,11 @@ function renderAiView() {
               ? '内容由 AI 根据选人阶段数据生成，敌方阵容未知，仅供参考'
               : '内容由 AI 根据本局数据生成，仅供参考'
           }</div>`;
-    body.innerHTML = `<div class="ai-content">${aiMarkdown(ai.text)}${cursor}</div>${foot}`;
+    const follows = ai.kind === 'live' ? followUpsHtml(followUps) : '';
+    body.innerHTML = `<div class="ai-content">${aiMarkdown(ai.text)}${cursor}</div>${follows}${foot}`;
   }
-  if (nearBottom) body.scrollTop = body.scrollHeight;
+  renderAiAskPanel(ai, askSessionKey);
+  body.scrollTop = nearBottom ? body.scrollHeight : keepScroll;
 }
 
 async function loadSavedAiAnalysis(gameId) {
@@ -1998,6 +2212,7 @@ async function streamAiAnalysis(url, meta) {
   const controller = new AbortController();
   const ai = {
     ...meta,
+    followUps: meta.followUps ?? [],
     controller,
     text: '',
     status: '正在连接 AI 服务…',
@@ -2113,6 +2328,7 @@ async function runAiAnalysis(options = {}) {
           controller: null,
           text: saved.analysis.content,
           live,
+          followUps: live?.sessionKey ? liveFollowUpsFor(live.sessionKey) : [],
           tab: 'match',
           status: '',
           error: '',
@@ -2136,6 +2352,7 @@ async function runAiAnalysis(options = {}) {
           controller: null,
           text: '',
           live,
+          followUps: live?.sessionKey ? liveFollowUpsFor(live.sessionKey) : [],
           tab: 'live',
           status: '',
           error: '',
@@ -2168,6 +2385,7 @@ async function runAiAnalysis(options = {}) {
     gameId,
     title,
     live,
+    followUps: live?.sessionKey ? liveFollowUpsFor(live.sessionKey) : [],
     tab: 'match',
   });
 }
@@ -2244,6 +2462,10 @@ async function runLiveAiAnalysis(options = {}) {
   const sessionKey = snapshot.liveSessionId;
   const title = liveAiTitle(snapshot);
 
+  if (options.force) {
+    for (const entry of state.ai?.followUps ?? []) entry.controller?.abort();
+    liveFollowUpsBySession.delete(sessionKey);
+  }
   const existing = state.ai;
   if (!options.force && existing && existing.kind === 'live' && !existing.error) {
     showAiView();
@@ -2264,6 +2486,7 @@ async function runLiveAiAnalysis(options = {}) {
           title,
           controller: null,
           text: saved.content,
+          followUps: liveFollowUpsFor(sessionKey),
           status: '',
           error: '',
           model: saved.model || state.aiStatus?.model,
@@ -2282,7 +2505,12 @@ async function runLiveAiAnalysis(options = {}) {
     }
   }
 
-  await streamAiAnalysis('/api/live/ai', { kind: 'live', sessionKey, title });
+  await streamAiAnalysis('/api/live/ai', {
+    kind: 'live',
+    sessionKey,
+    title,
+    followUps: liveFollowUpsFor(sessionKey),
+  });
 }
 
 async function loadAiStatus() {
@@ -5375,6 +5603,15 @@ els.aiRerun.addEventListener('click', () => {
     void runLiveAiAnalysis({ force: true });
   } else void runAiAnalysis({ force: true });
 });
+els.aiAskForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  void askLiveFollowUp(els.aiAskInput.value);
+});
+els.aiNodeList.addEventListener('click', (event) => {
+  const button = event.target.closest?.('[data-ai-node]');
+  if (!button) return;
+  scrollToFollow(Number(button.dataset.aiNode));
+});
 els.matchesRefresh.addEventListener('click', () => void refreshMatchesView());
 els.matchesBack.addEventListener('click', () => {
   goMatchesBack();
@@ -5466,6 +5703,7 @@ document.addEventListener('keydown', (event) => {
   void refresh();
 });
 
+initAiAskChips();
 fetchSnapshot();
 void loadItemIcons();
 void loadAiStatus();

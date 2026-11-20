@@ -10,7 +10,7 @@ import type {
 } from '../types.js';
 import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
-import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages } from '../ai.js';
+import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages, buildLiveFollowUpMessages } from '../ai.js';
 import { afkParticipantIds, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
 import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, PROFILES, capAfkScores, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, killDeathAdjustments, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, scoreAdjustments, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
@@ -1253,8 +1253,50 @@ test('实时 AI 提示词包含装备、模式限制、符文、血量和事件'
   assert.ok(srText.includes('【装备可用性】'), srText);
 });
 
-test('选人阶段 AI 提示词包含替补席、开黑和模式限制', () => {
-  const recent = (champion: string) => ({
+test('对局中 AI 追问只回答当前问题，不再重刷整篇复盘', () => {
+  const snapshot = {
+    mode: 'live',
+    phase: 'InProgress',
+    inChampSelect: false,
+    inGame: true,
+    collecting: false,
+    updatedAt: '',
+    queueId: 450,
+    gameMode: 'ARAM',
+    gameTime: 600,
+    liveSessionId: 'session',
+    liveEvents: [],
+    localPlayer: {
+      summonerId: 1,
+      displayName: '我',
+      cellId: 0,
+      championId: 202,
+      championName: '戏命师',
+    },
+    players: [
+      {
+        summonerId: 1,
+        displayName: '我',
+        championName: '戏命师',
+        position: 'ARAM',
+        isEnemy: false,
+        labels: [],
+        live: { kills: 5, deaths: 2, assists: 6, cs: 20, championLevel: 11 },
+      },
+    ],
+  } as unknown as Snapshot;
+
+  const messages = buildLiveFollowUpMessages(snapshot, () => '', '下一件装备出什么？');
+  const system = messages[0]?.content ?? '';
+  const user = messages[1]?.content ?? '';
+  assert.ok(system.includes('追问模式'), '追问要切换到追问模式');
+  assert.ok(system.includes('不要重复整篇复盘'), '追问不能重刷整篇复盘');
+  assert.ok(user.includes('【本次追问】下一件装备出什么？'), '用户消息要带上具体问题');
+  assert.ok(!user.includes('请按系统要求输出 7 个部分'), '追问不应再要求 7 个部分');
+  assert.ok(user.includes('【我的英雄】'), '追问仍然要带上实时对局上下文');
+});
+
+test('选人阶段 AI 提示词包含替补席、开黑和模式限制', () => {  const recent = (champion: string) => ({
     games: 10,
     wins: 6,
     losses: 4,

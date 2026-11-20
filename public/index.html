@@ -256,7 +256,29 @@
             <button class="ai-tab active" type="button" data-ai-tab="match">赛后复盘</button>
             <button class="ai-tab" type="button" data-ai-tab="live">对局中建议</button>
           </div>
-          <div id="ai-body" class="ai-body" aria-live="polite"></div>
+          <div class="ai-layout">
+            <div class="ai-main">
+              <div id="ai-body" class="ai-body" aria-live="polite"></div>
+              <div id="ai-ask" class="ai-ask hidden">
+                <div id="ai-ask-chips" class="ai-ask-chips"></div>
+                <form id="ai-ask-form" class="ai-ask-form">
+                  <input
+                    id="ai-ask-input"
+                    class="ai-ask-input"
+                    type="text"
+                    maxlength="120"
+                    autocomplete="off"
+                    placeholder="追问本局，例如：这波团能不能接？"
+                  />
+                  <button id="ai-ask-send" class="btn ai-ask-send" type="submit">追问</button>
+                </form>
+              </div>
+            </div>
+            <aside id="ai-nodes" class="ai-nodes hidden" aria-label="问题节点">
+              <div class="ai-nodes-head">问题节点</div>
+              <div id="ai-node-list" class="ai-node-list"></div>
+            </aside>
+          </div>
         </div>
       </div>
 

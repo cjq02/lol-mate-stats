@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DataSource } from './source.js';
 import type { GameContext, GameModeKey } from './types.js';
-import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages, getAiConfig, streamChatCompletion } from './ai.js';
+import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages, buildLiveFollowUpMessages, getAiConfig, streamChatCompletion } from './ai.js';
 import {
   DATA_DIR,
   getAiAnalysis,
@@ -40,6 +40,41 @@ export interface RunningServer {
   port: number;
   url: string;
   close: () => Promise<void>;
+}
+
+/** 读取很小的 JSON 请求体；解析失败或为空时返回空对象，不阻塞 AI 流 */
+function readJsonBody(
+  req: IncomingMessage,
+  limit = 16 * 1024,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolveBody) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let finished = false;
+    const finish = (value: Record<string, unknown>): void => {
+      if (finished) return;
+      finished = true;
+      resolveBody(value);
+    };
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > limit) {
+        finish({});
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (!chunks.length) return finish({});
+      try {
+        const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+        finish(parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {});
+      } catch {
+        finish({});
+      }
+    });
+    req.on('error', () => finish({}));
+  });
 }
 
 const PUBLIC_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -292,6 +327,9 @@ async function handleRequest(
       });
       return;
     }
+    const body = await readJsonBody(req);
+    const question =
+      typeof body.question === 'string' ? body.question.trim().slice(0, 200) : '';
     const snapshot = source.getSnapshot();
     if (
       !snapshot.inGame ||
@@ -326,14 +364,27 @@ async function handleRequest(
       res.write(`${JSON.stringify(payload)}\n`);
     };
 
-    logTag('ai', `开始分析进行中的对局（${config.model}）…`);
+    logTag(
+      'ai',
+      question
+        ? `开始回答对局追问（${config.model}）…`
+        : `开始分析进行中的对局（${config.model}）…`,
+    );
     try {
-      sendEvent({ type: 'status', text: '正在整理本局阵容和实时数据…' });
+      sendEvent({
+        type: 'status',
+        text: question ? '正在整理实时数据并回答追问…' : '正在整理本局阵容和实时数据…',
+      });
       const items = await loadItemTable(source).catch(() => null);
       const itemName = (id: number): string => items?.[String(id)]?.name ?? '';
-      const messages = buildLiveAnalysisMessages(snapshot, itemName);
+      const messages = question
+        ? buildLiveFollowUpMessages(snapshot, itemName, question)
+        : buildLiveAnalysisMessages(snapshot, itemName);
 
-      sendEvent({ type: 'status', text: '正在生成出装和打法建议…' });
+      sendEvent({
+        type: 'status',
+        text: question ? '正在回答…' : '正在生成出装和打法建议…',
+      });
       let content = '';
       await streamChatCompletion(
         config,
@@ -343,18 +394,28 @@ async function handleRequest(
           sendEvent({ type: 'delta', text });
         },
         abort.signal,
-        `lol-mate-live-${sessionKey}`,
+        question
+          ? `lol-mate-live-${sessionKey}-q${started}`
+          : `lol-mate-live-${sessionKey}`,
       );
       if (!content.trim()) {
-        throw new Error('AI 没有返回正式内容（可能推理被截断），请点「重新分析」再试一次。');
+        throw new Error(
+          question
+            ? 'AI 没有返回内容，请再问一次。'
+            : 'AI 没有返回正式内容（可能推理被截断），请点「重新分析」再试一次。',
+        );
       }
+      // 追问只追加到当前弹窗，不覆盖已经保存的整局分析
       const saved =
+        !question &&
         !abort.signal.aborted &&
         (await saveLiveAiAnalysis(sessionKey, config.model, content.trim()));
       sendEvent({ type: 'done', model: config.model, saved });
       logTag(
         'ai',
-        `进行中对局分析完成，用时 ${((Date.now() - started) / 1000).toFixed(1)}s${
+        `${
+          question ? '对局追问完成' : '进行中对局分析完成'
+        }，用时 ${((Date.now() - started) / 1000).toFixed(1)}s${
           saved ? '，已保存到数据库' : ''
         }`,
       );
