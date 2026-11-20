@@ -3312,20 +3312,9 @@ body::before {
 
 .aram-list {
   display: flex;
+  flex-wrap: wrap;
   gap: 13px;
-  overflow-x: auto;
-  padding: 1px 1px 6px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(126, 163, 255, 0.28) transparent;
-}
-
-.aram-list::-webkit-scrollbar {
-  height: 8px;
-}
-
-.aram-list::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(126, 163, 255, 0.28);
+  padding: 1px 1px 4px;
 }
 
 .aram-champion {
