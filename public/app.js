@@ -300,7 +300,7 @@ const state = {
   /** 查看玩家战绩时的分页状态 */
   playerMatches: null,
   itemIcons: null,
-  /** 悬浮英雄头像/装备时按需加载的角色技能与装备描述 */
+  /** 点击英雄头像/装备时按需加载的角色技能与装备描述 */
   championInfo: {},
   itemDetails: null,
   searchPlayers: [],
@@ -432,7 +432,7 @@ const SCORE_DEFICIT_LABELS = {
   default: '输出',
 };
 
-/** 本局评分悬浮说明：定位、五项权重占比和短板规则 */
+/** 本局评分点击说明：定位、五项权重占比和短板规则 */
 function scoreTipHtml(payload) {
   const weights = payload.weights ?? {};
   const total = SCORE_METRIC_LABELS.reduce(
@@ -494,7 +494,7 @@ function scoreTipHtml(payload) {
     </div>`;
 }
 
-/** 悬浮层统一贴着锚点放，优先在上方，空间不够再落到下方 */
+/** 弹窗统一贴着锚点放，优先在上方，空间不够再落到下方 */
 function placeTip(tip, anchor) {
   const rect = anchor.getBoundingClientRect();
   const size = tip.getBoundingClientRect();
@@ -524,7 +524,7 @@ function showScoreTip(ring) {
   } catch {
     return;
   }
-  // 同一时间只留一个悬浮弹窗，避免英雄说明和评分说明叠在一起
+  // 同一时间只留一个弹窗，避免英雄说明和评分说明叠在一起
   hideInfoTip();
   scoreTipRing = ring;
   els.scoreTip.innerHTML = scoreTipHtml(payload);
@@ -532,7 +532,7 @@ function showScoreTip(ring) {
   placeTip(els.scoreTip, ring);
 }
 
-/* ------------------------- 英雄/装备悬浮说明 ------------------------- */
+/* ------------------------- 英雄/装备点击说明 ------------------------- */
 
 /** 每级数值相同就只显示一次，否则列出 1 级到 5 级 */
 function spellValuesText(values, suffix = '') {
@@ -614,7 +614,7 @@ let infoTipToken = 0;
 let infoTipTitleTarget = null;
 let infoTipTitleValue = '';
 
-/** 有原生 title 的父元素会同时弹出浏览器提示，悬浮期间先收起来 */
+/** 有原生 title 的父元素会同时弹出浏览器提示，弹窗打开期间先收起来 */
 function suppressNativeTitle(anchor) {
   const target = anchor.closest('[title]');
   if (!target) return;
@@ -816,7 +816,7 @@ function iconHtml(assetPath, label, size, title, attrs = '') {
   )}</span>${image}</span>`;
 }
 
-/** 英雄图标带上 id，悬浮时展示角色与技能 */
+/** 英雄图标带上 id，点击时展示角色与技能 */
 function champIconHtml(championId, label, size, title) {
   const id = Number(championId);
   const attrs = Number.isFinite(id) && id > 0 ? ` data-champ-id="${id}"` : '';
@@ -889,7 +889,7 @@ function loadItemDetails() {
   return itemDetailsRequest;
 }
 
-/** 悬浮到某个英雄时才请求它的资料，结果按 id 缓存在内存里 */
+/** 点击某个英雄时才请求它的资料，结果按 id 缓存在内存里 */
 const championInfoRequests = new Map();
 const championInfoRetryAt = new Map();
 function loadChampionInfo(id) {
@@ -1211,7 +1211,7 @@ function buildCard(player, isLocal, options = {}) {
           options.rankTotal ? ` / ${options.rankTotal}` : ''
         }">#${rank}</span>`
       : '';
-  // 本局评分悬浮说明：带上这一局真实的定位和权重
+  // 本局评分点击说明：带上这一局真实的定位和权重
   const scoreTipAttr =
     thisGame?.scoreRule && Number.isFinite(Number(rating))
       ? ` data-score-tip="${escapeHtml(
@@ -5887,33 +5887,50 @@ els.matchTabs.addEventListener('click', (event) => {
   renderMatchTab(button.dataset.matchTab);
 });
 
-// 评分、英雄头像和装备的悬浮说明都用事件委托，避免给每张卡片重复绑定
-document.addEventListener('mouseover', (event) => {
-  if (!(event.target instanceof Element)) return;
-  // 弹窗不随鼠标移开消失，锚点被重新渲染掉了就顺手收起来，避免悬空
-  if (infoTipAnchor && !infoTipAnchor.isConnected) hideInfoTip();
-  if (scoreTipRing && !scoreTipRing.isConnected) hideScoreTip();
-  const champ = event.target.closest('[data-champ-id]');
-  if (champ) {
-    void showInfoTip(champ);
+// 评分、英雄头像和装备的说明都改成点击弹出，用事件委托避免给每张卡片重复绑定
+const TIP_ANCHOR_SELECTOR = '[data-champ-id], [data-item-id], .ring[data-score-tip]';
+
+/** 只有本身没有点击动作的头像/装备/评分环才弹说明，避免抢掉查看战绩、切换时间线玩家等操作 */
+function tipAnchorFrom(target) {
+  if (!(target instanceof Element)) return null;
+  const anchor = target.closest(TIP_ANCHOR_SELECTOR);
+  if (!anchor) return null;
+  return anchor.closest('button, a') ? null : anchor;
+}
+
+function toggleTip(anchor) {
+  if (anchor.matches('.ring[data-score-tip]')) {
+    if (anchor === scoreTipRing) hideScoreTip();
+    else showScoreTip(anchor);
     return;
   }
-  const item = event.target.closest('[data-item-id]');
-  if (item) {
-    void showInfoTip(item);
-    return;
-  }
-  const ring = event.target.closest('.ring[data-score-tip]');
-  if (ring) showScoreTip(ring);
-});
-document.addEventListener('click', (event) => {
-  if (event.target instanceof Element && event.target.closest('.info-tip, .score-tip')) return;
-  hideInfoTip();
-  hideScoreTip();
-});
+  if (anchor === infoTipAnchor) hideInfoTip();
+  else void showInfoTip(anchor);
+}
+
+document.addEventListener(
+  'click',
+  (event) => {
+    if (!(event.target instanceof Element)) return;
+    // 点在弹窗内部不关闭，方便滚动长内容
+    if (event.target.closest('.info-tip, .score-tip')) return;
+    const anchor = tipAnchorFrom(event.target);
+    if (anchor) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleTip(anchor);
+      return;
+    }
+    hideInfoTip();
+    hideScoreTip();
+  },
+  true,
+);
 window.addEventListener(
   'scroll',
-  () => {
+  (event) => {
+    // 弹窗内部滚动不算页面滚动，否则长内容一滚就关
+    if (event.target instanceof Element && event.target.closest('.info-tip, .score-tip')) return;
     hideScoreTip();
     hideInfoTip();
   },
