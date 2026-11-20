@@ -1896,7 +1896,14 @@ body::before {
   background: #ff4d6d;
 }
 
-/* 本局评分悬浮说明：定位、五项权重占比和短板规则 */
+/* 可点击弹出说明的英雄头像、装备图标和评分环 */
+.icon[data-champ-id],
+.icon[data-item-id],
+.ring[data-score-tip] {
+  cursor: pointer;
+}
+
+/* 本局评分点击说明：定位、五项权重占比和短板规则 */
 .score-tip {
   position: fixed;
   z-index: 80;
@@ -1906,7 +1913,7 @@ body::before {
   border: 1px solid var(--line-strong);
   background: rgba(9, 14, 24, 0.97);
   box-shadow: var(--shadow);
-  pointer-events: none;
+  pointer-events: auto;
   backdrop-filter: blur(10px);
   font-size: 12px;
   color: var(--text);
@@ -2009,7 +2016,7 @@ body::before {
   color: var(--muted-2);
 }
 
-/* 英雄头像/装备的悬浮说明 */
+/* 英雄头像/装备的点击说明 */
 .info-tip {
   position: fixed;
   z-index: 80;
@@ -2022,7 +2029,7 @@ body::before {
   border: 1px solid var(--line-strong);
   background: rgba(9, 14, 24, 0.97);
   box-shadow: var(--shadow);
-  pointer-events: none;
+  pointer-events: auto;
   backdrop-filter: blur(10px);
   font-size: 12px;
   color: var(--text);
