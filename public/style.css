@@ -1872,23 +1872,27 @@ body::before {
   text-align: right;
 }
 
-.score-band-75 {
+.score-band-80 {
+  background: #a78bfa;
+}
+
+.score-band-70 {
   background: #3ddc97;
 }
 
-.score-band-65 {
+.score-band-60 {
   background: #5eead4;
 }
 
-.score-band-55 {
+.score-band-50 {
   background: #f5c76a;
 }
 
-.score-band-45 {
+.score-band-40 {
   background: #ffab5e;
 }
 
-.score-band-35 {
+.score-band-30 {
   background: #ff9b9b;
 }
 

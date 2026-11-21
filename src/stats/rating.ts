@@ -13,9 +13,9 @@ import { clamp, round } from '../util.js';
 import { LANE_NAMES } from './constants.js';
 
 /** 低于此分数算“很坑” */
-export const BAD_GAME_SCORE = 30;
+export const BAD_GAME_SCORE = 25;
 /** 略低于正常水平，算“小坑” */
-export const MILD_BAD_GAME_SCORE = 35;
+export const MILD_BAD_GAME_SCORE = 30;
 /** 多项数据严重不达标，算“巨坑” */
 export const SEVERE_BAD_GAME_SCORE = 20;
 /** 极端局评分封顶 */

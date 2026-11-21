@@ -324,7 +324,7 @@ export interface RecentSummary {
   afkGames: number;
   /** 疑似挂机比例 0-1 */
   afkRate: number;
-  /** 近 N 场中被判为小坑/很坑/巨坑的场次（单场评分 < 35） */
+  /** 近 N 场中被判为小坑/很坑/巨坑的场次（单场评分 < 30） */
   pitGames: number;
   avgKda: number;
   avgScore: number;

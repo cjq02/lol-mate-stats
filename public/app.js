@@ -361,17 +361,18 @@ function isInactiveKda(stats) {
 }
 
 const RATING_TONES = [
-  { min: 75, className: 'score-75', color: '#3ddc97' },
-  { min: 65, className: 'score-65', color: '#5eead4' },
-  { min: 55, className: 'score-55', color: '#f5c76a' },
-  { min: 45, className: 'score-45', color: '#ffab5e' },
-  { min: 35, className: 'score-35', color: '#ff9b9b' },
+  { min: 80, className: 'score-80', color: '#a78bfa' },
+  { min: 70, className: 'score-70', color: '#3ddc97' },
+  { min: 60, className: 'score-60', color: '#5eead4' },
+  { min: 50, className: 'score-50', color: '#f5c76a' },
+  { min: 40, className: 'score-40', color: '#ffab5e' },
+  { min: 30, className: 'score-30', color: '#ff9b9b' },
   { min: -Infinity, className: 'score-low', color: '#ff4d6d' },
 ];
 
 /**
  * 战绩列表上方的评分分段：直接复用 RATING_TONES 的边界和颜色，
- * 保证同一个分数在列表里和分段条里颜色一致（75+ / 65–74 / 55–64 / 45–54 / 35–44 / < 35）。
+ * 保证同一个分数在列表里和分段条里颜色一致（80+ / 70–79 / 60–69 / 50–59 / 40–49 / 30–39 / < 30）。
  */
 const MATCH_SCORE_BANDS = RATING_TONES.map((tone, index) => {
   const upper = index === 0 ? null : RATING_TONES[index - 1].min - 1;
@@ -1397,7 +1398,7 @@ function buildCard(player, isLocal, options = {}) {
   const pitMetric = recent
     ? `<div class="metric bad-metric${
         pitGames / Math.max(1, recent.games) >= 0.5 ? ' is-high' : ''
-      }" title="近 ${recent.games} 场中 ${pitGames} 场单场评分 < 35，包含小坑 / 很坑 / 巨坑"><span>坑场次</span><b>${pitGames} / ${recent.games}</b></div>`
+      }" title="近 ${recent.games} 场中 ${pitGames} 场单场评分 < 30，包含小坑 / 很坑 / 巨坑"><span>坑场次</span><b>${pitGames} / ${recent.games}</b></div>`
     : '';
   const metricCells = recent
     ? [
