@@ -838,6 +838,86 @@ test('人头/死亡加减分按位置区分', () => {
     '含刺客标签的输出位 15 杀就按刺客标准加分',
   );
 
+  const assassin20 = killDeathAdjustments({
+    ...base,
+    role: 'carry',
+    kills: 20,
+    teamKills: 63,
+    deaths: 8,
+    teamDeaths: 43,
+    classes: ['assassin'],
+  });
+  assert.deepEqual(
+    assassin20.map((item) => [item.key, item.value]),
+    [['kill', 2.5]],
+    '刺客 20 杀且参团 60% 升到 2.5',
+  );
+
+  const assassin20LowKp = killDeathAdjustments({
+    ...base,
+    role: 'carry',
+    kills: 20,
+    killParticipation: 0.54,
+    teamKills: 63,
+    deaths: 8,
+    teamDeaths: 43,
+    classes: ['assassin'],
+  });
+  assert.deepEqual(
+    assassin20LowKp.map((item) => [item.key, item.value]),
+    [['kill', 1.5]],
+    '刺客 20 杀但参团不到 55% 只拿基础 1.5',
+  );
+
+  const assassin25 = killDeathAdjustments({
+    ...base,
+    role: 'carry',
+    kills: 25,
+    teamKills: 63,
+    deaths: 8,
+    teamDeaths: 43,
+    classes: ['assassin'],
+  });
+  assert.deepEqual(
+    assassin25.map((item) => [item.key, item.value]),
+    [['kill', 3.5]],
+    '刺客 25 杀且参团 60% 升到 3.5',
+  );
+
+  const assassin25LowKp = killDeathAdjustments({
+    ...base,
+    role: 'carry',
+    kills: 25,
+    killParticipation: 0.59,
+    teamKills: 63,
+    deaths: 8,
+    teamDeaths: 43,
+    classes: ['assassin'],
+  });
+  assert.deepEqual(
+    assassin25LowKp.map((item) => [item.key, item.value]),
+    [['kill', 2.5]],
+    '刺客 25 杀但参团不到 60% 仍按 20 杀档 2.5',
+  );
+
+  const assassinHighDeath = killDeathAdjustments({
+    ...base,
+    role: 'carry',
+    kills: 25,
+    teamKills: 63,
+    deaths: 15,
+    teamDeaths: 43,
+    classes: ['assassin'],
+  });
+  assert.deepEqual(
+    assassinHighDeath.map((item) => [item.key, item.value]),
+    [
+      ['kill', 3.5],
+      ['death', -1.5],
+    ],
+    '刺客击杀分不按死亡数打折，死亡扣分仍按输出位规则单独计算',
+  );
+
   const assassinFighter = killDeathAdjustments({
     ...base,
     role: 'fighter',

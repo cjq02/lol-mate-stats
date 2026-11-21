@@ -77,9 +77,26 @@ const KILL_DEATH_RULES: Record<ChampionRole, KillDeathRule> = {
 /**
  * 含刺客标签的英雄按刺客标准算击杀：
  * 刺客本来就以收人头为职责，15 杀就视为完成收割，不再等输出位的 18 杀。
+ * 20 / 25 杀再根据参团率加码，只奖励真正参与击杀的刺客，避免收残局和抢人头被高估；
+ * 大乱斗死亡天然偏高，所以不按死亡数打折。
  * 例如劫 / 阿卡丽 这类纯刺客，以及刀妹 / 剑圣这种战士 + 刺客。
  */
-const ASSASSIN_KILL_RULE = { minKills: 15, value: 1.5 };
+const ASSASSIN_KILL_TIERS = [
+  { minKills: 25, minKillParticipation: 0.6, value: 3.5 },
+  { minKills: 20, minKillParticipation: 0.55, value: 2.5 },
+  { minKills: 15, minKillParticipation: 0, value: 1.5 },
+];
+
+/** 刺客击杀分：没有命中分档时返回 null，回落到主定位规则 */
+function assassinKillValue(input: MatchPercentileInput): number | null {
+  if (!input.classes?.includes('assassin')) return null;
+  const kills = Number(input.kills) || 0;
+  const killParticipation = Number(input.killParticipation) || 0;
+  const tier = ASSASSIN_KILL_TIERS.find(
+    (item) => kills >= item.minKills && killParticipation >= item.minKillParticipation,
+  );
+  return tier ? tier.value : null;
+}
 
 /** 人头/死亡加减分：击杀看绝对值，死亡看占比，避免不同位置互相误伤 */
 export function killDeathAdjustments(
@@ -92,10 +109,12 @@ export function killDeathAdjustments(
   const deaths = Number(input.deaths) || 0;
   const teamDeaths = Number(input.teamDeaths) || 0;
   const deathShare = teamDeaths > 0 ? deaths / teamDeaths : 0;
-  const killRule = input.classes?.includes('assassin') ? ASSASSIN_KILL_RULE : rule.kill;
+  const assassinValue = assassinKillValue(input);
 
-  if (killRule && kills >= killRule.minKills) {
-    adjustments.push({ key: 'kill', label: '击杀核心', value: killRule.value });
+  if (assassinValue !== null) {
+    adjustments.push({ key: 'kill', label: '击杀核心', value: assassinValue });
+  } else if (rule.kill && kills >= rule.kill.minKills) {
+    adjustments.push({ key: 'kill', label: '击杀核心', value: rule.kill.value });
   }
   if (rule.death && deathShare >= rule.death.minShare && deaths >= rule.death.minDeaths) {
     adjustments.push({ key: 'death', label: '死亡过多', value: rule.death.value });
