@@ -729,6 +729,49 @@ export function isAfkLikeRelative(
   return lowDamage && lowParticipation && (lowGold || lowTaken);
 }
 
+/** 平均排名至少需要这么多场同样人数、且有评分的对局，避免 1 场第 2 名被显示成“平均 #2” */
+export const MIN_AVERAGE_RANK_GAMES = 3;
+
+export interface RankedGameLike {
+  rank?: number;
+  rankTotal?: number;
+  tags?: string[];
+}
+
+/**
+ * 近期平均排名：只统计有排名的正常对局，并排除人数不一致的场次
+ *（例如某些旧存档只有 7 人有评分，第 2/7 不能和第 2/10 放在一起平均）。
+ * 有效样本不足时返回空对象，由调用方隐藏平均排名。
+ */
+export function averageGameRank(games: RankedGameLike[]): {
+  avgRank?: number;
+  avgRankGames?: number;
+} {
+  const played = games.filter((game) => !game.tags?.includes('重开'));
+  const totals = played
+    .map((game) => Number(game.rankTotal))
+    .filter((total) => Number.isFinite(total) && total > 0);
+  const expectedTotal = totals.length ? Math.max(...totals) : 0;
+  const ranks = played
+    .filter((game) => {
+      const rank = Number(game.rank);
+      if (!Number.isFinite(rank) || rank <= 0) return false;
+      const total = Number(game.rankTotal);
+      return !(
+        expectedTotal > 0 &&
+        Number.isFinite(total) &&
+        total > 0 &&
+        total !== expectedTotal
+      );
+    })
+    .map((game) => Number(game.rank));
+  if (ranks.length < MIN_AVERAGE_RANK_GAMES) return {};
+  return {
+    avgRank: round(ranks.reduce((sum, rank) => sum + rank, 0) / ranks.length, 1),
+    avgRankGames: ranks.length,
+  };
+}
+
 export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): RecentSummary {
   // 重开不是一场正常对局：不计胜负/胜率，也不参与评分、英雄池等近期统计
   const played = games.filter((game) => !game.tags?.includes('重开'));
@@ -766,12 +809,7 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
   const avgAssists = average(sorted.map((game) => game.assists));
   const avgTankShare = average(sorted.map((game) => game.tankShare));
   const avgScore = average(sorted.map((game) => game.score));
-  const rankGames = sorted.filter(
-    (game) => Number.isFinite(Number(game.rank)) && Number(game.rank) > 0,
-  );
-  const avgRank = rankGames.length
-    ? average(rankGames.map((game) => Number(game.rank)))
-    : undefined;
+  const { avgRank, avgRankGames } = averageGameRank(sorted);
   const uniqueChampions = new Set(sorted.map((game) => game.championId)).size;
   const topChampions = buildTopChampions(sorted);
   const winRate = sorted.length ? wins / sorted.length : 0;
@@ -858,8 +896,8 @@ export function summarize(games: AnalyzedGame[], signals: AccountSignals = {}): 
     pitGames,
     avgKda: round(avgKda, 2),
     avgScore: round(avgScore, 1),
-    avgRank: avgRank === undefined ? undefined : round(avgRank, 1),
-    avgRankGames: rankGames.length || undefined,
+    avgRank,
+    avgRankGames,
     avgDamage: Math.round(avgDamage),
     avgDamagePerMin: Math.round(avgDamagePerMin),
     avgDamageShare,

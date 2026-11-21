@@ -375,6 +375,9 @@ const RATING_TONES = [
  * 战绩列表上方的评分分段：直接复用 RATING_TONES 的边界和颜色，
  * 保证同一个分数在列表里和分段条里颜色一致（80+ / 70–79 / 60–69 / 50–59 / 40–49 / 30–39 / < 30）。
  */
+/** 平均排名至少需要 3 场同样人数、有评分的对局，避免 1 场第 2 名被显示成“平均 #2” */
+const MIN_AVG_RANK_GAMES = 3;
+
 const MATCH_SCORE_BANDS = RATING_TONES.map((tone, index) => {
   const upper = index === 0 ? null : RATING_TONES[index - 1].min - 1;
   const label =
@@ -1236,15 +1239,19 @@ function buildCard(player, isLocal, options = {}) {
       : '';
   // 近期平均排名：只在展示近期综合数据的卡片上出现，对局详情的本局卡片用评分环上的单场名次
   const avgRankValue = !thisGame ? Number(player.recent?.avgRank) : Number.NaN;
-  const avgRank =
-    Number.isFinite(avgRankValue) && avgRankValue > 0 ? avgRankValue : null;
   const avgRankGames = Number(player.recent?.avgRankGames) || 0;
+  const avgRank =
+    Number.isFinite(avgRankValue) &&
+    avgRankValue > 0 &&
+    avgRankGames >= MIN_AVG_RANK_GAMES
+      ? avgRankValue
+      : null;
   const avgRankTone = avgRank !== null ? rankClass(Math.round(avgRank)) : null;
   const avgRankLine =
     avgRank !== null
       ? `<div class="avg-rank-line ${avgRankTone}" title="最近 ${avgRankGames || '若干'} 场平均评分排名第 ${avgRank.toFixed(
           1,
-        )} 名（双方 10 人）">
+        )} 名（同局有评分玩家）">
           <span class="avg-rank-label">平均排名</span>
           <b class="avg-rank-value">#${avgRank.toFixed(1)}</b>
           <span class="avg-rank-sample">近 ${avgRankGames || '若干'} 场</span>
@@ -3400,6 +3407,11 @@ function matchListSummary(games) {
   let bad = 0;
   let afk = 0;
   const scoreBands = MATCH_SCORE_BANDS.map(() => 0);
+  // 只把人数一致的场次放在一起平均，避免第 2/7 和第 2/10 混算
+  const rankTotals = played
+    .map((game) => Number(game.rankTotal))
+    .filter((total) => Number.isFinite(total) && total > 0);
+  const expectedRankTotal = rankTotals.length ? Math.max(...rankTotals) : 0;
 
   for (const game of played) {
     const rawScore = game.score;
@@ -3413,7 +3425,13 @@ function matchListSummary(games) {
     }
 
     const rank = Number(game.rank);
-    if (Number.isFinite(rank) && rank > 0) {
+    const rankTotal = Number(game.rankTotal);
+    const rankMatchesSample =
+      !(expectedRankTotal > 0) ||
+      !Number.isFinite(rankTotal) ||
+      rankTotal <= 0 ||
+      rankTotal === expectedRankTotal;
+    if (Number.isFinite(rank) && rank > 0 && rankMatchesSample) {
       rankSum += rank;
       rankCount += 1;
       if (bestRank === null || rank < bestRank) bestRank = rank;
@@ -3432,7 +3450,8 @@ function matchListSummary(games) {
     avgScore: scoreCount ? scoreSum / scoreCount : null,
     best,
     worst,
-    avgRank: rankCount ? rankSum / rankCount : null,
+    avgRank: rankCount >= MIN_AVG_RANK_GAMES ? rankSum / rankCount : null,
+    rankCount,
     bestRank,
     mvp,
     svp,
@@ -3500,7 +3519,11 @@ function renderMatchesSummary(games) {
       ? '暂无评分'
       : `最高 ${summaryScore(summary.best)} · 最低 ${summaryScore(summary.worst)}`;
   const rankSub =
-    summary.bestRank === null ? '暂无排名' : `最好 #${summary.bestRank}`;
+    summary.rankCount === 0
+      ? '暂无排名'
+      : summary.avgRank === null
+        ? `样本不足（${summary.rankCount} 场）`
+        : `最好 #${summary.bestRank} · ${summary.rankCount} 场`;
   const cells = [
     `<div class="summary-cell">
       <span class="summary-label">场次</span>
@@ -5311,8 +5334,10 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
             <small>平均分</small>
           </span>
           <span class="champion-rank-stat">
-            <b class="champion-rank-avg" title="该英雄所有场次中，平均每局在双方有评分玩家中的排名">${
-              Number(item.avgRank) > 0 ? num(item.avgRank, 1) : '-'
+            <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${
+              Number(item.games) >= MIN_AVG_RANK_GAMES && Number(item.avgRank) > 0
+                ? num(item.avgRank, 1)
+                : '-'
             }</b>
             <small>平均排名</small>
           </span>

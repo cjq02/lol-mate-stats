@@ -64,6 +64,7 @@ import {
   AFK_IDLE_VETO_SECONDS,
   AFK_STATIONARY_SECONDS,
   CATASTROPHIC_SCORE_CAP,
+  averageGameRank,
   capAfkScores,
   gradeOf,
   roleProfileWeights,
@@ -508,14 +509,10 @@ export class LiveSource implements DataSource {
           }
         }
       }
-      const ranked = games
-        .filter((game) => !game.tags?.includes('重开') && Number(game.rank) > 0)
-        .map((game) => Number(game.rank));
-      if (!ranked.length || !player.recent) return;
-      const avgRank =
-        Math.round((ranked.reduce((sum, rank) => sum + rank, 0) / ranked.length) * 10) / 10;
-      if (player.recent.avgRank !== avgRank || player.recent.avgRankGames !== ranked.length) {
-        player.recent = { ...player.recent, avgRank, avgRankGames: ranked.length };
+      if (!player.recent) return;
+      const { avgRank, avgRankGames } = averageGameRank(games);
+      if (player.recent.avgRank !== avgRank || player.recent.avgRankGames !== avgRankGames) {
+        player.recent = { ...player.recent, avgRank, avgRankGames };
         changed = true;
       }
     });

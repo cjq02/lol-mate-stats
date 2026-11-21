@@ -2748,7 +2748,7 @@ test('近期摘要给出主玩位置与占比', () => {
   assert.equal(summary.mainPositionShare, 0.8);
 });
 
-test('近期摘要计算平均评分排名', () => {
+test('近期摘要计算平均评分排名，至少 3 场同人数样本', () => {
   const games = [1, 3, 5].map((rank, index) => ({
     ...makeGame(index, 'MID'),
     rank,
@@ -2758,17 +2758,26 @@ test('近期摘要计算平均评分排名', () => {
   assert.equal(summary.avgRank, 3);
   assert.equal(summary.avgRankGames, 3);
 
+  const onlyTwo = summarize([
+    { ...makeGame(1, 'MID'), rank: 1, rankTotal: 10 },
+    { ...makeGame(2, 'MID'), rank: 3, rankTotal: 10 },
+  ]);
+  assert.equal(onlyTwo.avgRank, undefined, '不足 3 场时不显示平均排名');
+  assert.equal(onlyTwo.avgRankGames, undefined);
+
   const noRank = summarize([makeGame(9, 'MID')]);
   assert.equal(noRank.avgRank, undefined);
   assert.equal(noRank.avgRankGames, undefined);
 
-  const mixed = summarize([
-    { ...makeGame(10, 'MID'), rank: 2, rankTotal: 10 },
-    makeGame(11, 'MID'),
-    { ...makeGame(12, 'MID'), rank: 4, rankTotal: 10 },
+  const mixedTotals = summarize([
+    { ...makeGame(10, 'MID'), rank: 1, rankTotal: 10 },
+    { ...makeGame(11, 'MID'), rank: 3, rankTotal: 10 },
+    { ...makeGame(12, 'MID'), rank: 5, rankTotal: 10 },
+    // 旧存档只有 7 人有评分：第 2/7 不能和第 2/10 一起平均
+    { ...makeGame(13, 'MID'), rank: 2, rankTotal: 7 },
   ]);
-  assert.equal(mixed.avgRank, 3, '只统计有名次的场次');
-  assert.equal(mixed.avgRankGames, 2);
+  assert.equal(mixedTotals.avgRank, 3);
+  assert.equal(mixedTotals.avgRankGames, 3);
 });
 
 console.log('timeline');

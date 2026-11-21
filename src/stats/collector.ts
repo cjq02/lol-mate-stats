@@ -29,7 +29,7 @@ import {
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName } from './constants.js';
 import { gameFlagTags, gameFlags, isRemakeGame } from './flags.js';
 import { premadeSizesFromGames } from './premade.js';
-import { compareBaseline, summarize } from './rating.js';
+import { averageGameRank, compareBaseline, summarize } from './rating.js';
 import { getDb, withTransaction } from './store.js';
 
 export interface CollectorOptions {
@@ -1156,6 +1156,9 @@ export class ReportCollector {
     });
 
     for (const report of targets) {
+      // 旧报告缓存可能只有 1 场排名；统一按当前规则重算/清理，避免继续显示“平均 #2”
+      const enriched = withRecentAvgRank(report);
+      if (enriched !== report) report.recent = enriched.recent;
       if (report.recent) {
         report.baseline = compareBaseline(
           report.recent.avgScore,
@@ -1817,15 +1820,11 @@ function withRecentAvgRank(report: PlayerReport): PlayerReport {
   const recent = report.recent;
   const games = report.games ?? [];
   if (!recent || !games.length) return report;
-  const ranks = games
-    .filter((game) => !game.tags?.includes('重开'))
-    .map((game) => Number(game.rank))
-    .filter((rank) => Number.isFinite(rank) && rank > 0);
-  if (!ranks.length) return report;
-  const avgRank = round(ranks.reduce((sum, rank) => sum + rank, 0) / ranks.length, 1);
+  const { avgRank, avgRankGames } = averageGameRank(games);
+  if (recent.avgRank === avgRank && recent.avgRankGames === avgRankGames) return report;
   return {
     ...report,
-    recent: { ...recent, avgRank, avgRankGames: ranks.length },
+    recent: { ...recent, avgRank, avgRankGames },
   };
 }
 
