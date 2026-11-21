@@ -3693,45 +3693,36 @@ body::before {
   text-overflow: ellipsis;
 }
 
-.picked.champ-link {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  appearance: none;
-  border-radius: 12px;
-}
-
-.picked.champ-link .icon.champ {
+.picked .icon.champ {
   transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-.picked.champ-link:hover .icon.champ {
+.picked .icon.champ:hover {
   box-shadow: 0 0 0 2px rgba(110, 180, 255, 0.45), 0 0 16px rgba(110, 180, 255, 0.25);
   transform: translateY(-1px);
 }
 
-.picked.champ-link:hover .champ-name {
-  color: #dbe6ff;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+/* 「战绩」入口：头像只弹英雄说明，点这行文字才打开英雄胜率列表 */
+.champ-link-hint {
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--muted-2);
+  cursor: pointer;
 }
 
-.picked.champ-link:focus-visible {
+.champ-link-hint:hover {
+  color: #8bb8ff;
+  background: rgba(110, 180, 255, 0.12);
+}
+
+.champ-link-hint:focus-visible {
   outline: 2px solid rgba(110, 180, 255, 0.6);
   outline-offset: 2px;
-}
-
-.champ-link-hint {
-  font-size: 9px;
-  color: var(--muted-2);
-  letter-spacing: 0.06em;
-}
-
-.picked.champ-link:hover .champ-link-hint {
-  color: #8bb8ff;
 }
 
 /* 图标 */
