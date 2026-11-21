@@ -360,14 +360,15 @@ function isInactiveKda(stats) {
   return kills === 0 && assists === 0 && deaths <= 1;
 }
 
+/** 评分色阶唯一来源：具体色值写在 style.css 的 --score-* 变量里 */
 const RATING_TONES = [
-  { min: 80, className: 'score-80', color: '#34d399' },
-  { min: 70, className: 'score-70', color: '#22d3ee' },
-  { min: 60, className: 'score-60', color: '#60a5fa' },
-  { min: 50, className: 'score-50', color: '#f5c76a' },
-  { min: 40, className: 'score-40', color: '#ffab5e' },
-  { min: 30, className: 'score-30', color: '#ff9b9b' },
-  { min: -Infinity, className: 'score-low', color: '#ff4d6d' },
+  { min: 80, className: 'score-80', color: 'var(--score-80)' },
+  { min: 70, className: 'score-70', color: 'var(--score-70)' },
+  { min: 60, className: 'score-60', color: 'var(--score-60)' },
+  { min: 50, className: 'score-50', color: 'var(--score-50)' },
+  { min: 40, className: 'score-40', color: 'var(--score-40)' },
+  { min: 30, className: 'score-30', color: 'var(--score-30)' },
+  { min: -Infinity, className: 'score-low', color: 'var(--score-low)' },
 ];
 
 /**
@@ -676,16 +677,10 @@ async function showInfoTip(anchor) {
   placeTip(els.infoTip, anchor);
 }
 
-/** 时段统计看的是平均分，实际集中在 50-75，单独用更细的分段颜色 */
-const TIME_STATS_SCORE_TONES = [
-  { min: 75, className: 'avg-75', color: '#3ddc97' },
-  { min: 70, className: 'avg-70', color: '#38bdf8' },
-  { min: 65, className: 'avg-65', color: '#a3e635' },
-  { min: 60, className: 'avg-60', color: '#ffe14d' },
-  { min: 55, className: 'avg-55', color: '#ffb020' },
-  { min: 50, className: 'avg-50', color: '#ff7a45' },
-  { min: -Infinity, className: 'avg-low', color: '#ff4d6d' },
-];
+/** 任意分数命中的评分色阶；时段统计的平均分也复用这一套 */
+function ratingTone(rating) {
+  return RATING_TONES.find((tone) => Number(rating) >= tone.min) ?? RATING_TONES[RATING_TONES.length - 1];
+}
 
 /** 评分排名徽标按名次取色：1–10 名从金到石板灰，颜色和字重逐级变淡变细 */
 const RANK_TIERS = [
@@ -709,11 +704,25 @@ function rankClass(rank) {
 function ratingColor(rating, stats) {
   if (rating === null || rating === undefined) return '#5b6b8c';
   if (isInactiveKda(stats)) return '#7c8aa5';
-  return RATING_TONES.find((tone) => rating >= tone.min)?.color ?? '#ff4d6d';
+  return ratingTone(rating).color;
+}
+
+/** 把 var(--score-*) 解析成实际色值，供需要 rgba 的地方使用 */
+const resolvedCssColors = new Map();
+
+function resolveCssColor(value) {
+  const match = /^var\((--[\w-]+)\)$/.exec(String(value ?? '').trim());
+  if (!match) return value;
+  const name = match[1];
+  const cached = resolvedCssColors.get(name);
+  if (cached) return cached;
+  const resolved = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  if (resolved) resolvedCssColors.set(name, resolved);
+  return resolved || value;
 }
 
 function hexToRgba(hex, alpha) {
-  const normalized = hex.replace('#', '');
+  const normalized = resolveCssColor(hex).replace('#', '');
   const value = Number.parseInt(normalized, 16);
   const r = (value >> 16) & 255;
   const g = (value >> 8) & 255;
@@ -5391,10 +5400,7 @@ function timeStatsTone(period) {
 
 function timeStatsScoreTone(period) {
   if (!period?.scoreGames) return 'empty';
-  const avgScore = Number(period.avgScore) || 0;
-  return (
-    TIME_STATS_SCORE_TONES.find((tone) => avgScore >= tone.min)?.className ?? 'avg-low'
-  );
+  return ratingTone(Number(period.avgScore) || 0).className;
 }
 
 function updateTimeStatsTabs() {

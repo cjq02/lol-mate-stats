@@ -12,6 +12,13 @@
   --gold: #f5c76a;
   --win: #3ddc97;
   --loss: #ff6b81;
+  --score-80: #34d399;
+  --score-70: #22d3ee;
+  --score-60: #60a5fa;
+  --score-50: #f5c76a;
+  --score-40: #ffab5e;
+  --score-30: #ff9b9b;
+  --score-low: #ff4d6d;
   --radius: 18px;
   --shadow: 0 22px 48px -28px rgba(0, 0, 0, 0.95);
 }
@@ -665,61 +672,61 @@ body::before {
   background: #ff6b81;
 }
 
-/* 评分口径看的是平均分，实际集中在 50-75，按 5 分一段区分颜色 */
-.time-stat-row.avg-75 .time-stat-rate {
-  color: #3ddc97;
+/* 时段统计的平均分复用同一套评分色阶（score-80 / score-70 / … / score-low） */
+.time-stat-row.score-80 .time-stat-rate {
+  color: var(--score-80);
 }
 
-.time-stat-row.avg-75 .time-stat-bar > span {
-  background: #3ddc97;
+.time-stat-row.score-80 .time-stat-bar > span {
+  background: var(--score-80);
 }
 
-.time-stat-row.avg-70 .time-stat-rate {
-  color: #38bdf8;
+.time-stat-row.score-70 .time-stat-rate {
+  color: var(--score-70);
 }
 
-.time-stat-row.avg-70 .time-stat-bar > span {
-  background: #38bdf8;
+.time-stat-row.score-70 .time-stat-bar > span {
+  background: var(--score-70);
 }
 
-.time-stat-row.avg-65 .time-stat-rate {
-  color: #a3e635;
+.time-stat-row.score-60 .time-stat-rate {
+  color: var(--score-60);
 }
 
-.time-stat-row.avg-65 .time-stat-bar > span {
-  background: #a3e635;
+.time-stat-row.score-60 .time-stat-bar > span {
+  background: var(--score-60);
 }
 
-.time-stat-row.avg-60 .time-stat-rate {
-  color: #ffe14d;
+.time-stat-row.score-50 .time-stat-rate {
+  color: var(--score-50);
 }
 
-.time-stat-row.avg-60 .time-stat-bar > span {
-  background: #ffe14d;
+.time-stat-row.score-50 .time-stat-bar > span {
+  background: var(--score-50);
 }
 
-.time-stat-row.avg-55 .time-stat-rate {
-  color: #ffb020;
+.time-stat-row.score-40 .time-stat-rate {
+  color: var(--score-40);
 }
 
-.time-stat-row.avg-55 .time-stat-bar > span {
-  background: #ffb020;
+.time-stat-row.score-40 .time-stat-bar > span {
+  background: var(--score-40);
 }
 
-.time-stat-row.avg-50 .time-stat-rate {
-  color: #ff7a45;
+.time-stat-row.score-30 .time-stat-rate {
+  color: var(--score-30);
 }
 
-.time-stat-row.avg-50 .time-stat-bar > span {
-  background: #ff7a45;
+.time-stat-row.score-30 .time-stat-bar > span {
+  background: var(--score-30);
 }
 
-.time-stat-row.avg-low .time-stat-rate {
-  color: #ff4d6d;
+.time-stat-row.score-low .time-stat-rate {
+  color: var(--score-low);
 }
 
-.time-stat-row.avg-low .time-stat-bar > span {
-  background: #ff4d6d;
+.time-stat-row.score-low .time-stat-bar > span {
+  background: var(--score-low);
 }
 
 .time-stat-row.noisy {
@@ -1873,31 +1880,31 @@ body::before {
 }
 
 .score-band-80 {
-  background: #34d399;
+  background: var(--score-80);
 }
 
 .score-band-70 {
-  background: #22d3ee;
+  background: var(--score-70);
 }
 
 .score-band-60 {
-  background: #60a5fa;
+  background: var(--score-60);
 }
 
 .score-band-50 {
-  background: #f5c76a;
+  background: var(--score-50);
 }
 
 .score-band-40 {
-  background: #ffab5e;
+  background: var(--score-40);
 }
 
 .score-band-30 {
-  background: #ff9b9b;
+  background: var(--score-30);
 }
 
 .score-band-low {
-  background: #ff4d6d;
+  background: var(--score-low);
 }
 
 /* 可点击弹出说明的英雄头像、装备图标和评分环 */
