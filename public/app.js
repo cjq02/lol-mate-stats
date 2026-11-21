@@ -1468,20 +1468,21 @@ function buildCard(player, isLocal, options = {}) {
   const championId = thisGame?.championId ?? player.championId;
   const championName = thisGame?.championName ?? player.championName;
   const showChampionMatches = Boolean(isLocal && championId && !player.isBot);
+  // 头像负责弹出英雄说明，「战绩」单独作为查看英雄胜率的入口
   const pickedContent = `${champIconHtml(
     championId,
     championName ?? '?',
     'champ',
-  )}<span class="champ-name">${escapeHtml(championName ?? '未选英雄')}</span>${
-    showChampionMatches ? '<span class="champ-link-hint">战绩</span>' : ''
-  }`;
-  const picked = showChampionMatches
-    ? `<button class="picked champ-link" type="button" data-action="champion-matches" title="查看 ${escapeHtml(
-        championName ?? '该英雄',
-      )} 的战绩" aria-label="查看 ${escapeHtml(
-        championName ?? '该英雄',
-      )} 的战绩">${pickedContent}</button>`
-    : `<div class="picked">${pickedContent}</div>`;
+  )}<span class="champ-name">${escapeHtml(championName ?? '未选英雄')}</span>`;
+  const picked = `<div class="picked">${pickedContent}${
+    showChampionMatches
+      ? `<button class="champ-link-hint" type="button" data-action="champion-matches" title="查看 ${escapeHtml(
+          championName ?? '该英雄',
+        )} 的战绩" aria-label="查看 ${escapeHtml(
+          championName ?? '该英雄',
+        )} 的战绩">战绩</button>`
+      : ''
+  }</div>`;
 
   const error = player.error
     ? `<div class="card-error">${escapeHtml(player.error)}</div>`
