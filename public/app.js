@@ -361,9 +361,9 @@ function isInactiveKda(stats) {
 }
 
 const RATING_TONES = [
-  { min: 80, className: 'score-80', color: '#a78bfa' },
-  { min: 70, className: 'score-70', color: '#3ddc97' },
-  { min: 60, className: 'score-60', color: '#5eead4' },
+  { min: 80, className: 'score-80', color: '#34d399' },
+  { min: 70, className: 'score-70', color: '#22d3ee' },
+  { min: 60, className: 'score-60', color: '#60a5fa' },
   { min: 50, className: 'score-50', color: '#f5c76a' },
   { min: 40, className: 'score-40', color: '#ffab5e' },
   { min: 30, className: 'score-30', color: '#ff9b9b' },
