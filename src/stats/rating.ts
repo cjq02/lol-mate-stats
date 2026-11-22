@@ -667,15 +667,18 @@ export function isAfkLikeRelative(
   player: AfkRelativeStats,
   team: AfkRelativeStats[],
 ): boolean {
-  if (player.durationMin < 8) return false;
   // 时间线显示连续原地不动超过 3 分钟：典型基地挂机或掉线，
   // 即使前期拿过击杀/助攻，也判逃跑。
+  // 这是与时长无关的直接证据，7 分钟速推局里照样成立。
   if (
     player.stationaryStreakSeconds !== undefined &&
     player.stationaryStreakSeconds >= AFK_STATIONARY_SECONDS
   ) {
     return true;
   }
+  // 短局的伤害、经济、补刀天然偏低，不再按总量和队内相对值判断，
+  // 避免把速推局里正常参战的玩家误标成逃跑。
+  if (player.durationMin < 8) return false;
   // 时间线能证明每隔几分钟就有补刀或战斗参与时，说明玩家一直在打，
   // 即使整局数据被阵亡或位置拖累，也只判坑、不判逃跑。
   if (

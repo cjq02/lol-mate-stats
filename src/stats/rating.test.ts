@@ -11,7 +11,7 @@ import type {
 import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './analyze.js';
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages, buildLiveFollowUpMessages } from '../ai.js';
-import { afkParticipantIds, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
+import { afkParticipantIds, afkScoreboardIndexes, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
 import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, PROFILES, capAfkScores, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, killDeathAdjustments, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, scoreAdjustments, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
@@ -1829,6 +1829,155 @@ test('时间线显示长时间原地不动时判逃跑', () => {
     ),
     true,
     '原地不动满 3 分钟时即使前期有击杀助攻也判逃跑',
+  );
+});
+
+test('短局里时间线证明长时间原地不动也判逃跑', () => {
+  // 7 分钟大乱斗：0/2/1、2 补刀，最后一条命从 1:51 起一直站在基地
+  const afk = {
+    durationMin: 7,
+    gold: 3676,
+    damage: 1262,
+    cs: 2,
+    kills: 0,
+    deaths: 2,
+    assists: 1,
+    visionScore: 0,
+    position: 'ARAM' as Lane,
+    killParticipation: 0.08,
+    damageTaken: 1735,
+    heal: 0,
+    idleStreakSeconds: 306,
+    stationaryStreakSeconds: 306,
+  };
+  const teammate = {
+    durationMin: 7,
+    gold: 5855,
+    damage: 6435,
+    cs: 12,
+    kills: 5,
+    deaths: 4,
+    assists: 4,
+    visionScore: 0,
+    position: 'ARAM' as Lane,
+    killParticipation: 0.75,
+    damageTaken: 5675,
+    heal: 140,
+  };
+  assert.equal(
+    isAfkLikeRelative(afk, [afk, teammate]),
+    true,
+    '不到 8 分钟的短局也应该按时间线的原地不动证据判逃跑',
+  );
+  assert.equal(
+    isAfkLikeRelative(
+      { ...afk, idleStreakSeconds: undefined, stationaryStreakSeconds: undefined },
+      [afk, teammate],
+    ),
+    false,
+    '没有时间线时，短局不按总伤害和经济强行判逃跑',
+  );
+  assert.equal(
+    isAfkLikeRelative(
+      {
+        ...afk,
+        damage: 4011,
+        gold: 5431,
+        cs: 13,
+        kills: 2,
+        assists: 5,
+        idleStreakSeconds: 60,
+        stationaryStreakSeconds: 60,
+      },
+      [afk, teammate],
+    ),
+    false,
+    '短局里正常参战、只短暂停留的玩家不判逃跑',
+  );
+});
+
+test('详情缓存按时间线复核出短局逃跑玩家', () => {
+  const scoreboard = [
+    {
+      puuid: 'teammate',
+      name: '队友',
+      championId: 105,
+      teamId: 100,
+      kills: 5,
+      deaths: 4,
+      assists: 4,
+      cs: 12,
+      gold: 5855,
+      damage: 6435,
+      damageTaken: 5675,
+      heal: 140,
+      vision: 0,
+      position: 'ARAM',
+      killParticipation: 0.75,
+    },
+    {
+      puuid: 'afk',
+      name: '挂机',
+      championId: 22,
+      teamId: 100,
+      kills: 0,
+      deaths: 2,
+      assists: 1,
+      cs: 2,
+      gold: 3676,
+      damage: 1262,
+      damageTaken: 1735,
+      heal: 0,
+      vision: 0,
+      position: 'ARAM',
+      killParticipation: 0.08,
+    },
+  ];
+  const timeline: MatchTimeline = {
+    gameId: 9094392691,
+    durationMs: 425_892,
+    players: [
+      {
+        participantId: 1,
+        puuid: 'teammate',
+        name: '队友',
+        championId: 105,
+        teamId: 100,
+        kills: 5,
+        deaths: 4,
+        assists: 4,
+        damage: 6435,
+        damageTaken: 5675,
+        maxIdleMs: 0,
+        maxStationaryMs: 0,
+        lives: [],
+      },
+      {
+        participantId: 2,
+        puuid: 'afk',
+        name: '挂机',
+        championId: 22,
+        teamId: 100,
+        kills: 0,
+        deaths: 2,
+        assists: 1,
+        damage: 1262,
+        damageTaken: 1735,
+        maxIdleMs: 305_856,
+        maxStationaryMs: 305_856,
+        lives: [],
+      },
+    ],
+  };
+  assert.deepEqual(
+    [...afkScoreboardIndexes(scoreboard, timeline, 7)],
+    [1],
+    '已有详情缓存打开时应按时间线补出 7 分钟短局的逃跑标记',
+  );
+  assert.deepEqual(
+    [...afkScoreboardIndexes(scoreboard, undefined, 7)],
+    [],
+    '没有存档时间线时保持原样，不额外补逃跑',
   );
 });
 

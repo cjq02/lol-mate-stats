@@ -1,4 +1,4 @@
-import type { BadLevel, MatchTimeline, RawGame } from '../types.js';
+import type { BadLevel, Lane, MatchTimeline, RawGame } from '../types.js';
 import type { ChampionSummary } from '../lcu/api.js';
 import { toNumber } from '../util.js';
 import { analyzeParticipant, computeMatchScores } from './analyze.js';
@@ -156,6 +156,94 @@ export function afkParticipantIds(
     }
   }
   return ids;
+}
+
+/** 对局详情缓存里计分板玩家需要的字段，用来按当前规则复核逃跑 */
+export interface ScoreboardAfkPlayer {
+  puuid?: string;
+  name: string;
+  championId: number;
+  teamId: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  cs: number;
+  gold: number;
+  damage: number;
+  damageTaken: number;
+  heal: number;
+  vision: number;
+  position?: string;
+  killParticipation?: number;
+  durationMin?: number;
+}
+
+/**
+ * 用已存档的时间线复核计分板里的逃跑判定，返回需要补“逃跑”标记的下标。
+ * 对局详情缓存里的标签是当时算的，短局以前完全不判逃跑；
+ * 打开旧对局时按当前规则补算一次，尤其是时间线证明大半局原地不动的场次。
+ */
+export function afkScoreboardIndexes(
+  scoreboard: ScoreboardAfkPlayer[],
+  timeline: MatchTimeline | undefined,
+  fallbackDurationMin: number,
+): Set<number> {
+  const indexes = new Set<number>();
+  const timelinePlayers = timeline?.players ?? [];
+  if (!scoreboard.length || !timelinePlayers.length) return indexes;
+  const byPuuid = new Map(
+    timelinePlayers
+      .filter((player) => Boolean(player.puuid))
+      .map((player) => [player.puuid as string, player] as const),
+  );
+
+  const afkStats = scoreboard.map((player) => {
+    // 结算数据和 game-timelines 的 participantId 偶尔会错位，优先按 puuid / 名字找
+    const timelinePlayer =
+      (player.puuid ? byPuuid.get(player.puuid) : undefined) ??
+      timelinePlayers.find((item) => item.name === player.name) ??
+      timelinePlayers.find(
+        (item) => Number(item.championId) === Number(player.championId),
+      );
+    return {
+      durationMin: player.durationMin ?? fallbackDurationMin,
+      gold: player.gold,
+      damage: player.damage,
+      cs: player.cs,
+      kills: player.kills,
+      deaths: player.deaths,
+      assists: player.assists,
+      visionScore: player.vision,
+      position: player.position as Lane | undefined,
+      killParticipation: player.killParticipation,
+      damageTaken: player.damageTaken,
+      heal: player.heal,
+      idleStreakSeconds:
+        timelinePlayer?.maxIdleMs === undefined
+          ? undefined
+          : Math.round(timelinePlayer.maxIdleMs / 1000),
+      stationaryStreakSeconds:
+        timelinePlayer?.maxStationaryMs === undefined
+          ? undefined
+          : Math.round(timelinePlayer.maxStationaryMs / 1000),
+    } satisfies AfkRelativeStats;
+  });
+
+  const statsByTeam = new Map<number, AfkRelativeStats[]>();
+  scoreboard.forEach((player, index) => {
+    const list = statsByTeam.get(player.teamId) ?? [];
+    list.push(afkStats[index]!);
+    statsByTeam.set(player.teamId, list);
+  });
+
+  scoreboard.forEach((player, index) => {
+    const stats = afkStats[index];
+    if (!stats) return;
+    if (isAfkLikeRelative(stats, statsByTeam.get(player.teamId) ?? [])) {
+      indexes.add(index);
+    }
+  });
+  return indexes;
 }
 
 /**

@@ -54,6 +54,7 @@ import { currentQueueGroup, modeFromQueue, queueGroupName, queueName } from './s
 import { endOfGameEntries, endOfGameToRawGame, type EndOfGameIdentity } from './stats/eog.js';
 import {
   afkParticipantIds,
+  afkScoreboardIndexes,
   badLevelLabel,
   badLevelOfScore,
   gameFlagTags,
@@ -551,35 +552,17 @@ export class LiveSource implements DataSource {
     return changed;
   }
 
-  /** 旧缓存详情没有逃跑依据，打开时按已保存时间线补算一次 */
-  private async enrichDetailAfkReasons(detail: MatchDetail): Promise<boolean> {
-    const afkPlayers = detail.afkPlayers ?? [];
-    const afkScoreboard = (detail.scoreboard ?? []).filter((player) =>
-      player.tags?.includes('逃跑'),
-    );
-    if (!afkPlayers.length && !afkScoreboard.length) return false;
-
+  /**
+   * 旧缓存详情的逃跑标记和依据都可能是旧规则算的：
+   * 以前 8 分钟以内的短局完全不判逃跑，打开时按已保存时间线补算一次。
+   */
+  private async enrichDetailAfk(detail: MatchDetail): Promise<boolean> {
     const fallback = '伤害、经济或参团明显低于队友';
     const timeline = await getSavedMatchTimeline(detail.gameId).catch(() => undefined);
-    let changed = false;
-    if (!timeline?.players?.length) {
-      for (const player of afkPlayers) {
-        if (!player.reason) {
-          player.reason = fallback;
-          changed = true;
-        }
-      }
-      for (const player of afkScoreboard) {
-        if (!player.afkReason) {
-          player.afkReason = fallback;
-          changed = true;
-        }
-      }
-      return changed;
-    }
-
+    const timelinePlayers = timeline?.players ?? [];
+    const scoreboard = detail.scoreboard ?? [];
     const byPuuid = new Map(
-      timeline.players
+      timelinePlayers
         .filter((player) => Boolean(player.puuid))
         .map((player) => [player.puuid as string, player] as const),
     );
@@ -589,10 +572,60 @@ export class LiveSource implements DataSource {
       championId?: number,
     ): MatchTimelinePlayer | undefined =>
       (puuid ? byPuuid.get(puuid) : undefined) ??
-      timeline.players.find((player) => player.name === name) ??
-      timeline.players.find(
-        (player) => Number(player.championId) === Number(championId),
+      timelinePlayers.find((player) => player.name === name) ??
+      timelinePlayers.find((player) => Number(player.championId) === Number(championId));
+    let changed = false;
+
+    // 补算漏掉的逃跑：时间线证明连续原地不动超过 3 分钟，即使短局也成立
+    if (timelinePlayers.length) {
+      const fallbackDurationMin = Math.max(
+        0,
+        Math.round((detail.gameDuration ?? 0) / 60),
       );
+      const missing = afkScoreboardIndexes(scoreboard, timeline, fallbackDurationMin);
+      const flagBar = detail.tags ?? (detail.tags = []);
+      for (const index of missing) {
+        const player = scoreboard[index];
+        if (!player || player.tags?.includes('逃跑')) continue;
+        const reason =
+          afkReasonFromTimelinePlayer(
+            findTimelinePlayer(player.puuid, player.name, player.championId),
+          ) ?? fallback;
+        player.tags = ['逃跑', ...(player.tags ?? [])];
+        player.afkReason = reason;
+        const afkPlayers = detail.afkPlayers ?? (detail.afkPlayers = []);
+        const exists = afkPlayers.some((item) =>
+          item.puuid
+            ? item.puuid === player.puuid
+            : item.name === player.name && item.championId === player.championId,
+        );
+        if (!exists) {
+          afkPlayers.push({
+            puuid: player.puuid,
+            name: player.name,
+            championId: player.championId,
+            championName: player.championName,
+            teamId: player.teamId,
+            isEnemy: player.isEnemy,
+            position: player.position,
+            reason,
+          });
+        }
+        const sideTag =
+          player.puuid && player.puuid === detail.selfPuuid
+            ? '自己逃跑'
+            : player.isEnemy
+              ? '对手逃跑'
+              : '队友逃跑';
+        if (!flagBar.includes(sideTag)) flagBar.push(sideTag);
+        changed = true;
+      }
+    }
+
+    // 给已有逃跑标记补上判定依据
+    const afkPlayers = detail.afkPlayers ?? [];
+    const afkScoreboard = scoreboard.filter((player) => player.tags?.includes('逃跑'));
+    if (!afkPlayers.length && !afkScoreboard.length) return changed;
 
     for (const player of afkPlayers) {
       if (player.reason) continue;
@@ -624,11 +657,11 @@ export class LiveSource implements DataSource {
       const cached = await getSavedMatchDetail(gameId);
       if (cached) {
         const filled = await this.enrichDetailRanks(cached);
-        const reasons = await this.enrichDetailAfkReasons(cached);
+        const reasons = await this.enrichDetailAfk(cached);
         const rules = this.enrichDetailScoreRules(cached);
         if (filled || reasons || rules) {
           await saveMatchDetail(cached);
-          logTag('match', `[${gameId}] 命中对局详情缓存，已补算近期平均排名、逃跑依据和评分定位`);
+          logTag('match', `[${gameId}] 命中对局详情缓存，已补算近期平均排名、逃跑标记和评分定位`);
         } else {
           logTag('match', `[${gameId}] 命中对局详情缓存，直接返回`);
         }
