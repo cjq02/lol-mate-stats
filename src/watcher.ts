@@ -64,6 +64,7 @@ import {
 import {
   AFK_IDLE_VETO_SECONDS,
   AFK_STATIONARY_SECONDS,
+  AFK_TOTAL_IDLE_SECONDS,
   CATASTROPHIC_SCORE_CAP,
   averageGameRank,
   capAfkScores,
@@ -155,6 +156,10 @@ function afkReasonFromTimelinePlayer(
   const idle = Math.round((player?.maxIdleMs ?? 0) / 1000);
   if (idle >= AFK_IDLE_VETO_SECONDS) {
     return `连续 ${formatAfkSeconds(idle)} 没有补刀和战斗`;
+  }
+  const idleTotal = Math.round((player?.idleAliveMs ?? 0) / 1000);
+  if (idleTotal >= AFK_TOTAL_IDLE_SECONDS) {
+    return `累计 ${formatAfkSeconds(idleTotal)} 没有补刀和战斗`;
   }
   return undefined;
 }

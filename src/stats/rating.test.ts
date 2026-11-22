@@ -12,7 +12,7 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages, buildLiveFollowUpMessages } from '../ai.js';
 import { afkParticipantIds, afkScoreboardIndexes, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, PROFILES, capAfkScores, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, killDeathAdjustments, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, scoreAdjustments, summarize } from './rating.js';
+import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, AFK_TOTAL_IDLE_SECONDS, PROFILES, capAfkScores, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, killDeathAdjustments, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, scoreAdjustments, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
@@ -1896,6 +1896,83 @@ test('短局里时间线证明长时间原地不动也判逃跑', () => {
   );
 });
 
+test('单次空闲不足 5 分钟但累计大量空闲仍判逃跑', () => {
+  // 21 分钟大乱斗：每段挂机都不长，但累计 8 分 26 秒没有补刀和战斗
+  const player = {
+    durationMin: 21,
+    gold: 10798,
+    damage: 14745,
+    cs: 26,
+    kills: 2,
+    deaths: 5,
+    assists: 12,
+    visionScore: 0,
+    position: 'ARAM' as Lane,
+    killParticipation: 0.39,
+    damageTaken: 17480,
+    heal: 3368,
+    idleStreakSeconds: 212,
+    idleAliveSeconds: 506,
+    stationaryStreakSeconds: 120,
+  };
+  const teammates = [
+    {
+      durationMin: 21,
+      gold: 15329,
+      damage: 28760,
+      cs: 50,
+      kills: 14,
+      deaths: 12,
+      assists: 16,
+      visionScore: 0,
+      position: 'ARAM' as Lane,
+      killParticipation: 0.83,
+      damageTaken: 26731,
+      heal: 904,
+      idleStreakSeconds: 60,
+      idleAliveSeconds: 130,
+    },
+    {
+      durationMin: 21,
+      gold: 14644,
+      damage: 29200,
+      cs: 97,
+      kills: 12,
+      deaths: 10,
+      assists: 11,
+      visionScore: 0,
+      position: 'ARAM' as Lane,
+      killParticipation: 0.64,
+      damageTaken: 23209,
+      heal: 2877,
+      idleStreakSeconds: 60,
+      idleAliveSeconds: 95,
+    },
+  ];
+  assert.equal(
+    isAfkLikeRelative(player, [player, ...teammates]),
+    true,
+    '单次空闲都没到 5 分钟，但累计空闲占了对局 40%，也应按分段挂机判逃跑',
+  );
+  assert.equal(
+    isAfkLikeRelative(
+      { ...player, idleAliveSeconds: AFK_TOTAL_IDLE_SECONDS - 1 },
+      [player, ...teammates],
+    ),
+    false,
+    '累计空闲不到 5 分钟时不判逃跑',
+  );
+  const longGame = { ...player, durationMin: 30, idleAliveSeconds: 400 };
+  assert.equal(
+    isAfkLikeRelative(
+      longGame,
+      [longGame, ...teammates.map((item) => ({ ...item, durationMin: 30 }))],
+    ),
+    false,
+    '累计空闲占对局不到 35% 时不判逃跑',
+  );
+});
+
 test('详情缓存按时间线复核出短局逃跑玩家', () => {
   const scoreboard = [
     {
@@ -1978,6 +2055,90 @@ test('详情缓存按时间线复核出短局逃跑玩家', () => {
     [...afkScoreboardIndexes(scoreboard, undefined, 7)],
     [],
     '没有存档时间线时保持原样，不额外补逃跑',
+  );
+});
+
+test('详情缓存按累计空闲补出分段挂机', () => {
+  const scoreboard = [
+    {
+      puuid: 'normal',
+      name: '队友',
+      championId: 105,
+      teamId: 100,
+      kills: 14,
+      deaths: 12,
+      assists: 16,
+      cs: 50,
+      gold: 15329,
+      damage: 28760,
+      damageTaken: 26731,
+      heal: 904,
+      vision: 0,
+      position: 'ARAM',
+      killParticipation: 0.83,
+      durationMin: 21,
+    },
+    {
+      puuid: 'afkish',
+      name: '分段挂机',
+      championId: 910,
+      teamId: 100,
+      kills: 2,
+      deaths: 5,
+      assists: 12,
+      cs: 26,
+      gold: 10798,
+      damage: 14745,
+      damageTaken: 17480,
+      heal: 3368,
+      vision: 0,
+      position: 'ARAM',
+      killParticipation: 0.39,
+      durationMin: 21,
+    },
+  ];
+  const timeline: MatchTimeline = {
+    gameId: 9094531938,
+    durationMs: 1_263_000,
+    players: [
+      {
+        participantId: 1,
+        puuid: 'normal',
+        name: '队友',
+        championId: 105,
+        teamId: 100,
+        kills: 14,
+        deaths: 12,
+        assists: 16,
+        damage: 28760,
+        damageTaken: 26731,
+        idleAliveMs: 129_573,
+        maxIdleMs: 60_004,
+        maxStationaryMs: 3_340,
+        lives: [],
+      },
+      {
+        participantId: 2,
+        puuid: 'afkish',
+        name: '分段挂机',
+        championId: 910,
+        teamId: 100,
+        kills: 2,
+        deaths: 5,
+        assists: 12,
+        damage: 14745,
+        damageTaken: 17480,
+        idleAliveMs: 505_931,
+        maxIdleMs: 211_655,
+        maxStationaryMs: 120_040,
+        lives: [],
+      },
+    ],
+  };
+  assert.deepEqual(
+    [...afkScoreboardIndexes(scoreboard, timeline, 21)],
+    [1],
+    '单次空闲不足 5 分钟、累计空闲 8 分 26 秒的分段挂机也要补出逃跑标记',
   );
 });
 

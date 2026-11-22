@@ -129,6 +129,10 @@ export function afkParticipantIds(
           timelinePlayer?.maxIdleMs === undefined
             ? undefined
             : Math.round(timelinePlayer.maxIdleMs / 1000),
+        idleAliveSeconds:
+          timelinePlayer?.idleAliveMs === undefined
+            ? undefined
+            : Math.round(timelinePlayer.idleAliveMs / 1000),
         stationaryStreakSeconds:
           timelinePlayer?.maxStationaryMs === undefined
             ? undefined
@@ -222,6 +226,10 @@ export function afkScoreboardIndexes(
         timelinePlayer?.maxIdleMs === undefined
           ? undefined
           : Math.round(timelinePlayer.maxIdleMs / 1000),
+      idleAliveSeconds:
+        timelinePlayer?.idleAliveMs === undefined
+          ? undefined
+          : Math.round(timelinePlayer.idleAliveMs / 1000),
       stationaryStreakSeconds:
         timelinePlayer?.maxStationaryMs === undefined
           ? undefined

@@ -140,6 +140,8 @@ interface ArchivedParticipant {
   score: number | null;
   /** 时间线里连续无成长的最长秒数，旧数据为 null */
   idle_streak_seconds: number | null;
+  /** 时间线里累计无成长的秒数，旧数据为 null */
+  idle_alive_seconds: number | null;
   /** 时间线里连续原地不动的最长秒数，旧数据为 null */
   stationary_streak_seconds: number | null;
 }
@@ -190,6 +192,10 @@ function archivedGameTags(
       participant.idle_streak_seconds === null
         ? undefined
         : participant.idle_streak_seconds,
+    idleAliveSeconds:
+      participant.idle_alive_seconds === null
+        ? undefined
+        : participant.idle_alive_seconds,
     stationaryStreakSeconds:
       participant.stationary_streak_seconds === null
         ? undefined
@@ -271,7 +277,7 @@ async function loadParticipantsByGame(
   if (!gameIds.length) return result;
   const placeholders = gameIds.map(() => '?').join(',');
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT game_id, puuid, team_id, win, kills, deaths, assists, cs, gold, damage, damage_taken, heal, vision, position, score, idle_streak_seconds, stationary_streak_seconds
+    `SELECT game_id, puuid, team_id, win, kills, deaths, assists, cs, gold, damage, damage_taken, heal, vision, position, score, idle_streak_seconds, idle_alive_seconds, stationary_streak_seconds
      FROM match_participants
      WHERE game_id IN (${placeholders})`,
     gameIds,
@@ -298,6 +304,10 @@ async function loadParticipantsByGame(
         row.idle_streak_seconds === null || row.idle_streak_seconds === undefined
           ? null
           : Number(row.idle_streak_seconds),
+      idle_alive_seconds:
+        row.idle_alive_seconds === null || row.idle_alive_seconds === undefined
+          ? null
+          : Number(row.idle_alive_seconds),
       stationary_streak_seconds:
         row.stationary_streak_seconds === null ||
         row.stationary_streak_seconds === undefined
