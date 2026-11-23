@@ -1752,8 +1752,14 @@ export class LiveSource implements DataSource {
           globalWinRate: global?.winRate ?? 0,
         };
       });
-      // 当前英雄排最前，其余保持替补席顺序
-      options.sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent));
+      // 按整体胜率从高到低排，样本少的靠后；没有样本的排最后
+      options.sort((a, b) => {
+        if (b.globalWinRate !== a.globalWinRate) {
+          return b.globalWinRate - a.globalWinRate;
+        }
+        if (b.globalGames !== a.globalGames) return b.globalGames - a.globalGames;
+        return Number(b.isCurrent) - Number(a.isCurrent);
+      });
 
       this.aramOptionsKey = key;
       this.patch({ aramChampions: options });
