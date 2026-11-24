@@ -4188,6 +4188,7 @@ body::before {
 
 .games {
   display: flex;
+  align-items: center;
   gap: 6px;
   min-height: 30px;
 }
@@ -4195,8 +4196,9 @@ body::before {
 .game {
   position: relative;
   flex: 1 1 0;
+  max-width: 30px;
   min-width: 0;
-  height: 30px;
+  aspect-ratio: 1 / 1;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid transparent;
