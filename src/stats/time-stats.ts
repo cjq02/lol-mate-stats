@@ -5,7 +5,8 @@ import { gradeOf } from './rating.js';
 
 /** 时段维度的 bucket 长度（小时） */
 export const TIME_PERIOD_HOURS = 2;
-/** 周 / 月趋势保留最近多少个 bucket */
+/** 天 / 周 / 月趋势保留最近多少个 bucket */
+const RECENT_DAY_BUCKETS = 30;
 const RECENT_WEEK_BUCKETS = 12;
 const RECENT_MONTH_BUCKETS = 12;
 
@@ -51,14 +52,17 @@ export interface TimeStatsBucket {
 }
 
 export type TimeStatsDimension =
-  | 'hour'
-  | 'weekday'
+  | 'day'
   | 'week'
   | 'month'
+  | 'hour'
+  | 'weekday'
   | 'position'
   | 'type';
 
 export interface TimeStatsDimensions {
+  /** 最近 30 天 */
+  day: TimeStatsBucket[];
   /** 一天内每两小时一段 */
   hour: TimeStatsBucket[];
   /** 周一至周日 */
@@ -204,6 +208,10 @@ function dateKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+function dayLabel(date: Date): string {
+  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
+}
+
 function weekLabel(start: Date): string {
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
@@ -212,6 +220,22 @@ function weekLabel(start: Date): string {
 
 function monthKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
+}
+
+function buildRecentDays(
+  latestTimestamp: number,
+  bucketsByKey: Map<string, TimeStatsBucket>,
+): TimeStatsBucket[] {
+  const anchor = new Date(latestTimestamp || Date.now());
+  const startOfDay = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+  const result: TimeStatsBucket[] = [];
+  for (let offset = RECENT_DAY_BUCKETS - 1; offset >= 0; offset -= 1) {
+    const day = new Date(startOfDay);
+    day.setDate(startOfDay.getDate() - offset);
+    const key = dateKey(day);
+    result.push(bucketsByKey.get(key) ?? emptyBucket(key, dayLabel(day)));
+  }
+  return result;
 }
 
 function buildRecentWeeks(
@@ -244,7 +268,7 @@ function buildRecentMonths(
 }
 
 /**
- * 按本地时间统计多个维度：一天内时段、星期、最近 12 周、最近 12 个月。
+ * 按本地时间统计多个维度：最近 30 天、一天内时段、星期、最近 12 周、最近 12 个月。
  * 重开对局不计入；坑率按存档里的队友/自己坑与逃跑标签计算。
  */
 export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
@@ -262,6 +286,7 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
   const positionByKey = new Map(positionBuckets.map((bucket) => [bucket.key, bucket]));
   const typeBuckets = TYPE_DEFINITIONS.map(([key, label]) => emptyBucket(key, label));
   const typeByKey = new Map(typeBuckets.map((bucket) => [bucket.key, bucket]));
+  const dayBuckets = new Map<string, TimeStatsBucket>();
   const weekBuckets = new Map<string, TimeStatsBucket>();
   const monthBuckets = new Map<string, TimeStatsBucket>();
 
@@ -311,6 +336,11 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
     weekBuckets.set(weekKey, weekBucket);
     addGame(weekBucket, win, teammateBad, selfBad, score);
 
+    const dayKey = dateKey(date);
+    const dayBucket = dayBuckets.get(dayKey) ?? emptyBucket(dayKey, dayLabel(date));
+    dayBuckets.set(dayKey, dayBucket);
+    addGame(dayBucket, win, teammateBad, selfBad, score);
+
     const month = monthKey(date);
     const monthBucket = monthBuckets.get(month) ?? emptyBucket(month, month);
     monthBuckets.set(month, monthBucket);
@@ -331,6 +361,7 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
     scoreGames: totalScoreGames,
     avgScore: totalScoreGames ? round1(totalScore / totalScoreGames) : 0,
     dimensions: {
+      day: buildRecentDays(latestTimestamp, dayBuckets).map(finalizeBucket),
       hour: hourBuckets.map(finalizeBucket),
       weekday: weekdayBuckets.map(finalizeBucket),
       week: buildRecentWeeks(latestTimestamp, weekBuckets).map(finalizeBucket),

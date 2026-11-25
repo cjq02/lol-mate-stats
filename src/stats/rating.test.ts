@@ -2408,6 +2408,48 @@ test('时段统计按本地时间统计时段、星期、周、月、位置和�
   assert.equal(fighter.selfBadGames, 1);
 });
 
+test('时段统计按天汇总最近 30 天的场次、胜率与评分', () => {
+  const at = (month: number, day: number, hour: number, minute = 0) =>
+    new Date(2026, month - 1, day, hour, minute).getTime();
+  const summary = summarizeTimeStats([
+    { gameCreation: at(3, 1, 23, 50), win: true, tags: [], score: 80 },
+    { gameCreation: at(3, 2, 0, 10), win: false, tags: [], score: 60 },
+    { gameCreation: at(3, 2, 21, 0), win: true, tags: ['重开'], score: 100 },
+    { gameCreation: at(3, 8, 12, 0), win: true, tags: [] },
+  ]);
+
+  assert.equal(summary.totalGames, 3);
+  assert.equal(summary.dimensions.day.length, 30);
+
+  const firstDay = summary.dimensions.day[0];
+  assert.ok(firstDay);
+  assert.equal(firstDay.key, '2026-02-07');
+  assert.equal(firstDay.games, 0);
+
+  const lastDay = summary.dimensions.day[29];
+  assert.ok(lastDay);
+  assert.equal(lastDay.key, '2026-03-08');
+  assert.equal(lastDay.label, '03/08');
+  assert.equal(lastDay.games, 1);
+  assert.equal(lastDay.wins, 1);
+  assert.equal(lastDay.scoreGames, 0);
+
+  const mar1 = summary.dimensions.day.find((bucket) => bucket.key === '2026-03-01');
+  assert.ok(mar1);
+  assert.equal(mar1.label, '03/01');
+  assert.equal(mar1.games, 1);
+  assert.equal(mar1.wins, 1);
+  assert.equal(mar1.avgScore, 80);
+
+  // 重开不计入，所以 03/02 只有一场失败
+  const mar2 = summary.dimensions.day.find((bucket) => bucket.key === '2026-03-02');
+  assert.ok(mar2);
+  assert.equal(mar2.games, 1);
+  assert.equal(mar2.wins, 0);
+  assert.equal(mar2.scoreGames, 1);
+  assert.equal(mar2.avgScore, 60);
+});
+
 test('时段统计使用当前坑线重新判断结果', () => {
   const summary = summarizeTimeStats([
     {

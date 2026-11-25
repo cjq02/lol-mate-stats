@@ -212,13 +212,16 @@ const CHAMPION_RANKING_SORT_LABELS = {
 };
 
 const TIME_STATS_DIMENSION_LABELS = {
-  hour: '按时段',
-  weekday: '按星期',
+  day: '按天',
   week: '按周',
   month: '按月',
+  hour: '按时段',
+  weekday: '按星期',
   position: '按位置',
   type: '按类型',
 };
+
+const TIME_STATS_DEFAULT_DIMENSION = 'day';
 
 const TIME_STATS_VIEW_LABELS = {
   winRate: '胜率',
@@ -291,8 +294,8 @@ const state = {
   timeStatsMode: 'ARAM',
   /** 时段统计口径：winRate / score */
   timeStatsView: 'winRate',
-  /** 时段胜率统计维度：hour / weekday / week / month */
-  timeStatsDimension: 'hour',
+  /** 时间统计维度：day / week / month / hour / weekday / position / type */
+  timeStatsDimension: TIME_STATS_DEFAULT_DIMENSION,
   timeStatsData: null,
   timeStatsSource: '',
   timeStatsToken: 0,
@@ -5443,7 +5446,7 @@ function updateTimeStatsTabs() {
   if (els.timeStatsDimension) {
     els.timeStatsDimension.value = TIME_STATS_DIMENSION_LABELS[state.timeStatsDimension]
       ? state.timeStatsDimension
-      : 'hour';
+      : TIME_STATS_DEFAULT_DIMENSION;
   }
 }
 
@@ -5468,9 +5471,12 @@ function timeStatsHighlight(label, period, detail) {
 }
 
 function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods) {
+  const scoreMeta = data.scoreGames
+    ? ` · 均分 ${Number(data.avgScore).toFixed(1)}（${data.scoreGames} 场有评分）`
+    : '';
   els.timeStatsMeta.textContent = `${modeLabel} · ${dimensionLabel} · ${
     data.totalGames
-  } 场 · 总胜率 ${winRatePct(data.winRate)}${timeStatsSourceNote()}`;
+  } 场 · 总胜率 ${winRatePct(data.winRate)}${scoreMeta}${timeStatsSourceNote()}`;
 
   const qualified = periods.filter((period) => Number(period.games) >= 3);
   const worst = qualified.length
@@ -5513,6 +5519,11 @@ function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods) {
           <div class="time-stat-sub">
             ${period.games} 场 · ${period.wins}胜${period.losses}负
             · 队友坑/逃 ${period.teammateBadGames} 场（${pct(badRate)}）
+            ${
+              period.scoreGames
+                ? `· 均分 ${Number(period.avgScore).toFixed(1)}`
+                : '· 暂无评分'
+            }
             ${
               period.selfBadGames
                 ? `· 自己坑 ${period.selfBadGames} 场`
@@ -5605,7 +5616,7 @@ function renderTimeStats(data, mode = state.timeStatsMode) {
     : 'winRate';
   const dimension = TIME_STATS_DIMENSION_LABELS[state.timeStatsDimension]
     ? state.timeStatsDimension
-    : 'hour';
+    : TIME_STATS_DEFAULT_DIMENSION;
   const dimensionLabel = TIME_STATS_DIMENSION_LABELS[dimension];
   const buckets = Array.isArray(data?.dimensions?.[dimension])
     ? data.dimensions[dimension]
