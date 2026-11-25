@@ -398,7 +398,7 @@ Node 服务 (127.0.0.1)
 | POST | `/api/player/refresh?summonerId=...&queueId=...&mode=SR` | 强制更新单个玩家的战绩（绕过缓存） |
 | GET | `/api/me/matches?recent=30&offset=0` | 当前账号最近对局列表（含每场评分），`offset` 用于继续往前翻页 |
 | GET | `/api/archive/matches?limit=100&offset=0` | 历史存档，可用 `puuid` 指定玩家；传 `championId`、`mode` 或 `group` 可按英雄 / 模式 / 统计组查询 |
-| GET | `/api/archive/champions?mode=ARAM&all=1` | 按英雄统计平均单场评分并排序，返回每个英雄的我的数据和全体场次 / 登场率 / 胜率 / 平均分 / 平均排名；`all=1` 返回所有英雄，`mode` 支持 `SR` / `ARAM` / `ARENA`，可用 `puuid` 指定玩家 |
+| GET | `/api/archive/champions?mode=ARAM&all=1&range=50&allRange=1000` | 按英雄统计平均单场评分并排序，返回每个英雄的我的数据和全体场次 / 登场率 / 胜率 / 平均分 / 平均排名；`all=1` 返回所有英雄，`mode` 支持 `SR` / `ARAM` / `ARENA`，可用 `puuid` 指定玩家；`range` / `allRange` 分别只统计我和全体最近 N 场对局，不传或传 0 表示全部 |
 | GET | `/api/archive/time-stats?mode=ARAM` | 按本地时间统计最近 30 天、最近 12 周、最近 12 个月、时段、星期、英雄位置和英雄类型的胜率、平均单场评分与队友坑/逃跑率，`mode` 支持 `SR` / `ARAM` / `ARENA` |
 | GET | `/api/archive/type-radar?mode=ARAM` | 按英雄官方主分类对比我和数据库里所有玩家的参团、分均经济、KDA、分均承伤、分均伤害、分均治疗，`mode` 支持 `SR` / `ARAM` / `ARENA` |
 | GET | `/api/archive/champion-radar?championId=103&mode=ARAM&minScore=60&selfLimit=20&allLimit=1000` | 单个英雄对比我和数据库里所有玩家的参团、分均经济、KDA、分均承伤、分均伤害、分均治疗，双方的胜率 / 平均分 / 平均排名，以及整装出装次数 / 百分比；`minScore` 按玩家自己的单场评分过滤，`selfLimit` / `allLimit` 限制最近场次，0 表示全部，`mode` 支持 `SR` / `ARAM` / `ARENA` |

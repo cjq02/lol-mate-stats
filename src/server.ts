@@ -670,8 +670,25 @@ async function handleRequest(
     const mode: GameModeKey | undefined =
       rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
     const showAll = url.searchParams.get('all') === '1';
+    const rawRange = Number(url.searchParams.get('range') ?? 0);
+    const range =
+      Number.isFinite(rawRange) && rawRange > 0
+        ? Math.min(2000, Math.trunc(rawRange))
+        : undefined;
+    const rawAllRange = Number(url.searchParams.get('allRange') ?? 0);
+    const allRange =
+      Number.isFinite(rawAllRange) && rawAllRange > 0
+        ? Math.min(5000, Math.trunc(rawAllRange))
+        : undefined;
     try {
-      const data = await source.getArchivedChampionScores(puuid, minGames, mode, showAll);
+      const data = await source.getArchivedChampionScores(
+        puuid,
+        minGames,
+        mode,
+        showAll,
+        range,
+        allRange,
+      );
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
       sendJson(res, 502, {

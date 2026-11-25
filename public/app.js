@@ -74,6 +74,7 @@ const els = {
   championRankingAll: document.getElementById('champion-ranking-all'),
   championRankingList: document.getElementById('champion-ranking-list'),
   championRankingTabs: document.getElementById('champion-ranking-tabs'),
+  championRankingRanges: document.getElementById('champion-ranking-ranges'),
   championRankingSort: document.getElementById('champion-ranking-sort'),
   championRankingMeta: document.getElementById('champion-ranking-meta'),
   championRankingClose: document.getElementById('champion-ranking-close'),
@@ -303,6 +304,10 @@ const state = {
   championRankingToken: 0,
   /** 英雄排名是否显示所有英雄（否则只显示我玩过的） */
   championRankingShowAll: false,
+  /** 英雄排名我的样本：只统计最近 N 场，0 = 全部 */
+  championRankingRange: 0,
+  /** 英雄排名全体样本：只统计最近 N 场，0 = 全部 */
+  championRankingAllRange: 1000,
   championRankingTotalGames: 0,
   /** 英雄排名里展开的单个英雄六角星 */
   championRadarId: 0,
@@ -5704,8 +5709,10 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     0,
   );
 
+  const myRangeLabel =
+    state.championRankingRange > 0 ? `我近 ${state.championRankingRange} 场` : '我全部场次';
   els.championRankingMeta.innerHTML = list.length
-    ? `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · 按${sortLabel} · <b>${
+    ? `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · 按${sortLabel} · <b>${
         list.length
       }</b> 个英雄 · <b>${totalGames}</b> 场`
     : '';
@@ -5811,6 +5818,25 @@ function updateChampionRankingTabs() {
   }
 }
 
+/** 同步英雄排名的「我 / 全体」最近场次页签 */
+function updateChampionRankingRanges() {
+  if (!els.championRankingRanges) return;
+  for (const button of els.championRankingRanges.querySelectorAll('[data-ranking-range]')) {
+    button.classList.toggle(
+      'active',
+      Number(button.dataset.rankingRange) === state.championRankingRange,
+    );
+  }
+  for (const button of els.championRankingRanges.querySelectorAll(
+    '[data-ranking-all-range]',
+  )) {
+    button.classList.toggle(
+      'active',
+      Number(button.dataset.rankingAllRange) === state.championRankingAllRange,
+    );
+  }
+}
+
 async function loadChampionRanking() {
   const token = (state.championRankingToken ?? 0) + 1;
   state.championRankingToken = token;
@@ -5824,6 +5850,12 @@ async function loadChampionRanking() {
     const params = new URLSearchParams();
     if (mode !== 'all') params.set('mode', mode);
     if (state.championRankingShowAll) params.set('all', '1');
+    if (state.championRankingRange > 0) {
+      params.set('range', String(state.championRankingRange));
+    }
+    if (state.championRankingAllRange > 0) {
+      params.set('allRange', String(state.championRankingAllRange));
+    }
     const query = params.toString();
     const response = await fetch(
       `/api/archive/champions${query ? `?${query}` : ''}`,
@@ -5861,6 +5893,7 @@ function openChampionRanking(options = {}) {
       : '我的英雄排名';
   }
   updateChampionRankingTabs();
+  updateChampionRankingRanges();
   els.championRankingModal.classList.remove('hidden');
   void loadChampionRanking();
 }
@@ -6508,6 +6541,24 @@ els.championRankingAll?.addEventListener('change', () => {
       ? '所有英雄排名'
       : '我的英雄排名';
   }
+  void loadChampionRanking();
+});
+els.championRankingRanges?.addEventListener('click', (event) => {
+  const myButton = event.target.closest('[data-ranking-range]');
+  if (myButton) {
+    const range = Number(myButton.dataset.rankingRange) || 0;
+    if (range === state.championRankingRange) return;
+    state.championRankingRange = range;
+    updateChampionRankingRanges();
+    void loadChampionRanking();
+    return;
+  }
+  const allButton = event.target.closest('[data-ranking-all-range]');
+  if (!allButton) return;
+  const allRange = Number(allButton.dataset.rankingAllRange) || 0;
+  if (allRange === state.championRankingAllRange) return;
+  state.championRankingAllRange = allRange;
+  updateChampionRankingRanges();
   void loadChampionRanking();
 });
 els.championRankingSort.addEventListener('change', () => {

@@ -636,14 +636,93 @@ export interface PlayerWinRecord {
 };
 
 /** 英雄评分排名按大模式拆分：召唤师峡谷 / 极地大乱斗 / 斗魂竞技场 */
+function championModeFilterSql(
+  mode: GameModeKey,
+  matchAlias = 'm',
+  playerAlias = 'p',
+): string {
+  if (mode === 'ARAM') {
+    return `(${matchAlias}.queue_id IN (450, 720) OR ${playerAlias}.\`position\` = 'ARAM')`;
+  }
+  if (mode === 'ARENA') {
+    return `(${matchAlias}.queue_id IN (1700, 1710) OR ${playerAlias}.\`position\` = 'ARENA' OR ${matchAlias}.game_mode = 'CHERRY')`;
+  }
+  return (
+    `(${matchAlias}.game_mode IN ('CLASSIC', 'SWIFTPLAY') ` +
+    `OR ${matchAlias}.queue_id IN (400, 420, 430, 440, 890))`
+  );
+}
+
+/** 只靠对局表的模式条件，给没有参与者上下文的「最近 N 场」子查询复用 */
+function championMatchModeFilterSql(mode: GameModeKey, matchAlias = 'm'): string {
+  if (mode === 'ARAM') {
+    return `(${matchAlias}.queue_id IN (450, 720) OR ${matchAlias}.game_mode = 'ARAM')`;
+  }
+  if (mode === 'ARENA') {
+    return `(${matchAlias}.queue_id IN (1700, 1710) OR ${matchAlias}.game_mode = 'CHERRY')`;
+  }
+  return (
+    `(${matchAlias}.game_mode IN ('CLASSIC', 'SWIFTPLAY') ` +
+    `OR ${matchAlias}.queue_id IN (400, 420, 430, 440, 890))`
+  );
+}
+
 const CHAMPION_MODE_FILTERS: Record<GameModeKey, string> = {
-  ARAM: "(m.queue_id IN (450, 720) OR p.`position` = 'ARAM')",
-  ARENA:
-    "(m.queue_id IN (1700, 1710) OR p.`position` = 'ARENA' OR m.game_mode = 'CHERRY')",
-  SR:
-    "(m.game_mode IN ('CLASSIC', 'SWIFTPLAY') " +
-    "OR m.queue_id IN (400, 420, 430, 440, 890))",
+  ARAM: championModeFilterSql('ARAM'),
+  ARENA: championModeFilterSql('ARENA'),
+  SR: championModeFilterSql('SR'),
 };
+
+/** 「我最近 N 场」派生表：range 为空或 0 时不做限制 */
+function recentPlayerGamesJoin(
+  puuid: string,
+  mode: GameModeKey | undefined,
+  range: number | undefined,
+): { sql: string; params: Array<string | number> } | undefined {
+  if (!range || range <= 0) return undefined;
+  const conditions = [
+    'rp.puuid = ?',
+    'rp.score IS NOT NULL',
+    'rm.duration_seconds > 300',
+    "COALESCE(rm.game_mode, '') <> 'PRACTICETOOL'",
+  ];
+  if (mode) conditions.push(championModeFilterSql(mode, 'rm', 'rp'));
+  // MySQL 不支持在 IN 子查询里用 LIMIT，这里改成派生表 JOIN
+  return {
+    sql: `JOIN (
+        SELECT rp.game_id
+        FROM match_participants rp
+        JOIN matches rm ON rm.game_id = rp.game_id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY rm.game_creation DESC, rm.game_id DESC
+        LIMIT ?
+      ) recent ON recent.game_id = p.game_id`,
+    params: [puuid, Math.trunc(range)],
+  };
+}
+
+/** 「全体最近 N 场」派生表：按对局倒序取，range 为空或 0 时不做限制 */
+function recentMatchesJoin(
+  mode: GameModeKey | undefined,
+  range: number | undefined,
+): { sql: string; params: Array<string | number> } | undefined {
+  if (!range || range <= 0) return undefined;
+  const conditions = [
+    'rm.duration_seconds > 300',
+    "COALESCE(rm.game_mode, '') <> 'PRACTICETOOL'",
+  ];
+  if (mode) conditions.push(championMatchModeFilterSql(mode, 'rm'));
+  return {
+    sql: `JOIN (
+        SELECT rm.game_id
+        FROM matches rm
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY rm.game_creation DESC, rm.game_id DESC
+        LIMIT ?
+      ) recent ON recent.game_id = m.game_id`,
+    params: [Math.trunc(range)],
+  };
+}
 
 /** 组装按玩家 / 英雄 / 模式过滤历史对局的 SQL 条件和参数 */
 function playerMatchFilterSql(puuid: string, filter: PlayerMatchFilter = {}) {
@@ -1092,6 +1171,7 @@ const championOverallTotalCache = new Map<string, { at: number; total: number }>
 export async function getChampionOverallScores(
   championIds: number[],
   mode?: GameModeKey,
+  range?: number,
 ): Promise<Map<number, ChampionOverallRecord>> {
   const result = new Map<number, ChampionOverallRecord>();
   const ids = [
@@ -1103,7 +1183,7 @@ export async function getChampionOverallScores(
   const now = Date.now();
   const missing: number[] = [];
   for (const id of ids) {
-    const key = `${mode ?? 'ALL'}:${id}`;
+    const key = `${mode ?? 'ALL'}:${range ?? 0}:${id}`;
     const cached = championOverallPartCache.get(key);
     if (cached && now - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
       if (cached.record) result.set(id, cached.record);
@@ -1115,6 +1195,8 @@ export async function getChampionOverallScores(
 
   const placeholders = missing.flatMap(() => ['?', '?']).join(',');
   const params: Array<string | number> = [];
+  const recent = recentMatchesJoin(mode, range);
+  if (recent) params.push(...recent.params);
   params.push(...missing, ...missing.map((id) => id + 60000));
   const conditions = [
     `p.champion_id IN (${placeholders})`,
@@ -1139,6 +1221,7 @@ export async function getChampionOverallScores(
                 1 + COUNT(q.game_id) AS game_rank
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
+         ${recent ? `${recent.sql}` : ''}
          LEFT JOIN match_participants q
            ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
          WHERE ${conditions.join(' AND ')}
@@ -1164,7 +1247,7 @@ export async function getChampionOverallScores(
         pickRate: 0,
       };
       result.set(championId, record);
-      championOverallPartCache.set(`${mode ?? 'ALL'}:${championId}`, {
+      championOverallPartCache.set(`${mode ?? 'ALL'}:${range ?? 0}:${championId}`, {
         at: now,
         record,
       });
@@ -1172,7 +1255,10 @@ export async function getChampionOverallScores(
     }
     for (const id of missing) {
       if (!found.has(id)) {
-        championOverallPartCache.set(`${mode ?? 'ALL'}:${id}`, { at: now, record: null });
+        championOverallPartCache.set(`${mode ?? 'ALL'}:${range ?? 0}:${id}`, {
+          at: now,
+          record: null,
+        });
       }
     }
   } catch {
@@ -1182,10 +1268,13 @@ export async function getChampionOverallScores(
 }
 
 /** 当前模式下所有玩家的总场次，用作登场率分母 */
-export async function getChampionOverallTotal(mode?: GameModeKey): Promise<number> {
+export async function getChampionOverallTotal(
+  mode?: GameModeKey,
+  range?: number,
+): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const key = mode ?? 'ALL';
+  const key = `${mode ?? 'ALL'}:${range ?? 0}`;
   const cached = championOverallTotalCache.get(key);
   if (cached && Date.now() - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
     return cached.total;
@@ -1198,12 +1287,16 @@ export async function getChampionOverallTotal(mode?: GameModeKey): Promise<numbe
   ];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
+  const recent = recentMatchesJoin(mode, range);
+  const params: Array<string | number> = recent ? [...recent.params] : [];
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT COUNT(*) AS total
        FROM match_participants p
        JOIN matches m ON m.game_id = p.game_id
+       ${recent ? `${recent.sql}` : ''}
        WHERE ${conditions.join(' AND ')}`,
+      params,
     );
     const total = Number(rows[0]?.total) || 0;
     championOverallTotalCache.set(key, { at: Date.now(), total });
@@ -1225,10 +1318,11 @@ const championOverallAllCache = new Map<
  */
 export async function getAllChampionOverallScores(
   mode?: GameModeKey,
+  range?: number,
 ): Promise<{ totalGames: number; champions: ChampionOverallRecord[] }> {
   const db = await getDb();
   if (!db) return { totalGames: 0, champions: [] };
-  const cacheKey = mode ?? 'ALL';
+  const cacheKey = `${mode ?? 'ALL'}:${range ?? 0}`;
   const cached = championOverallAllCache.get(cacheKey);
   if (cached && Date.now() - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
     return { totalGames: cached.totalGames, champions: cached.champions };
@@ -1242,6 +1336,8 @@ export async function getAllChampionOverallScores(
   ];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
+  const recent = recentMatchesJoin(mode, range);
+  const params: Array<string | number> = recent ? [...recent.params] : [];
 
   try {
     const [rows] = await db.query<RowDataPacket[]>(
@@ -1256,12 +1352,14 @@ export async function getAllChampionOverallScores(
                 1 + COUNT(q.game_id) AS game_rank
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
+         ${recent ? `${recent.sql}` : ''}
          LEFT JOIN match_participants q
            ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
          WHERE ${conditions.join(' AND ')}
          GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
        ) r
        GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END`,
+      params,
     );
     const totalGames = rows.reduce((sum, row) => sum + (Number(row.games) || 0), 0);
     const champions = rows
@@ -1322,11 +1420,13 @@ export interface ChampionScoreSummary {
  * 某个玩家各英雄的平均单场评分（来自长期存档）。
  * 重开/训练模式不计入，只统计有评分的场次，按平均分从高到低排序。
  * 特殊模式的英雄 ID（如 60067）会归一化到基础英雄 ID（67）。
+ * range > 0 时只取该玩家最近 N 场有评分的对局。
  */
 export async function getPlayerChampionScores(
   puuid: string,
   minGames = 1,
   mode?: GameModeKey,
+  range?: number,
 ): Promise<ChampionScoreSummary[]> {
   const db = await getDb();
   if (!db || !puuid) return [];
@@ -1337,9 +1437,12 @@ export async function getPlayerChampionScores(
     'm.duration_seconds > 300',
     "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
   ];
-  const params: Array<string | number> = [puuid];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
+  const recent = recentPlayerGamesJoin(puuid, mode, range);
+  const params: Array<string | number> = [];
+  if (recent) params.push(...recent.params);
+  params.push(puuid);
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END AS champion_id,
@@ -1355,6 +1458,7 @@ export async function getPlayerChampionScores(
                 1 + COUNT(q.game_id) AS game_rank
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
+         ${recent ? `${recent.sql}` : ''}
          LEFT JOIN match_participants q
            ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
          WHERE ${conditions.join(' AND ')}

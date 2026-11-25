@@ -1160,6 +1160,8 @@ export class LiveSource implements DataSource {
     minGames = 1,
     mode?: GameModeKey,
     showAll = false,
+    range?: number,
+    allRange?: number,
   ): Promise<{
     puuid: string;
     champions: Awaited<ReturnType<typeof getPlayerChampionScores>>;
@@ -1168,13 +1170,14 @@ export class LiveSource implements DataSource {
     const id = await this.resolveArchivePuuid(puuid);
     if (!id) return { puuid: '', champions: [], totalGames: 0 };
     if (!showAll) {
-      const mine = await getPlayerChampionScores(id, minGames, mode);
+      const mine = await getPlayerChampionScores(id, minGames, mode, range);
       const [overall, totalGames] = await Promise.all([
         getChampionOverallScores(
           mine.map((champion) => champion.championId),
           mode,
+          allRange,
         ),
-        getChampionOverallTotal(mode),
+        getChampionOverallTotal(mode, allRange),
       ]);
       for (const champion of mine) {
         const record = overall.get(champion.championId);
@@ -1191,8 +1194,8 @@ export class LiveSource implements DataSource {
     }
 
     const [mine, overall] = await Promise.all([
-      getPlayerChampionScores(id, minGames, mode),
-      getAllChampionOverallScores(mode),
+      getPlayerChampionScores(id, minGames, mode, range),
+      getAllChampionOverallScores(mode, allRange),
     ]);
     const mineById = new Map(
       mine.map((champion) => [champion.championId, champion]),

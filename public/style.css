@@ -333,6 +333,16 @@ body::before {
   border-bottom-color: #5eead4;
 }
 
+/* 英雄排名复用战绩列表的范围页签，内边距对齐弹窗卡片 */
+.champion-ranking-card .range-tabs {
+  padding: 6px 14px 0;
+}
+
+.champion-ranking-card .range-tabs .tab {
+  padding: 5px 10px 7px;
+  font-size: 11.5px;
+}
+
 .champion-ranking-scope {
   display: inline-flex;
   align-items: center;
