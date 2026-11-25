@@ -11,6 +11,7 @@ import type {
 } from './types.js';
 import type {
   ArchivedMatch,
+  ChampionRadarOptions,
   ChampionScoreSummary,
   PlayerMatchFilter,
   PlayerWinRecord,
@@ -93,6 +94,7 @@ export interface DataSource {
     puuid: string | undefined,
     championId: number,
     mode?: GameModeKey,
+    options?: ChampionRadarOptions,
   ): Promise<{ puuid: string; radar: ChampionRadarEntry | null }>;
   /** 某场对局里 10 名玩家的近期战绩卡片 */
   getMatchDetail?(

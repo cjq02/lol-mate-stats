@@ -2521,10 +2521,20 @@ test('单个英雄雷达直接使用该英雄的平均值', () => {
       self: { kp: 60, gpm: 500, kda: 4, dtpm: 1200, dpm: 1800, hpm: 120 },
     },
     103,
+    {
+      self: { games: 20, winRate: 0.6, avgScore: 62.4, avgRank: 3.2 },
+      all: { games: 100, winRate: 0.5, avgScore: 58.7, avgRank: 4.1 },
+    },
   );
   assert.equal(radar.championId, 103);
   assert.equal(radar.selfGames, 20);
   assert.equal(radar.allGames, 100);
+  assert.equal(radar.self.winRate, 0.6);
+  assert.equal(radar.self.avgScore, 62.4);
+  assert.equal(radar.self.avgRank, 3.2);
+  assert.equal(radar.all.winRate, 0.5);
+  assert.equal(radar.all.avgScore, 58.7);
+  assert.equal(radar.all.avgRank, 4.1);
 
   const kp = radar.metrics.find((metric) => metric.label === '参团');
   assert.ok(kp);

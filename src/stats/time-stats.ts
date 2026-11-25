@@ -111,11 +111,21 @@ export interface TypeRadarEntry {
   metrics: TypeRadarMetric[];
 }
 
+export interface RadarComparisonSummary {
+  games: number;
+  winRate: number;
+  avgScore: number;
+  avgRank: number;
+}
+
 export interface ChampionRadarEntry {
   championId: number;
   selfGames: number;
   allGames: number;
   metrics: TypeRadarMetric[];
+  /** 我和所有玩家在同一筛选条件下的胜率 / 平均分 / 平均排名 */
+  self: RadarComparisonSummary;
+  all: RadarComparisonSummary;
 }
 
 /** 按英雄分组后的一行原始数据，交给 buildTypeRadar 汇总 */
@@ -545,12 +555,15 @@ export function buildTypeRadar(samples: TypeRadarSample[]): TypeRadarEntry[] {
 export function buildChampionRadar(
   sample: TypeRadarSample,
   championId: number,
+  summary: { self: RadarComparisonSummary; all: RadarComparisonSummary },
 ): ChampionRadarEntry {
   return {
     championId,
     selfGames: sample.selfGames,
     allGames: sample.allGames,
     metrics: radarMetrics(sample.self, sample.all),
+    self: summary.self,
+    all: summary.all,
   };
 }
 

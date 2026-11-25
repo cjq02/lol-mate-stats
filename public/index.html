@@ -126,12 +126,20 @@
             <button class="tab" type="button" data-sr-mode="practice">训练</button>
           </div>
           <div id="matches-range-tabs" class="match-tabs range-tabs hidden" role="tablist">
+            <span class="range-tabs-label" data-range-my-label>我</span>
             <button class="tab" type="button" data-match-range="10">近 10 场</button>
             <button class="tab" type="button" data-match-range="20">近 20 场</button>
             <button class="tab active" type="button" data-match-range="50">近 50 场</button>
             <button class="tab" type="button" data-match-range="100">近 100 场</button>
             <button class="tab" type="button" data-match-range="200">近 200 场</button>
             <button class="tab" type="button" data-match-range="0">全部</button>
+            <span id="matches-range-all" class="range-tabs-all hidden">
+              <span class="range-tabs-label">全体</span>
+              <button class="tab" type="button" data-all-range="200">近 200 场</button>
+              <button class="tab" type="button" data-all-range="500">近 500 场</button>
+              <button class="tab active" type="button" data-all-range="1000">近 1000 场</button>
+              <button class="tab" type="button" data-all-range="0">全部</button>
+            </span>
           </div>
           <div id="matches-summary" class="matches-summary hidden"></div>
           <div id="match-summary" class="match-summary hidden"></div>

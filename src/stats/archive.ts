@@ -866,75 +866,120 @@ export async function getPlayerTypeRadar(
   }
 }
 
-/** 单个英雄的六角星缓存，key 带上英雄 ID */
+/** 单个英雄的六角星缓存，key 带上英雄 ID 和筛选条件 */
 const championRadarCache = new Map<string, { at: number; radar: ChampionRadarEntry | null }>();
 
-/** 某个英雄上“我”和“所有玩家”的六项指标对比 */
+export interface ChampionRadarOptions {
+  /** 只统计评分 >= 该值的对局；0 表示不限制 */
+  minScore?: number;
+  /** 我的样本最多取最近多少场；0 表示全部 */
+  selfLimit?: number;
+  /** 所有玩家的样本最多取最近多少场；0 表示全部 */
+  allLimit?: number;
+}
+
+/**
+ * 某个英雄上“我”和“所有玩家”的六项指标 + 胜率/平均分/平均排名对比。
+ * 分数过滤和最近 N 场会同时作用于双方，保证比较口径一致。
+ */
 export async function getPlayerChampionRadar(
   puuid: string,
   championId: number,
   mode?: GameModeKey,
+  options: ChampionRadarOptions = {},
 ): Promise<ChampionRadarEntry | null> {
   const db = await getDb();
   const id = Number(championId) || 0;
   if (!db || !puuid || !id) return null;
-  const cacheKey = `${puuid}:${mode ?? 'ALL'}:champion:${id}`;
+  const minScore = Math.max(
+    0,
+    Math.min(100, Math.trunc(Number(options.minScore) || 0)),
+  );
+  const selfLimit = Math.max(
+    0,
+    Math.min(5000, Math.trunc(Number(options.selfLimit) || 0)),
+  );
+  const allLimit = Math.max(
+    0,
+    Math.min(5000, Math.trunc(Number(options.allLimit) || 0)),
+  );
+  const cacheKey = `${puuid}:${mode ?? 'ALL'}:champion:${id}:min:${minScore}:self:${selfLimit}:all:${allLimit}`;
   const cached = championRadarCache.get(cacheKey);
   if (cached && Date.now() - cached.at < TYPE_RADAR_CACHE_TTL_MS) {
     return cached.radar;
   }
 
-  const conditions = [
-    'p.puuid IS NOT NULL',
+  const baseConditions = [
+    'p.score IS NOT NULL',
     'p.champion_id IN (?, ?)',
     'm.duration_seconds > 300',
     "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
+    'p.puuid IS NOT NULL',
   ];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
-  if (modeFilter) conditions.push(modeFilter);
+  if (modeFilter) baseConditions.push(modeFilter);
+  if (minScore > 0) baseConditions.push('p.score >= ?');
 
-  // 7 个 self 相关的 puuid 参数，最后两个是基础英雄 ID 和特殊模式 ID
-  const params: Array<string | number> = [...new Array(7).fill(puuid), id, id + 60000];
-  try {
-    const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT COUNT(*) AS all_games,
-              SUM(p.puuid = ?) AS self_games,
-              AVG((p.kills + p.assists) / GREATEST(1, tk.team_kills) * 100) AS all_kp,
-              AVG(CASE WHEN p.puuid = ?
-                       THEN (p.kills + p.assists) / GREATEST(1, tk.team_kills) * 100
-                  END) AS self_kp,
-              AVG(p.gold / (m.duration_seconds / 60)) AS all_gpm,
-              AVG(CASE WHEN p.puuid = ?
-                       THEN p.gold / (m.duration_seconds / 60)
-                  END) AS self_gpm,
-              AVG((p.kills + p.assists) / GREATEST(1, p.deaths)) AS all_kda,
-              AVG(CASE WHEN p.puuid = ?
-                       THEN (p.kills + p.assists) / GREATEST(1, p.deaths)
-                  END) AS self_kda,
-              AVG(p.damage_taken / (m.duration_seconds / 60)) AS all_dtpm,
-              AVG(CASE WHEN p.puuid = ?
-                       THEN p.damage_taken / (m.duration_seconds / 60)
-                  END) AS self_dtpm,
-              AVG(p.damage / (m.duration_seconds / 60)) AS all_dpm,
-              AVG(CASE WHEN p.puuid = ?
-                       THEN p.damage / (m.duration_seconds / 60)
-                  END) AS self_dpm,
-              AVG(p.heal / (m.duration_seconds / 60)) AS all_hpm,
-              AVG(CASE WHEN p.puuid = ?
-                       THEN p.heal / (m.duration_seconds / 60)
-                  END) AS self_hpm
-       FROM match_participants p
-       JOIN matches m ON m.game_id = p.game_id
-       JOIN (
-         SELECT game_id, team_id, SUM(kills) AS team_kills
-         FROM match_participants
-         GROUP BY game_id, team_id
-       ) tk ON tk.game_id = p.game_id AND tk.team_id = p.team_id
-       WHERE ${conditions.join(' AND ')}`,
+  const buildQuery = (selfOnly: boolean, limit: number) => {
+    const conditions = [...baseConditions];
+    const params: Array<string | number> = [id, id + 60000];
+    if (minScore > 0) params.push(minScore);
+    if (selfOnly) {
+      conditions.push('p.puuid = ?');
+      params.push(puuid);
+    }
+    const limitSql = limit > 0 ? 'LIMIT ?' : '';
+    if (limit > 0) params.push(limit);
+    return {
+      sql: `SELECT COUNT(*) AS games,
+                   COALESCE(SUM(x.win = 1), 0) AS wins,
+                   AVG(x.score) AS avg_score,
+                   AVG(x.game_rank) AS avg_rank,
+                   AVG(x.kp) AS kp,
+                   AVG(x.gpm) AS gpm,
+                   AVG(x.kda) AS kda,
+                   AVG(x.dtpm) AS dtpm,
+                   AVG(x.dpm) AS dpm,
+                   AVG(x.hpm) AS hpm
+            FROM (
+              SELECT p.game_id, p.win, p.score,
+                     (p.kills + p.assists) / GREATEST(1, tk.team_kills) * 100 AS kp,
+                     p.gold / (m.duration_seconds / 60) AS gpm,
+                     (p.kills + p.assists) / GREATEST(1, p.deaths) AS kda,
+                     p.damage_taken / (m.duration_seconds / 60) AS dtpm,
+                     p.damage / (m.duration_seconds / 60) AS dpm,
+                     p.heal / (m.duration_seconds / 60) AS hpm,
+                     1 + (SELECT COUNT(*)
+                          FROM match_participants q
+                          WHERE q.game_id = p.game_id
+                            AND q.score IS NOT NULL
+                            AND q.score > p.score) AS game_rank
+              FROM match_participants p
+              JOIN matches m ON m.game_id = p.game_id
+              JOIN (
+                SELECT game_id, team_id, SUM(kills) AS team_kills
+                FROM match_participants
+                GROUP BY game_id, team_id
+              ) tk ON tk.game_id = p.game_id AND tk.team_id = p.team_id
+              WHERE ${conditions.join(' AND ')}
+              ORDER BY m.game_creation DESC, p.game_id DESC, p.participant_id DESC
+              ${limitSql}
+            ) x`,
       params,
-    );
-    const row = rows[0];
-    const allGames = Number(row?.all_games) || 0;
+    };
+  };
+
+  try {
+    const selfQuery = buildQuery(true, selfLimit);
+    const allQuery = buildQuery(false, allLimit);
+    const [[selfRows], [allRows]] = await Promise.all([
+      db.query<RowDataPacket[]>(selfQuery.sql, selfQuery.params),
+      db.query<RowDataPacket[]>(allQuery.sql, allQuery.params),
+    ]);
+    const selfRow = selfRows[0];
+    const allRow = allRows[0];
+    const selfGames = Number(selfRow?.games) || 0;
+    const allGames = Number(allRow?.games) || 0;
     if (!allGames) {
       championRadarCache.set(cacheKey, { at: Date.now(), radar: null });
       return null;
@@ -942,25 +987,38 @@ export async function getPlayerChampionRadar(
     const sample: TypeRadarSample = {
       championId: id,
       allGames,
-      selfGames: Number(row?.self_games) || 0,
+      selfGames,
       all: {
-        kp: Number(row?.all_kp) || 0,
-        gpm: Number(row?.all_gpm) || 0,
-        kda: Number(row?.all_kda) || 0,
-        dtpm: Number(row?.all_dtpm) || 0,
-        dpm: Number(row?.all_dpm) || 0,
-        hpm: Number(row?.all_hpm) || 0,
+        kp: Number(allRow?.kp) || 0,
+        gpm: Number(allRow?.gpm) || 0,
+        kda: Number(allRow?.kda) || 0,
+        dtpm: Number(allRow?.dtpm) || 0,
+        dpm: Number(allRow?.dpm) || 0,
+        hpm: Number(allRow?.hpm) || 0,
       },
       self: {
-        kp: Number(row?.self_kp) || 0,
-        gpm: Number(row?.self_gpm) || 0,
-        kda: Number(row?.self_kda) || 0,
-        dtpm: Number(row?.self_dtpm) || 0,
-        dpm: Number(row?.self_dpm) || 0,
-        hpm: Number(row?.self_hpm) || 0,
+        kp: Number(selfRow?.kp) || 0,
+        gpm: Number(selfRow?.gpm) || 0,
+        kda: Number(selfRow?.kda) || 0,
+        dtpm: Number(selfRow?.dtpm) || 0,
+        dpm: Number(selfRow?.dpm) || 0,
+        hpm: Number(selfRow?.hpm) || 0,
       },
     };
-    const radar = buildChampionRadar(sample, id);
+    const radar = buildChampionRadar(sample, id, {
+      self: {
+        games: selfGames,
+        winRate: selfGames ? (Number(selfRow?.wins) || 0) / selfGames : 0,
+        avgScore: Number(selfRow?.avg_score) || 0,
+        avgRank: Number(selfRow?.avg_rank) || 0,
+      },
+      all: {
+        games: allGames,
+        winRate: (Number(allRow?.wins) || 0) / allGames,
+        avgScore: Number(allRow?.avg_score) || 0,
+        avgRank: Number(allRow?.avg_rank) || 0,
+      },
+    });
     championRadarCache.set(cacheKey, { at: Date.now(), radar });
     return radar;
   } catch {

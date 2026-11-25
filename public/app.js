@@ -51,6 +51,7 @@ const els = {
   matchesSummary: document.getElementById('matches-summary'),
   championRadar: document.getElementById('champion-radar'),
   matchesRangeTabs: document.getElementById('matches-range-tabs'),
+  matchesRangeAll: document.getElementById('matches-range-all'),
   matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
   aiModalTitle: document.getElementById('ai-modal-title'),
@@ -301,6 +302,10 @@ const state = {
   championRadarLoading: false,
   championRadarError: '',
   championRadarToken: 0,
+  /** 雷达评分过滤：0 = 全部，50 / 60 / 70 / 80 = 只统计该分数以上 */
+  championRadarMinScore: 0,
+  /** 全体样本最近场次：0 = 全部 */
+  championRadarAllLimit: 1000,
   /** 时段胜率当前模式：all / SR / ARAM / ARENA */
   timeStatsMode: 'ARAM',
   /** 时段统计口径：winRate / score */
@@ -3379,6 +3384,19 @@ function updateMatchesRangeTabs(visible) {
   for (const button of els.matchesRangeTabs.querySelectorAll('[data-match-range]')) {
     button.classList.toggle('active', Number(button.dataset.matchRange) === state.matchesRange);
   }
+  const showAll = Boolean(state.championFilter);
+  els.matchesRangeTabs
+    .querySelector('[data-range-my-label]')
+    ?.classList.toggle('hidden', !showAll);
+  els.matchesRangeAll?.classList.toggle('hidden', !showAll);
+  if (showAll) {
+    for (const button of els.matchesRangeAll?.querySelectorAll('[data-all-range]') ?? []) {
+      button.classList.toggle(
+        'active',
+        Number(button.dataset.allRange) === state.championRadarAllLimit,
+      );
+    }
+  }
 }
 
 /** 当前范围需要更多对局时，自动继续翻页，直到满足场次或没有更多 */
@@ -5311,6 +5329,73 @@ function resetChampionRadar() {
     ?.classList.remove('champion-radar-open');
 }
 
+function championRadarFiltersHtml() {
+  return `<div class="champion-radar-filters">
+    <span class="champion-radar-filter-label">玩家评分</span>
+    ${[0, 50, 60, 70, 80]
+      .map(
+        (score) =>
+          `<button class="champion-radar-chip${
+            state.championRadarMinScore === score ? ' active' : ''
+          }" type="button" data-champion-radar-score="${score}">${
+            score ? `${score}+` : '全部'
+          }</button>`,
+      )
+      .join('')}
+  </div>`;
+}
+
+function championRadarDelta(value, digits = 1, suffix = '') {
+  if (!Number.isFinite(value) || Math.abs(value) < 0.05) {
+    return { text: '', className: '' };
+  }
+  return {
+    text: `${value > 0 ? '+' : ''}${value.toFixed(digits)}${suffix}`,
+    className: value > 0 ? 'better' : 'worse',
+  };
+}
+
+function championRadarSummaryHtml(radar) {
+  const self = radar.self ?? {};
+  const all = radar.all ?? {};
+  const selfGames = Number(radar.selfGames) || 0;
+  const allGames = Number(radar.allGames) || 0;
+  const winDelta = ((Number(self.winRate) || 0) - (Number(all.winRate) || 0)) * 100;
+  const scoreDelta = (Number(self.avgScore) || 0) - (Number(all.avgScore) || 0);
+  // 排名越低越好，所以用全体 - 我，正数代表我更好
+  const rankDelta = (Number(all.avgRank) || 0) - (Number(self.avgRank) || 0);
+  const rows = [
+    {
+      label: '胜率',
+      selfText: selfGames ? winRatePct(self.winRate) : '-',
+      allText: allGames ? winRatePct(all.winRate) : '-',
+      delta: championRadarDelta(winDelta, 1, '%'),
+    },
+    {
+      label: '平均分',
+      selfText: selfGames ? num(self.avgScore, 1) : '-',
+      allText: allGames ? num(all.avgScore, 1) : '-',
+      delta: championRadarDelta(scoreDelta, 1),
+    },
+    {
+      label: '平均排名',
+      selfText: selfGames ? num(self.avgRank, 1) : '-',
+      allText: allGames ? num(all.avgRank, 1) : '-',
+      delta: championRadarDelta(rankDelta, 1),
+    },
+  ];
+  return `<div class="champion-radar-summary">${rows
+    .map(
+      (row) => `<div class="champion-radar-summary-row">
+        <span>${row.label}</span>
+        <b>${row.selfText}</b>
+        <small>全体 ${row.allText}</small>
+        <em class="${row.delta.className}">${row.delta.text}</em>
+      </div>`,
+    )
+    .join('')}</div>`;
+}
+
 function renderChampionMatchRadar() {
   if (!els.championRadar) return;
   const filter = state.championFilter;
@@ -5326,12 +5411,14 @@ function renderChampionMatchRadar() {
     ?.querySelector('.modal-card')
     ?.classList.add('champion-radar-open');
   const name = filter.championName || state.championRadarName || '该英雄';
+  const filtersHtml = championRadarFiltersHtml();
   let html = '';
   if (state.championRadarLoading) {
     html = `<div class="champion-radar-card">
       <div class="champion-radar-head"><span class="champion-radar-title">${escapeHtml(
         name,
       )}<small>英雄对比</small></span></div>
+      ${filtersHtml}
       <div class="search-status"><span class="spinner"></span><span>正在汇总所有玩家…</span></div>
     </div>`;
   } else if (state.championRadarError) {
@@ -5339,20 +5426,26 @@ function renderChampionMatchRadar() {
       <div class="champion-radar-head"><span class="champion-radar-title">${escapeHtml(
         name,
       )}<small>英雄对比</small></span></div>
+      ${filtersHtml}
       <div class="search-status error">${escapeHtml(state.championRadarError)}</div>
     </div>`;
   } else {
     const radar = state.championRadar;
-    if (
-      !radar ||
-      radar.championId !== Number(filter.championId) ||
-      !radar.selfGames
-    ) {
+    if (!radar || radar.championId !== Number(filter.championId)) {
       html = `<div class="champion-radar-card">
         <div class="champion-radar-head"><span class="champion-radar-title">${escapeHtml(
           name,
         )}<small>英雄对比</small></span></div>
-        <div class="type-radar-empty">这个英雄还没有你的历史对局</div>
+        ${filtersHtml}
+        <div class="type-radar-empty">暂无对比数据</div>
+      </div>`;
+    } else if (!radar.selfGames) {
+      html = `<div class="champion-radar-card">
+        <div class="champion-radar-head"><span class="champion-radar-title">${escapeHtml(
+          name,
+        )}<small>英雄对比</small></span></div>
+        ${filtersHtml}
+        <div class="type-radar-empty">当前筛选下还没有你的对局，换个分数或场次试试</div>
       </div>`;
     } else {
       const series = timeStatsRadarSeries(radar);
@@ -5369,15 +5462,17 @@ function renderChampionMatchRadar() {
         <div class="champion-radar-head">
           <span class="champion-radar-title">${escapeHtml(
             name,
-          )}<small>我 ${radar.selfGames} 场 / 所有玩家 ${radar.allGames} 场</small></span>
+          )}<small>我 ${radar.selfGames} 场 / 全体 ${radar.allGames} 场</small></span>
         </div>
+        ${filtersHtml}
+        ${championRadarSummaryHtml(radar)}
         <div class="champion-radar-chart">${radarSvg(series, {
           selfLabel: '我',
-          avgLabel: '所有玩家',
+          avgLabel: '全体',
           ariaLabel: `${name}对比`,
         })}</div>
         <div class="champion-radar-compare">${metricsHtml}</div>
-        <div class="champion-radar-note">实线：我 · 虚线：所有玩家；经济 / 承伤 / 伤害 / 治疗为分均</div>
+        <div class="champion-radar-note">实线：我 · 虚线：全体；经济 / 承伤 / 伤害 / 治疗为分均</div>
       </div>`;
     }
   }
@@ -5397,6 +5492,15 @@ async function loadChampionRadar(championId, championName, mode) {
   try {
     const params = new URLSearchParams({ championId: String(championId) });
     if (mode && mode !== 'all') params.set('mode', mode);
+    if (state.championRadarMinScore > 0) {
+      params.set('minScore', String(state.championRadarMinScore));
+    }
+    if (state.matchesRange > 0) {
+      params.set('selfLimit', String(state.matchesRange));
+    }
+    if (state.championRadarAllLimit > 0) {
+      params.set('allLimit', String(state.championRadarAllLimit));
+    }
     const response = await fetch(
       `/api/archive/champion-radar?${params.toString()}`,
       { cache: 'no-store' },
@@ -5420,6 +5524,12 @@ async function loadChampionRadar(championId, championName, mode) {
       renderChampionMatchRadar();
     }
   }
+}
+
+function reloadChampionRadar() {
+  const filter = state.championFilter;
+  if (!filter?.championId) return;
+  void loadChampionRadar(filter.championId, filter.championName, filter.mode);
 }
 
 function renderChampionRanking(champions, mode = state.championRankingMode) {
@@ -6124,6 +6234,15 @@ els.mySrTabs.addEventListener('click', (event) => {
   void openMyMatches({ keepFilter: true, keepMode: true, preserveNavigation: true });
 });
 els.matchesRangeTabs.addEventListener('click', (event) => {
+  const allButton = event.target.closest('[data-all-range]');
+  if (allButton) {
+    const limit = Number(allButton.dataset.allRange) || 0;
+    if (limit === state.championRadarAllLimit) return;
+    state.championRadarAllLimit = limit;
+    updateMatchesRangeTabs(true);
+    reloadChampionRadar();
+    return;
+  }
   const button = event.target.closest('[data-match-range]');
   if (!button) return;
   const range = Number(button.dataset.matchRange) || 0;
@@ -6137,6 +6256,15 @@ els.matchesRangeTabs.addEventListener('click', (event) => {
     renderMyMatches();
     void fillMatchRange();
   }
+  reloadChampionRadar();
+});
+els.championRadar.addEventListener('click', (event) => {
+  const chip = event.target.closest('[data-champion-radar-score]');
+  if (!chip) return;
+  const score = Number(chip.dataset.championRadarScore) || 0;
+  if (score === state.championRadarMinScore) return;
+  state.championRadarMinScore = score;
+  reloadChampionRadar();
 });
 els.championRanking.addEventListener('click', () => void openChampionRanking());
 els.championRankingClose.addEventListener('click', closeChampionRanking);

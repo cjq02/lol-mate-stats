@@ -449,6 +449,87 @@ body::before {
   color: var(--muted);
 }
 
+.champion-radar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.champion-radar-filter-label {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.champion-radar-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.champion-radar-chip:hover {
+  border-color: var(--line-strong);
+  color: #dbe6ff;
+}
+
+.champion-radar-chip.active {
+  border-color: rgba(94, 234, 212, 0.45);
+  background: rgba(94, 234, 212, 0.12);
+  color: #5eead4;
+}
+
+.champion-radar-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.champion-radar-summary-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+}
+
+.champion-radar-summary-row > span {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.champion-radar-summary-row > b {
+  font-size: 12.5px;
+  color: #e8f0ff;
+  white-space: nowrap;
+}
+
+.champion-radar-summary-row > small {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.champion-radar-summary-row > em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.champion-radar-summary-row > em.better {
+  color: #3ddc97;
+}
+
+.champion-radar-summary-row > em.worse {
+  color: #ff6b81;
+}
+
 .champion-radar-chart {
   display: flex;
   justify-content: center;
@@ -627,6 +708,7 @@ body::before {
 .champion-rank-stats small {
   font-size: 9.5px;
   color: var(--muted-2);
+  white-space: nowrap;
 }
 
 .champion-rank-extra {
@@ -1042,6 +1124,24 @@ body::before {
 .match-tabs.range-tabs {
   padding-top: 3px;
   background: rgba(255, 255, 255, 0.012);
+  flex-wrap: wrap;
+}
+
+.range-tabs-label {
+  align-self: center;
+  padding: 0 2px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.range-tabs-all {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
 }
 
 .match-tabs.sub-tabs {

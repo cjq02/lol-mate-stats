@@ -51,6 +51,7 @@ import {
   saveSelfPuuid,
   type ArchivedMatch,
   type ChampionModeRecord,
+  type ChampionRadarOptions,
   type PlayerMatchFilter,
 } from './stats/archive.js';
 import { currentQueueGroup, modeFromQueue, queueGroupName, queueName } from './stats/constants.js';
@@ -1257,10 +1258,14 @@ export class LiveSource implements DataSource {
     puuid: string | undefined,
     championId: number,
     mode?: GameModeKey,
+    options?: ChampionRadarOptions,
   ): Promise<{ puuid: string; radar: Awaited<ReturnType<typeof getPlayerChampionRadar>> }> {
     const id = await this.resolveArchivePuuid(puuid);
     if (!id) return { puuid: '', radar: null };
-    return { puuid: id, radar: await getPlayerChampionRadar(id, championId, mode) };
+    return {
+      puuid: id,
+      radar: await getPlayerChampionRadar(id, championId, mode, options),
+    };
   }
 
   private async resolveArchivePuuid(puuid?: string): Promise<string> {

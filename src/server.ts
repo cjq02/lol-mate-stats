@@ -773,8 +773,15 @@ async function handleRequest(
     const rawMode = url.searchParams.get('mode');
     const mode: GameModeKey | undefined =
       rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    const minScore = Number(url.searchParams.get('minScore') ?? 0);
+    const selfLimit = Number(url.searchParams.get('selfLimit') ?? 0);
+    const allLimit = Number(url.searchParams.get('allLimit') ?? 0);
     try {
-      const data = await source.getArchivedChampionRadar(puuid, championId, mode);
+      const data = await source.getArchivedChampionRadar(puuid, championId, mode, {
+        minScore: Number.isFinite(minScore) ? minScore : 0,
+        selfLimit: Number.isFinite(selfLimit) ? selfLimit : 0,
+        allLimit: Number.isFinite(allLimit) ? allLimit : 0,
+      });
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
       sendJson(res, 502, {
