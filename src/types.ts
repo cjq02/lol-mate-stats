@@ -315,6 +315,16 @@ export interface ChampionUsage {
   bestScore: number;
 }
 
+/** 某个英雄在全体玩家里的表现，卡片上用来参考英雄本身的强度 */
+export interface ChampionOverallUsage {
+  /** 参与统计的出场次数（每个英雄最多取最近 N 次） */
+  games: number;
+  winRate: number;
+  avgScore: number;
+  /** 该英雄的单场排名均值（双方有评分的玩家一起排） */
+  avgRank: number;
+}
+
 export interface RecentSummary {
   games: number;
   wins: number;
@@ -686,6 +696,8 @@ export interface MatchScoreboardPlayer {
   visionPerMin?: number;
   /** 本局“坑”的程度 */
   badLevel?: BadLevel;
+  /** 该英雄在全体玩家里的表现（最近 N 次出场） */
+  championOverall?: ChampionOverallUsage;
   /** 被推断为逃跑时的判定依据 */
   afkReason?: string;
   tags?: string[];
@@ -889,6 +901,8 @@ export interface PlayerReport {
   baseline?: PlayerBaseline;
   /** 当前英雄的历史熟练度（来自长期存档） */
   championStats?: ChampionUsage;
+  /** 当前英雄在全体玩家里的表现（最近 N 次出场） */
+  championOverall?: ChampionOverallUsage;
   /** 本局实时数据（游戏进行中才有） */
   live?: LiveStats;
   /** 人机玩家（无战绩可查） */

@@ -1332,6 +1332,7 @@ function buildCard(player, isLocal, options = {}) {
     : risk?.badGames ?? 0;
   const baseline = player.baseline;
   const championStats = player.championStats;
+  const championOverall = player.championOverall;
   const cardMode = options.mode === undefined ? state.snapshot?.gameMode : options.mode;
   const modeName = options.modeLabel ?? currentModeLabel();
   // 大乱斗/竞技场没有常规眼位，不展示视野相关指标
@@ -1517,6 +1518,25 @@ function buildCard(player, isLocal, options = {}) {
         </div>`
       : '';
 
+  // 对局详情 / 对局阶段：这个英雄在全体玩家里的强度，放在英雄信息下面
+  const championOverallBlock =
+    (thisGame || options.liveView) &&
+    championOverall &&
+    Number(championOverall.games) > 0
+      ? `<div class="champ-overall" title="${escapeHtml(
+          `当前模式全体玩家在该英雄上的最近 ${Number(championOverall.games)} 次出场`,
+        )}">
+          <span class="champ-overall-label">该英雄全体</span>
+          <span>胜率 <b>${winRatePct(championOverall.winRate)}</b></span>
+          <span>均分 <b>${num(championOverall.avgScore, 1)}</b></span>
+          <span>平均排名 <b>${
+            Number(championOverall.avgRank) > 0
+              ? `#${num(championOverall.avgRank, 1)}`
+              : '-'
+          }</b></span>
+        </div>`
+      : '';
+
   const detail = games.length && !thisGame
     ? `<button class="btn matches-btn" type="button" data-action="matches">查看最近 ${games.length} 场战绩</button>`
     : '';
@@ -1670,6 +1690,8 @@ function buildCard(player, isLocal, options = {}) {
       </div>
       ${picked}
     </div>
+
+    ${championOverallBlock}
 
     <div class="score-row">
       <div class="ring${!thisGame && player.loading && !recent ? ' loading' : ''}" style="--p:${rating ?? 0};--ring:${color}"${scoreTipAttr}>
@@ -3328,6 +3350,7 @@ function renderScoreboard(detail) {
         displayName: report?.displayName ?? row.name,
         championId: row.championId,
         championName: row.championName ?? report?.championName,
+        championOverall: row.championOverall ?? report?.championOverall,
         position: row.position ?? report?.position,
         isEnemy: row.isEnemy,
         isBot: report?.isBot,

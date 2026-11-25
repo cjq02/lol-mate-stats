@@ -4,6 +4,7 @@ import type {
   AnalyzedGame,
   ArchiveCursor,
   BadLevel,
+  ChampionOverallUsage,
   ChampionUsage,
   GameModeKey,
   Lane,
@@ -1219,6 +1220,31 @@ export async function getChampionOverallScores(
     }
   } catch {
     /* 查询失败时按无整体数据降级，不影响个人榜单 */
+  }
+  return result;
+}
+
+/** 卡片上的英雄全体数据固定取最近 1000 次出场，和英雄排名默认口径一致 */
+export const CHAMPION_CARD_SAMPLE_LIMIT = 1000;
+
+/** 批量取卡片要显示的英雄全体表现：胜率、平均分、平均排名 */
+export async function getChampionOverallForCards(
+  championIds: number[],
+  mode?: GameModeKey,
+): Promise<Map<number, ChampionOverallUsage>> {
+  const result = new Map<number, ChampionOverallUsage>();
+  const records = await getChampionOverallScores(
+    championIds,
+    mode,
+    CHAMPION_CARD_SAMPLE_LIMIT,
+  );
+  for (const [championId, record] of records) {
+    result.set(championId, {
+      games: record.games,
+      winRate: record.winRate,
+      avgScore: record.avgScore,
+      avgRank: record.avgRank,
+    });
   }
   return result;
 }

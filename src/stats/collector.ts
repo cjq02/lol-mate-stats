@@ -5,6 +5,7 @@ import type {
   ChampSelectSession,
   ChampionUsage,
   GameContext,
+  GameModeKey,
   LiveGamePlayer,
   LiveMember,
   LiveStats,
@@ -20,6 +21,7 @@ import { liveItemIds } from '../lcu/live.js';
 import { analyzeGame, computeMatchScores, matchBestTags } from './analyze.js';
 import {
   archiveGames,
+  getChampionOverallForCards,
   getPlayerBaselines,
   getPlayerChampionUsages,
   getPlayerRecentAnalyzedGames,
@@ -555,7 +557,7 @@ export class ReportCollector {
       onProgress?.([...reports]);
     });
 
-    await this.attachHistoryInsights(reports);
+    await this.attachHistoryInsights(reports, context?.mode);
     return reports;
   }
 
@@ -661,7 +663,7 @@ export class ReportCollector {
     const sorted = reports.sort(
       (a, b) => Number(Boolean(a.isEnemy)) - Number(Boolean(b.isEnemy)),
     );
-    await this.attachHistoryInsights(sorted);
+    await this.attachHistoryInsights(sorted, context?.mode);
     // 历史对局没有 teamParticipantId，用最近战绩里“同队同局”的次数推断开黑，
     // 这样对局详情里敌方双排也能被标出来；缓存里可能带着上一局的旧标记，先清掉。
     const premade = premadeSizesFromGames(sorted, matchGameId || undefined);
@@ -726,7 +728,7 @@ export class ReportCollector {
       }
     });
 
-    await this.attachHistoryInsights(reports);
+    await this.attachHistoryInsights(reports, context?.mode);
     return reports;
   }
 
@@ -1083,7 +1085,10 @@ export class ReportCollector {
    * 给报告补上“跟自己比”的历史基线，以及当前英雄的熟练度。
    * 数据来自长期存档；没有配置 MySQL 或样本不足时自动跳过。
    */
-  private async attachHistoryInsights(reports: PlayerReport[]): Promise<void> {
+  private async attachHistoryInsights(
+    reports: PlayerReport[],
+    mode?: GameModeKey,
+  ): Promise<void> {
     const targets = reports.filter((report) => report.puuid && !report.isBot);
     if (!targets.length) return;
 
@@ -1169,6 +1174,22 @@ export class ReportCollector {
         report.championStats = this.championUsageCache.get(
           `${report.puuid}:${report.championId}`,
         )?.usage;
+      }
+    }
+
+    // 卡片上的英雄强度参考：当前模式里这个英雄全体玩家的胜率 / 均分 / 平均排名
+    const overallIds = [
+      ...new Set(
+        targets
+          .map((report) => Number(report.championId) || 0)
+          .filter((championId) => championId > 0),
+      ),
+    ];
+    if (mode && overallIds.length) {
+      const overall = await getChampionOverallForCards(overallIds, mode);
+      for (const report of targets) {
+        const championId = Number(report.championId) || 0;
+        report.championOverall = championId ? overall.get(championId) : undefined;
       }
     }
   }

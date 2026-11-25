@@ -4,6 +4,7 @@ import type {
   AramChampionOption,
   ChampSelectMember,
   ChampSelectSession,
+  ChampionOverallUsage,
   EndOfGameStatsBlock,
   GameContext,
   GameModeKey,
@@ -40,6 +41,7 @@ import {
   getChampionOverallScores,
   getChampionOverallTotal,
   getAllChampionOverallScores,
+  getChampionOverallForCards,
   getPlayerChampionScores,
   getPlayerChampionRadar,
   getPlayerMatchRanks,
@@ -531,6 +533,25 @@ export class LiveSource implements DataSource {
     return changed;
   }
 
+  /** 旧缓存详情没有英雄全体数据，打开时按存档补算一次 */
+  private async enrichDetailChampionOverall(detail: MatchDetail): Promise<boolean> {
+    const rows = (detail.scoreboard ?? []).filter((row) => !row.championOverall);
+    if (!rows.length) return false;
+    const mode = detail.gameMode ?? modeFromQueue(detail.queueId);
+    const overall = await getChampionOverallForCards(
+      rows.map((row) => row.championId),
+      mode,
+    ).catch(() => new Map<number, ChampionOverallUsage>());
+    let changed = false;
+    for (const row of rows) {
+      const record = overall.get(row.championId);
+      if (!record) continue;
+      row.championOverall = record;
+      changed = true;
+    }
+    return changed;
+  }
+
   /** 旧缓存详情可能没有英雄定位，打开时按 championId 补算一次，供评分弹窗显示角色 */
   private enrichDetailScoreRules(detail: MatchDetail): boolean {
     let changed = false;
@@ -670,9 +691,13 @@ export class LiveSource implements DataSource {
         const filled = await this.enrichDetailRanks(cached);
         const reasons = await this.enrichDetailAfk(cached);
         const rules = this.enrichDetailScoreRules(cached);
-        if (filled || reasons || rules) {
+        const overall = await this.enrichDetailChampionOverall(cached);
+        if (filled || reasons || rules || overall) {
           await saveMatchDetail(cached);
-          logTag('match', `[${gameId}] 命中对局详情缓存，已补算近期平均排名、逃跑标记和评分定位`);
+          logTag(
+            'match',
+            `[${gameId}] 命中对局详情缓存，已补算近期平均排名、逃跑标记、评分定位和英雄全体数据`,
+          );
         } else {
           logTag('match', `[${gameId}] 命中对局详情缓存，直接返回`);
         }
@@ -779,6 +804,11 @@ export class LiveSource implements DataSource {
       );
     }
 
+    const championOverall = await getChampionOverallForCards(
+      (game.participants ?? []).map((participant) => toNumber(participant.championId)),
+      gameMode,
+    ).catch(() => new Map<number, ChampionOverallUsage>());
+
     const scoreboard = (game.participants ?? [])
       .map((participant) => {
         const identity = identities.find(
@@ -873,6 +903,7 @@ export class LiveSource implements DataSource {
           name,
           championId,
           championName: championMap.get(championId)?.name,
+          championOverall: championOverall.get(championId),
           teamId: toNumber(participant.teamId),
           isEnemy: toNumber(participant.teamId) !== allyTeam,
           position,

@@ -4626,6 +4626,32 @@ body::before {
   opacity: 0.65;
 }
 
+/* 该英雄在全体玩家里的强度：对局详情和对局阶段放在英雄信息下面 */
+.champ-overall {
+  display: flex;
+  align-items: baseline;
+  gap: 4px 9px;
+  flex-wrap: wrap;
+  padding: 5px 9px;
+  border-radius: 9px;
+  border: 1px solid rgba(139, 184, 255, 0.18);
+  background: rgba(139, 184, 255, 0.06);
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.champ-overall .champ-overall-label {
+  color: #9fc4ea;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.champ-overall b {
+  color: #dbe6ff;
+  font-weight: 750;
+}
+
 .risk-pill {
   font-size: 10px;
   font-weight: 650;
