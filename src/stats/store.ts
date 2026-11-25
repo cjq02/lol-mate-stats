@@ -269,6 +269,20 @@ const SCHEMA_MIGRATIONS: SchemaMigration[] = [
       }
     },
   },
+  {
+    version: 8,
+    describe: '对局参与者增加最终装备',
+    up: async (db) => {
+      for (let slot = 0; slot <= 6; slot += 1) {
+        const column = `item${slot}`;
+        if (!(await hasColumn(db, 'match_participants', column))) {
+          await db.query(
+            `ALTER TABLE match_participants ADD COLUMN ${column} INT NOT NULL DEFAULT 0`,
+          );
+        }
+      }
+    },
+  },
 ];
 
 async function runSchemaMigrations(db: Pool): Promise<void> {
@@ -384,6 +398,13 @@ async function ensureSchema(db: Pool): Promise<void> {
        damage_taken INT NOT NULL,
        heal INT NOT NULL DEFAULT 0,
        vision INT NOT NULL,
+       item0 INT NOT NULL DEFAULT 0,
+       item1 INT NOT NULL DEFAULT 0,
+       item2 INT NOT NULL DEFAULT 0,
+       item3 INT NOT NULL DEFAULT 0,
+       item4 INT NOT NULL DEFAULT 0,
+       item5 INT NOT NULL DEFAULT 0,
+       item6 INT NOT NULL DEFAULT 0,
        is_bot TINYINT NOT NULL DEFAULT 0,
        score DOUBLE NULL,
        tags VARCHAR(255) NULL,

@@ -31,6 +31,7 @@ import { getDb, getSavedMatchTimeline, readMeta, saveTimelineAfkStats, withTrans
 import {
   buildChampionRadar,
   buildTypeRadar,
+  summarizeChampionItems,
   summarizeTimeStats,
   type ChampionRadarEntry,
   type TypeRadarEntry,
@@ -475,6 +476,13 @@ export async function archiveGames(
             stat(stats, 'totalDamageTaken'),
             stat(stats, 'totalHeal'),
             stat(stats, 'visionScore'),
+            stat(stats, 'item0'),
+            stat(stats, 'item1'),
+            stat(stats, 'item2'),
+            stat(stats, 'item3'),
+            stat(stats, 'item4'),
+            stat(stats, 'item5'),
+            stat(stats, 'item6'),
             bot ? 1 : 0,
             analyzed?.score ?? null,
             JSON.stringify(tags),
@@ -486,7 +494,9 @@ export async function archiveGames(
             `INSERT INTO match_participants
                (game_id, participant_id, puuid, summoner_id, display_name, team_id,
                 champion_id, champion_name, \`position\`, win, kills, deaths, assists,
-                cs, gold, damage, damage_taken, heal, vision, is_bot, score, tags)
+                cs, gold, damage, damage_taken, heal, vision,
+                item0, item1, item2, item3, item4, item5, item6,
+                is_bot, score, tags)
              VALUES ?`,
             [rows],
           );
@@ -969,12 +979,37 @@ export async function getPlayerChampionRadar(
     };
   };
 
+  const buildItemQuery = (selfOnly: boolean, limit: number) => {
+    const conditions = [...baseConditions];
+    const params: Array<string | number> = [id, id + 60000];
+    if (minScore > 0) params.push(minScore);
+    if (selfOnly) {
+      conditions.push('p.puuid = ?');
+      params.push(puuid);
+    }
+    const limitSql = limit > 0 ? 'LIMIT ?' : '';
+    if (limit > 0) params.push(limit);
+    return {
+      sql: `SELECT p.item0, p.item1, p.item2, p.item3, p.item4, p.item5, p.item6
+            FROM match_participants p
+            JOIN matches m ON m.game_id = p.game_id
+            WHERE ${conditions.join(' AND ')}
+            ORDER BY m.game_creation DESC, p.game_id DESC, p.participant_id DESC
+            ${limitSql}`,
+      params,
+    };
+  };
+
   try {
     const selfQuery = buildQuery(true, selfLimit);
     const allQuery = buildQuery(false, allLimit);
-    const [[selfRows], [allRows]] = await Promise.all([
+    const selfItemQuery = buildItemQuery(true, selfLimit);
+    const allItemQuery = buildItemQuery(false, allLimit);
+    const [[selfRows], [allRows], [selfItemRows], [allItemRows]] = await Promise.all([
       db.query<RowDataPacket[]>(selfQuery.sql, selfQuery.params),
       db.query<RowDataPacket[]>(allQuery.sql, allQuery.params),
+      db.query<RowDataPacket[]>(selfItemQuery.sql, selfItemQuery.params),
+      db.query<RowDataPacket[]>(allItemQuery.sql, allItemQuery.params),
     ]);
     const selfRow = selfRows[0];
     const allRow = allRows[0];
@@ -1019,6 +1054,14 @@ export async function getPlayerChampionRadar(
         avgRank: Number(allRow?.avg_rank) || 0,
       },
     });
+    const toItemIds = (rows: RowDataPacket[]) =>
+      rows.map((row) =>
+        Array.from({ length: 7 }, (_, slot) => Number(row[`item${slot}`]) || 0),
+      );
+    radar.items = summarizeChampionItems(
+      toItemIds(selfItemRows),
+      toItemIds(allItemRows),
+    );
     championRadarCache.set(cacheKey, { at: Date.now(), radar });
     return radar;
   } catch {

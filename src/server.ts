@@ -105,7 +105,10 @@ const ASSET_DIR = join(DATA_DIR, 'assets');
 const ITEMS_ASSET_PATH = '/lol-game-data/assets/v1/items.json';
 const ITEMS_DISK_PATH = join(ASSET_DIR, 'items.json');
 const ITEMS_PREFETCH_MARKER = join(ASSET_DIR, 'items-prefetch.json');
-type ItemTable = Record<string, { icon: string; name: string; price: number }>;
+type ItemTable = Record<
+  string,
+  { icon: string; name: string; price: number; to?: number[]; categories?: string[] }
+>;
 let itemsCache: { at: number; items: ItemTable } | undefined;
 let itemPrefetch: Promise<void> | undefined;
 const ASSET_CACHE_LIMIT = 300;
@@ -1149,6 +1152,8 @@ function parseItemTable(body: Buffer): ItemTable {
     iconPath?: string;
     price?: number;
     priceTotal?: number;
+    to?: unknown;
+    categories?: unknown;
   }>;
   const items: ItemTable = {};
   for (const item of list) {
@@ -1157,6 +1162,12 @@ function parseItemTable(body: Buffer): ItemTable {
         icon: item.iconPath,
         name: item.name ?? '',
         price: Number(item.priceTotal ?? item.price ?? 0) || 0,
+        to: Array.isArray(item.to)
+          ? item.to.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+          : [],
+        categories: Array.isArray(item.categories)
+          ? item.categories.map((category) => String(category))
+          : [],
       };
     }
   }

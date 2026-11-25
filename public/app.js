@@ -211,6 +211,9 @@ const CHAMPION_RANKING_SORT_LABELS = {
   winRate: '胜率',
   best: '最高分',
   proficiency: '熟练度',
+  overallAvg: '全体平均分',
+  overallWinRate: '全体胜率',
+  overallRank: '全体平均排名',
 };
 
 const TIME_STATS_DIMENSION_LABELS = {
@@ -3223,9 +3226,18 @@ function radarSvg(series, options = {}) {
             : metric.rank >= 8
               ? 'rank-low'
               : 'rank-mid';
+      const hasSplitValue =
+        metric.selfText !== undefined && metric.allText !== undefined;
+      const valueHtml = hasSplitValue
+        ? `<tspan class="radar-value-self">${escapeHtml(
+            metric.selfText,
+          )}</tspan><tspan class="radar-value-sep">/</tspan><tspan class="radar-value-all">${escapeHtml(
+            metric.allText,
+          )}</tspan>`
+        : escapeHtml(metric.valueText);
       return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" class="radar-label ${labelTone}">
         <tspan x="${x.toFixed(1)}" dy="${firstDy}">${metric.label}</tspan>
-        <tspan x="${x.toFixed(1)}" dy="1.08em" class="radar-value">${metric.valueText}</tspan>
+        <tspan x="${x.toFixed(1)}" dy="1.08em" class="radar-value">${valueHtml}</tspan>
       </text>`;
     })
     .join('');
@@ -5396,6 +5408,78 @@ function championRadarSummaryHtml(radar) {
     .join('')}</div>`;
 }
 
+function isCompletedItemMeta(meta) {
+  if (!meta) return false;
+  const categories = Array.isArray(meta.categories) ? meta.categories : [];
+  if (categories.includes('Trinket') || categories.includes('Consumable')) {
+    return false;
+  }
+  const price = Number(meta.price) || 0;
+  if (categories.includes('Boots')) return price >= 600;
+  const to = Array.isArray(meta.to) ? meta.to : [];
+  return to.length === 0 && price >= 1000;
+}
+
+function championRadarItemsHtml(radar) {
+  const items = radar.items;
+  if (!items || (!items.selfGames && !items.allGames)) {
+    return `<div class="champion-radar-items empty">
+      <div class="champion-radar-items-head"><span>整装</span><small>装备数据还在回填</small></div>
+    </div>`;
+  }
+  if (!state.itemIcons || !Object.keys(state.itemIcons).length) {
+    void loadItemIcons();
+  }
+  const selfMap = new Map((items.self ?? []).map((stat) => [stat.itemId, stat]));
+  const allMap = new Map((items.all ?? []).map((stat) => [stat.itemId, stat]));
+  const ids = new Set([...selfMap.keys(), ...allMap.keys()]);
+  const rows = [...ids]
+    .map((itemId) => ({
+      itemId,
+      meta: state.itemIcons?.[String(itemId)] ?? null,
+      self: selfMap.get(itemId),
+      all: allMap.get(itemId),
+    }))
+    .filter((row) => isCompletedItemMeta(row.meta))
+    .sort(
+      (a, b) =>
+        (b.self?.count || 0) - (a.self?.count || 0) ||
+        (b.all?.count || 0) - (a.all?.count || 0),
+    )
+    .slice(0, 6);
+  if (!rows.length) {
+    return `<div class="champion-radar-items empty">
+      <div class="champion-radar-items-head"><span>整装</span><small>暂无可识别的成装</small></div>
+    </div>`;
+  }
+  const format = (stat) => `${stat?.count ?? 0} · ${pct(stat?.rate ?? 0)}`;
+  return `<div class="champion-radar-items">
+    <div class="champion-radar-items-head">
+      <span>整装</span>
+      <small>我 ${items.selfGames} 场 / 全体 ${items.allGames} 场有装备</small>
+    </div>
+    <div class="champion-radar-items-legend"><span>我</span><span>全体</span></div>
+    ${rows
+      .map(
+        (row) => `<div class="champion-radar-item">
+          ${iconHtml(
+            row.meta?.icon ?? null,
+            row.meta?.name ?? String(row.itemId),
+            'sm',
+            row.meta?.name,
+            ` data-item-id="${row.itemId}"`,
+          )}
+          <span class="champion-radar-item-name">${escapeHtml(
+            row.meta?.name ?? String(row.itemId),
+          )}</span>
+          <b>${format(row.self)}</b>
+          <span>${format(row.all)}</span>
+        </div>`,
+      )
+      .join('')}
+  </div>`;
+}
+
 function renderChampionMatchRadar() {
   if (!els.championRadar) return;
   const filter = state.championFilter;
@@ -5465,6 +5549,10 @@ function renderChampionMatchRadar() {
           )}<small>我 ${radar.selfGames} 场 / 全体 ${radar.allGames} 场</small></span>
         </div>
         ${filtersHtml}
+        <div class="champion-radar-legend">
+          <span><i class="self"></i>我</span>
+          <span><i class="all"></i>全体</span>
+        </div>
         ${championRadarSummaryHtml(radar)}
         <div class="champion-radar-chart">${radarSvg(series, {
           selfLabel: '我',
@@ -5472,6 +5560,7 @@ function renderChampionMatchRadar() {
           ariaLabel: `${name}对比`,
         })}</div>
         <div class="champion-radar-compare">${metricsHtml}</div>
+        ${championRadarItemsHtml(radar)}
         <div class="champion-radar-note">实线：我 · 虚线：全体；经济 / 承伤 / 伤害 / 治疗为分均</div>
       </div>`;
     }
@@ -5759,6 +5848,8 @@ function timeStatsRadarSeries(entry) {
     return {
       label: metric.label,
       valueText: `${metric.selfText}/${metric.allText}`,
+      selfText: metric.selfText,
+      allText: metric.allText,
       selfRatio: (self / max) * 100,
       avgRatio: (all / max) * 100,
       title: `${metric.label} · 我 ${metric.selfText} · 所有玩家 ${metric.allText}`,

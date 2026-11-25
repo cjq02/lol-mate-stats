@@ -483,6 +483,33 @@ body::before {
   color: #5eead4;
 }
 
+.champion-radar-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.champion-radar-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.champion-radar-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.champion-radar-legend i.self {
+  background: #5eead4;
+}
+
+.champion-radar-legend i.all {
+  background: #9aa8c7;
+}
+
 .champion-radar-summary {
   display: flex;
   flex-direction: column;
@@ -506,13 +533,13 @@ body::before {
 
 .champion-radar-summary-row > b {
   font-size: 12.5px;
-  color: #e8f0ff;
+  color: #5eead4;
   white-space: nowrap;
 }
 
 .champion-radar-summary-row > small {
   font-size: 10.5px;
-  color: var(--muted);
+  color: #9aa8c7;
   white-space: nowrap;
 }
 
@@ -564,12 +591,90 @@ body::before {
 
 .champion-radar-metric-self {
   font-size: 12.5px;
-  color: #e8f0ff;
+  color: #5eead4;
 }
 
 .champion-radar-metric-all {
   font-size: 10.5px;
+  color: #9aa8c7;
+}
+
+.champion-radar-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.champion-radar-items-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
   color: var(--muted);
+}
+
+.champion-radar-items-head > span {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: #dbe6ff;
+}
+
+.champion-radar-items-head small {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.champion-radar-items-legend {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 54px 54px;
+  gap: 6px;
+  font-size: 9.5px;
+  color: var(--muted);
+}
+
+.champion-radar-items-legend span:first-child {
+  grid-column: 3;
+  text-align: right;
+}
+
+.champion-radar-items-legend span:last-child {
+  grid-column: 4;
+  text-align: right;
+}
+
+.champion-radar-item {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 54px 54px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+  font-size: 10.5px;
+}
+
+.champion-radar-item-name {
+  overflow: hidden;
+  color: #cbd8ff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.champion-radar-item b {
+  font-size: 11px;
+  color: #5eead4;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.champion-radar-item > span:last-child {
+  color: #9aa8c7;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.champion-radar-items.empty {
+  padding: 4px 0;
 }
 
 .champion-radar-note {
@@ -3471,6 +3576,18 @@ body::before {
   stroke: rgba(4, 10, 22, 0.8);
   stroke-width: 2.4px;
   stroke-linejoin: round;
+}
+
+.radar-value-self {
+  fill: #5eead4;
+}
+
+.radar-value-all {
+  fill: #9aa8c7;
+}
+
+.radar-value-sep {
+  fill: #6b7a99;
 }
 
 .match-cards::-webkit-scrollbar {

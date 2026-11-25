@@ -20,6 +20,7 @@ import {
   buildChampionRadar,
   buildTypeRadar,
   championTypeKey,
+  summarizeChampionItems,
   summarizeTimeStats,
   type TypeRadarSample,
 } from './time-stats.js';
@@ -2553,6 +2554,37 @@ test('单个英雄雷达直接使用该英雄的平均值', () => {
   assert.equal(kda.self, 4);
   assert.equal(kda.selfText, '4.00');
   assert.equal(kda.allText, '3.00');
+});
+
+test('整装统计按场次去重并计算百分比', () => {
+  const result = summarizeChampionItems(
+    [
+      [6655, 3020, 6655],
+      [6655],
+      [0, 0],
+    ],
+    [
+      [6655],
+      [3020],
+      [6655, 3020],
+    ],
+  );
+
+  assert.equal(result.selfGames, 2);
+  assert.equal(result.allGames, 3);
+
+  const selfLuden = result.self.find((stat) => stat.itemId === 6655);
+  assert.ok(selfLuden);
+  assert.equal(selfLuden.count, 2);
+  assert.equal(selfLuden.rate, 1);
+
+  const selfZhonya = result.self.find((stat) => stat.itemId === 3020);
+  assert.ok(selfZhonya);
+  assert.equal(selfZhonya.count, 1);
+  assert.equal(selfZhonya.rate, 0.5);
+
+  assert.equal(result.all.find((stat) => stat.itemId === 6655)?.count, 2);
+  assert.equal(result.all.find((stat) => stat.itemId === 3020)?.count, 2);
 });
 
 test('时段统计使用当前坑线重新判断结果', () => {

@@ -126,6 +126,64 @@ export interface ChampionRadarEntry {
   /** 我和所有玩家在同一筛选条件下的胜率 / 平均分 / 平均排名 */
   self: RadarComparisonSummary;
   all: RadarComparisonSummary;
+  /** 整装出装统计；装备数据还没回填时为空 */
+  items?: ChampionItemBuilds;
+}
+
+export interface ChampionItemStat {
+  itemId: number;
+  count: number;
+  /** count / 有装备数据的场次 */
+  rate: number;
+}
+
+export interface ChampionItemBuilds {
+  /** 我和全体里至少有一件装备的场次 */
+  selfGames: number;
+  allGames: number;
+  self: ChampionItemStat[];
+  all: ChampionItemStat[];
+}
+
+/** 把双方每场最终装备汇总成数量/百分比，装备 ID 会按场次去重 */
+export function summarizeChampionItems(
+  selfGames: number[][],
+  allGames: number[][],
+): ChampionItemBuilds {
+  const summarize = (games: number[][]) => {
+    let countedGames = 0;
+    const counts = new Map<number, number>();
+    for (const items of games) {
+      const unique = new Set(
+        (Array.isArray(items) ? items : []).filter(
+          (itemId) => Number.isFinite(itemId) && itemId > 0,
+        ),
+      );
+      if (!unique.size) continue;
+      countedGames += 1;
+      for (const itemId of unique) {
+        counts.set(itemId, (counts.get(itemId) ?? 0) + 1);
+      }
+    }
+    return {
+      games: countedGames,
+      stats: [...counts.entries()]
+        .map(([itemId, count]) => ({
+          itemId,
+          count,
+          rate: countedGames ? count / countedGames : 0,
+        }))
+        .sort((a, b) => b.count - a.count || a.itemId - b.itemId),
+    };
+  };
+  const self = summarize(selfGames);
+  const all = summarize(allGames);
+  return {
+    selfGames: self.games,
+    allGames: all.games,
+    self: self.stats,
+    all: all.stats,
+  };
 }
 
 /** 按英雄分组后的一行原始数据，交给 buildTypeRadar 汇总 */
