@@ -5704,10 +5704,10 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     0,
   );
 
-  els.championRankingMeta.textContent = list.length
-    ? `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · 按${sortLabel} · ${
+  els.championRankingMeta.innerHTML = list.length
+    ? `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · 按${sortLabel} · <b>${
         list.length
-      } 个英雄 · ${totalGames} 场`
+      }</b> 个英雄 · <b>${totalGames}</b> 场`
     : '';
 
   if (!list.length) {
@@ -5734,7 +5734,7 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const overallWin = overall ? winRatePct(overall.winRate) : '-';
       const overallAvg = overall ? num(overall.avgScore, 1) : '-';
       const overallRank = overall ? num(overall.avgRank, 1) : '-';
-      const overallPickRate = overall ? pct(overall.pickRate) : '-';
+      const overallPickRate = overall ? pct(overall.pickRate, 2) : '-';
       const myWin = hasMine ? winRatePct(item.winRate) : '-';
       const myAvg = hasMine ? num(avg, 1) : '-';
       const myRank =
@@ -5757,19 +5757,19 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           <b>${escapeHtml(name)}</b>
           <small>${
             hasMine
-              ? `${myGames} 场 · 胜率 ${myWin} · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${myProf}</span>`
+              ? `<span class="champion-rank-num">${myGames}</span> 场 · 胜率 <span class="champion-rank-num">${myWin}</span> · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 <span class="champion-rank-num">${myProf}</span></span>`
               : '<span class="champion-rank-not-played">我还没玩过这个英雄</span>'
           }</small>
           <small class="champion-rank-overall-line">
             <span class="champion-rank-overall" title="${escapeHtml(
               overallTitle,
-            )}">全体 ${overallGames} 场</span>
+            )}">全体 <span class="champion-rank-num">${overallGames}</span> 场</span>
             <span class="champion-rank-overall" title="${escapeHtml(
               overallTitle,
-            )}">登场率 ${overallPickRate}</span>
+            )}">登场率 <span class="champion-rank-num">${overallPickRate}</span></span>
             <span class="champion-rank-overall" title="${escapeHtml(
               overallTitle,
-            )}">胜率 ${overallWin}</span>
+            )}">胜率 <span class="champion-rank-num">${overallWin}</span></span>
           </small>
         </span>
         <span class="champion-rank-stats">

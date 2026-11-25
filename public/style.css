@@ -297,6 +297,13 @@ body::before {
   white-space: nowrap;
 }
 
+.champion-ranking-meta b {
+  color: #dfe9ff;
+  font-size: 12.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 .champion-ranking-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -452,16 +459,31 @@ body::before {
 }
 
 .champion-rank-overall {
-  display: inline-block;
-  padding: 1px 6px;
-  border: 1px solid rgba(143, 184, 255, 0.28);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 1px 7px;
+  border: 1px solid rgba(143, 184, 255, 0.22);
   border-radius: 999px;
-  background: rgba(143, 184, 255, 0.16);
-  color: #b6d0ff;
+  background: rgba(143, 184, 255, 0.1);
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.champion-rank-num {
+  color: #eaf2ff;
   font-size: 12px;
   font-weight: 800;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+}
+
+.champion-rank-overall .champion-rank-num {
+  font-size: 12.5px;
+  font-weight: 900;
+  line-height: 1.1;
 }
 
 .matches-body {
