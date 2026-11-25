@@ -43,6 +43,7 @@ import {
   getPlayerMatches,
   getPlayerScores,
   getPlayerTimeStats,
+  getPlayerTypeRadar,
   getPlayerWinRecord,
   getSavedSelfPuuid,
   saveSelfPuuid,
@@ -1220,6 +1221,16 @@ export class LiveSource implements DataSource {
       }
     }
     return { puuid: id, source: 'none', stats: await getPlayerTimeStats('', mode) };
+  }
+
+  /** 长期存档：按英雄类型对比我和所有玩家的六项指标 */
+  async getArchivedTypeRadar(
+    puuid?: string,
+    mode?: GameModeKey,
+  ): Promise<{ puuid: string; types: Awaited<ReturnType<typeof getPlayerTypeRadar>> }> {
+    const id = await this.resolveArchivePuuid(puuid);
+    if (!id) return { puuid: '', types: [] };
+    return { puuid: id, types: await getPlayerTypeRadar(id, mode) };
   }
 
   private async resolveArchivePuuid(puuid?: string): Promise<string> {

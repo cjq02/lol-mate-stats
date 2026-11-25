@@ -738,6 +738,27 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/archive/type-radar') {
+    if (!source.getArchivedTypeRadar) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持英雄类型对比' });
+      return;
+    }
+    const puuid = url.searchParams.get('puuid')?.trim() || undefined;
+    const rawMode = url.searchParams.get('mode');
+    const mode: GameModeKey | undefined =
+      rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    try {
+      const data = await source.getArchivedTypeRadar(puuid, mode);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (error) {
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   const matchTimelineRoute = /^\/api\/match\/(\d+)\/timeline$/.exec(url.pathname);
   if (method === 'GET' && matchTimelineRoute) {
     if (!source.getMatchTimeline) {

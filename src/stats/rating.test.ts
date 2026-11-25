@@ -16,7 +16,12 @@ import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, AFK_TOTAL
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
-import { summarizeTimeStats } from './time-stats.js';
+import {
+  buildTypeRadar,
+  championTypeKey,
+  summarizeTimeStats,
+  type TypeRadarSample,
+} from './time-stats.js';
 import { championProficiency } from './proficiency.js';
 import { championRole, championRoleProfile } from './champion-roles.js';
 import { premadeSizesByPuuid, premadeSizesFromGames } from './premade.js';
@@ -2455,6 +2460,54 @@ test('时段统计按天汇总最近 30 天的场次、胜率与评分', () => {
   assert.equal(mar2.wins, 0);
   assert.equal(mar2.scoreGames, 1);
   assert.equal(mar2.avgScore, 60);
+});
+
+test('英雄类型雷达按场次加权汇总我和所有玩家', () => {
+  const sample = (
+    championId: number,
+    allGames: number,
+    selfGames: number,
+    all: TypeRadarSample['all'],
+    self: TypeRadarSample['self'],
+  ): TypeRadarSample => ({ championId, allGames, selfGames, all, self });
+  const entries = buildTypeRadar([
+    sample(
+      103,
+      10,
+      4,
+      { kp: 50, gpm: 400, kda: 3, dtpm: 1000, dpm: 1500, hpm: 100 },
+      { kp: 60, gpm: 500, kda: 4, dtpm: 1200, dpm: 1800, hpm: 120 },
+    ),
+    sample(
+      1,
+      30,
+      2,
+      { kp: 70, gpm: 300, kda: 5, dtpm: 800, dpm: 1200, hpm: 50 },
+      { kp: 80, gpm: 350, kda: 6, dtpm: 900, dpm: 1300, hpm: 60 },
+    ),
+  ]);
+
+  assert.equal(entries.length, 7);
+  const mage = entries.find((entry) => entry.key === 'type-mage');
+  assert.ok(mage);
+  assert.equal(mage.selfGames, 6);
+  assert.equal(mage.allGames, 40);
+
+  const kp = mage.metrics.find((metric) => metric.label === '参团');
+  assert.ok(kp);
+  assert.equal(kp.all, 65);
+  assert.equal(kp.self, 66.7);
+  assert.equal(kp.allText, '65%');
+  assert.equal(kp.selfText, '67%');
+
+  const gpm = mage.metrics.find((metric) => metric.label === '经济');
+  assert.ok(gpm);
+  assert.equal(gpm.all, 325);
+  assert.equal(gpm.self, 450);
+
+  assert.equal(championTypeKey(103), 'type-mage');
+  assert.equal(championTypeKey(7), 'type-assassin');
+  assert.equal(championTypeKey(999999), 'type-default');
 });
 
 test('时段统计使用当前坑线重新判断结果', () => {

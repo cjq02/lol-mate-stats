@@ -303,6 +303,13 @@ const state = {
   timeStatsSource: '',
   timeStatsToken: 0,
   timeStatsLoading: false,
+  /** 按英雄类型展开的六角星对比：当前展开的 type key */
+  timeStatsRadarType: '',
+  /** null 表示还没加载；数组表示已加载（可能为空） */
+  timeStatsRadar: null,
+  timeStatsRadarLoading: false,
+  timeStatsRadarError: '',
+  timeStatsRadarToken: 0,
   /** 查看玩家战绩时的分页状态 */
   playerMatches: null,
   itemIcons: null,
@@ -3154,7 +3161,10 @@ function scoreSparkline(games) {
   </div>`;
 }
 
-function miniRadarSvg(series) {
+function radarSvg(series, options = {}) {
+  const selfLabel = options.selfLabel ?? '玩家';
+  const avgLabel = options.avgLabel ?? '队伍平均';
+  const ariaLabel = options.ariaLabel ?? '数据对比';
   const width = 290;
   const height = 250;
   const cx = 145;
@@ -3210,12 +3220,12 @@ function miniRadarSvg(series) {
   // 图例放在六边形标签那一圈的上方，省掉底部一行
   const legend = `<g class="radar-legend">
     <circle cx="6" cy="7" r="2.4" class="radar-legend-dot self"/>
-    <text x="11" y="9.7" class="radar-legend-label">玩家</text>
+    <text x="11" y="9.7" class="radar-legend-label">${escapeHtml(selfLabel)}</text>
     <circle cx="${width - 48}" cy="7" r="2.4" class="radar-legend-dot avg"/>
-    <text x="${width - 43}" y="9.7" class="radar-legend-label">队伍平均</text>
+    <text x="${width - 43}" y="9.7" class="radar-legend-label">${escapeHtml(avgLabel)}</text>
   </g>`;
 
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="本局数据对比">
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel)}">
     ${rings}
     ${axes}
     <polygon points="${polygon(series.map((metric) => metric.avgRatio))}" class="radar-avg"/>
@@ -3223,6 +3233,10 @@ function miniRadarSvg(series) {
     ${labels}
     ${legend}
   </svg>`;
+}
+
+function miniRadarSvg(series) {
+  return radarSvg(series);
 }
 
 /** 本局按评分给全部玩家排名，同分并列，返回每行名次和总人数 */
@@ -5463,6 +5477,125 @@ function timeStatsSourceNote() {
   return state.timeStatsSource === 'recent' ? ' · 最近 100 场（该模式暂无历史存档）' : '';
 }
 
+function timeStatsRadarEntry(key) {
+  if (!Array.isArray(state.timeStatsRadar)) return null;
+  return state.timeStatsRadar.find((entry) => entry?.key === key) ?? null;
+}
+
+function timeStatsRadarSeries(entry) {
+  return (Array.isArray(entry?.metrics) ? entry.metrics : []).map((metric) => {
+    const self = Number(metric.self) || 0;
+    const all = Number(metric.all) || 0;
+    const max = Math.max(self, all, 1);
+    return {
+      label: metric.label,
+      valueText: `${metric.selfText}/${metric.allText}`,
+      selfRatio: (self / max) * 100,
+      avgRatio: (all / max) * 100,
+      title: `${metric.label} · 我 ${metric.selfText} · 所有玩家 ${metric.allText}`,
+    };
+  });
+}
+
+function timeStatsRadarPanel(period) {
+  if (state.timeStatsRadarLoading) {
+    return `<div class="type-radar-panel">
+      <div class="search-status"><span class="spinner"></span><span>正在汇总所有玩家…</span></div>
+    </div>`;
+  }
+  if (state.timeStatsRadarError) {
+    return `<div class="type-radar-panel">
+      <div class="search-status error">${escapeHtml(state.timeStatsRadarError)}</div>
+    </div>`;
+  }
+  const entry = timeStatsRadarEntry(period.key);
+  if (!entry || !entry.selfGames) {
+    return `<div class="type-radar-panel">
+      <div class="type-radar-empty">这个类型还没有你的历史对局</div>
+    </div>`;
+  }
+  const series = timeStatsRadarSeries(entry);
+  if (!series.length) return '';
+  return `<div class="type-radar-panel">
+    <div class="type-radar-head">${escapeHtml(entry.label)} · 我 ${entry.selfGames} 场 / 所有玩家 ${entry.allGames} 场</div>
+    ${radarSvg(series, {
+      selfLabel: '我',
+      avgLabel: '所有玩家',
+      ariaLabel: `${entry.label}类型对比`,
+    })}
+    <div class="type-radar-note">实线：我 · 虚线：所有玩家；经济 / 承伤 / 伤害 / 治疗为分均，按本轴较大值归一化</div>
+  </div>`;
+}
+
+function timeStatsRowAttrs(period) {
+  const expandable = state.timeStatsDimension === 'type' && Number(period.games) > 0;
+  const expanded = expandable && state.timeStatsRadarType === period.key;
+  return {
+    expandable,
+    expanded,
+    attrs: expandable
+      ? ` data-type-radar="${period.key}" role="button" tabindex="0" aria-expanded="${expanded}" title="点击查看我和所有玩家的六角星对比"`
+      : '',
+  };
+}
+
+async function loadTimeStatsRadar() {
+  const token = (state.timeStatsRadarToken ?? 0) + 1;
+  state.timeStatsRadarToken = token;
+  state.timeStatsRadarLoading = true;
+  state.timeStatsRadarError = '';
+  renderTimeStats(state.timeStatsData, state.timeStatsMode);
+  try {
+    const params = new URLSearchParams();
+    if (state.timeStatsMode !== 'all') params.set('mode', state.timeStatsMode);
+    const query = params.toString();
+    const response = await fetch(
+      `/api/archive/type-radar${query ? `?${query}` : ''}`,
+      { cache: 'no-store' },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    if (token !== state.timeStatsRadarToken) return;
+    state.selfPuuid = payload.puuid ?? state.selfPuuid;
+    state.timeStatsRadar = Array.isArray(payload.types) ? payload.types : [];
+  } catch (error) {
+    if (token !== state.timeStatsRadarToken) return;
+    state.timeStatsRadar = [];
+    state.timeStatsRadarError = `读取类型对比失败：${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  } finally {
+    if (token === state.timeStatsRadarToken) {
+      state.timeStatsRadarLoading = false;
+      renderTimeStats(state.timeStatsData, state.timeStatsMode);
+    }
+  }
+}
+
+async function toggleTimeStatsRadar(key) {
+  if (state.timeStatsRadarType === key) {
+    state.timeStatsRadarType = '';
+    renderTimeStats(state.timeStatsData, state.timeStatsMode);
+    return;
+  }
+  state.timeStatsRadarType = key;
+  if (!Array.isArray(state.timeStatsRadar)) {
+    await loadTimeStatsRadar();
+    return;
+  }
+  renderTimeStats(state.timeStatsData, state.timeStatsMode);
+}
+
+function resetTimeStatsRadar() {
+  state.timeStatsRadarToken = (state.timeStatsRadarToken ?? 0) + 1;
+  state.timeStatsRadarType = '';
+  state.timeStatsRadar = null;
+  state.timeStatsRadarLoading = false;
+  state.timeStatsRadarError = '';
+}
+
 function timeStatsHighlight(label, period, detail) {
   return period
     ? `<div class="time-stat-highlight">
@@ -5554,7 +5687,10 @@ function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods, volume
       const noisy = period.games >= 3 && badRate >= 0.5;
       const hasGames = Number(period.games) > 0;
       const width = Math.max(0, Math.min(100, (Number(period.winRate) || 0) * 100));
-      return `<div class="time-stat-row ${tone}${noisy ? ' noisy' : ''}">
+      const rowState = timeStatsRowAttrs(period);
+      return `<div class="time-stat-row ${tone}${noisy ? ' noisy' : ''}${
+        rowState.expandable ? ' expandable' : ''
+      }${rowState.expanded ? ' expanded' : ''}"${rowState.attrs}>
         <span class="time-stat-range">${escapeHtml(period.label)}</span>
         <div class="time-stat-main">
           ${timeStatsBars(width, '胜率', period, maxGames, { volumeOnly })}
@@ -5576,6 +5712,7 @@ function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods, volume
           </div>
         </div>
         <span class="time-stat-rate">${hasGames ? winRatePct(period.winRate) : '--'}</span>
+        ${rowState.expanded ? timeStatsRadarPanel(period) : ''}
       </div>`;
     })
     .join('');
@@ -5623,19 +5760,24 @@ function renderTimeStatsScore(data, modeLabel, dimensionLabel, periods) {
 
   els.timeStatsList.innerHTML = periods
     .map((period) => {
+      const rowState = timeStatsRowAttrs(period);
+      const rowClass = `${rowState.expandable ? ' expandable' : ''}${
+        rowState.expanded ? ' expanded' : ''
+      }`;
       if (!period.scoreGames) {
-        return `<div class="time-stat-row empty">
+        return `<div class="time-stat-row empty${rowClass}"${rowState.attrs}>
           <span class="time-stat-range">${escapeHtml(period.label)}</span>
           <div class="time-stat-main">
             ${timeStatsBars(0, '评分', period, maxGames)}
             <div class="time-stat-sub"><b class="time-stat-games">${period.games} 场</b> · 暂无评分</div>
           </div>
           <span class="time-stat-rate">--</span>
+          ${rowState.expanded ? timeStatsRadarPanel(period) : ''}
         </div>`;
       }
       const tone = timeStatsScoreTone(period);
       const width = Math.max(0, Math.min(100, Number(period.avgScore) || 0));
-      return `<div class="time-stat-row ${tone}">
+      return `<div class="time-stat-row ${tone}${rowClass}"${rowState.attrs}>
         <span class="time-stat-range">${escapeHtml(period.label)}</span>
         <div class="time-stat-main">
           ${timeStatsBars(width, '评分', period, maxGames)}
@@ -5648,6 +5790,7 @@ function renderTimeStatsScore(data, modeLabel, dimensionLabel, periods) {
           </div>
         </div>
         <span class="time-stat-rate">${Number(period.avgScore).toFixed(1)}</span>
+        ${rowState.expanded ? timeStatsRadarPanel(period) : ''}
       </div>`;
     })
     .join('');
@@ -5692,6 +5835,7 @@ async function loadTimeStats() {
   const token = (state.timeStatsToken ?? 0) + 1;
   state.timeStatsToken = token;
   state.timeStatsLoading = true;
+  resetTimeStatsRadar();
   const mode = state.timeStatsMode;
   els.timeStatsMeta.textContent = '';
   els.timeStatsSummary.innerHTML = '';
@@ -5743,6 +5887,7 @@ function openTimeStats(options = {}) {
 function closeTimeStats() {
   state.timeStatsToken = (state.timeStatsToken ?? 0) + 1;
   state.timeStatsLoading = false;
+  resetTimeStatsRadar();
   els.timeStatsModal.classList.add('hidden');
 }
 
@@ -5864,9 +6009,24 @@ els.timeStatsDimension.addEventListener('change', () => {
   const dimension = els.timeStatsDimension.value;
   if (!TIME_STATS_DIMENSION_LABELS[dimension]) return;
   state.timeStatsDimension = dimension;
+  if (dimension !== 'type') state.timeStatsRadarType = '';
   if (state.timeStatsData) {
     renderTimeStats(state.timeStatsData, state.timeStatsMode);
   }
+});
+els.timeStatsList.addEventListener('click', (event) => {
+  if (event.target.closest?.('.type-radar-panel')) return;
+  const row = event.target.closest?.('[data-type-radar]');
+  if (!row) return;
+  void toggleTimeStatsRadar(row.dataset.typeRadar);
+});
+els.timeStatsList.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  if (event.target.closest?.('.type-radar-panel')) return;
+  const row = event.target.closest?.('[data-type-radar]');
+  if (!row) return;
+  event.preventDefault();
+  void toggleTimeStatsRadar(row.dataset.typeRadar);
 });
 els.championRankingTabs.addEventListener('click', (event) => {
   const button = event.target.closest('[data-ranking-mode]');

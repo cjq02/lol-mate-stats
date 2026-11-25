@@ -789,6 +789,54 @@ body::before {
   opacity: 0.5;
 }
 
+.time-stat-row.expandable {
+  cursor: pointer;
+}
+
+.time-stat-row.expandable:hover {
+  border-color: rgba(143, 184, 255, 0.35);
+}
+
+.time-stat-row.expanded {
+  border-color: rgba(94, 234, 212, 0.45);
+}
+
+.type-radar-panel {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  cursor: default;
+}
+
+.type-radar-panel .search-status {
+  padding: 4px 0;
+}
+
+.type-radar-panel svg {
+  width: 290px;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.type-radar-head {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: #cbd8ff;
+}
+
+.type-radar-note,
+.type-radar-empty {
+  font-size: 10.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
 .time-stat-row.noisy {
   border-color: rgba(255, 107, 129, 0.35);
   background: rgba(255, 107, 129, 0.06);

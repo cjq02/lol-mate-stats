@@ -73,7 +73,7 @@ export interface TimeStatsDimensions {
   month: TimeStatsBucket[];
   /** 上单 / 打野 / 中单 / ADC / 辅助等位置 */
   position: TimeStatsBucket[];
-  /** 坦克 / 战士 / 输出 / 辅助等英雄类型 */
+  /** 坦克 / 战士 / 法师 / 射手 / 刺客 / 辅助等英雄官方主分类 */
   type: TimeStatsBucket[];
 }
 
@@ -88,6 +88,38 @@ export interface TimeStatsSummary {
   dimensions: TimeStatsDimensions;
 }
 
+/** 六角星用的六项指标 */
+export type TypeRadarMetricKey = 'kp' | 'gpm' | 'kda' | 'dtpm' | 'dpm' | 'hpm';
+
+export interface TypeRadarMetric {
+  label: string;
+  /** 我的平均值 */
+  self: number;
+  /** 所有玩家的平均值 */
+  all: number;
+  /** 展示用短文本，例如 62% / 1.5k */
+  selfText: string;
+  allText: string;
+}
+
+export interface TypeRadarEntry {
+  /** 与按英雄类型的 bucket key 一致（type-tank 等） */
+  key: string;
+  label: string;
+  selfGames: number;
+  allGames: number;
+  metrics: TypeRadarMetric[];
+}
+
+/** 按英雄分组后的一行原始数据，交给 buildTypeRadar 汇总 */
+export interface TypeRadarSample {
+  championId: number;
+  allGames: number;
+  selfGames: number;
+  all: Record<TypeRadarMetricKey, number>;
+  self: Record<TypeRadarMetricKey, number>;
+}
+
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const POSITION_DEFINITIONS: Array<[string, string]> = [
   ['pos-top', '上单'],
@@ -99,21 +131,24 @@ const POSITION_DEFINITIONS: Array<[string, string]> = [
   ['pos-arena', '竞技场'],
   ['pos-unknown', '未分路'],
 ];
-const TYPE_DEFINITIONS: Array<[string, string]> = [
-  ['type-tank', '坦克'],
-  ['type-fighter', '战士'],
-  ['type-mage', '法师'],
-  ['type-marksman', '射手'],
-  ['type-assassin', '刺客'],
-  ['type-support', '辅助'],
-  ['type-default', '其他'],
-];
+/** 英雄官方主分类 → 展示名，按英雄类型统计和六角星共用 */
+export const CHAMPION_TYPE_LABELS: Record<string, string> = {
+  'type-tank': '坦克',
+  'type-fighter': '战士',
+  'type-mage': '法师',
+  'type-marksman': '射手',
+  'type-assassin': '刺客',
+  'type-support': '辅助',
+  'type-default': '其他',
+};
+const TYPE_DEFINITIONS: Array<[string, string]> = Object.entries(CHAMPION_TYPE_LABELS);
 /** 官方主分类；按英雄类型统计时不再把法师 / 射手 / 刺客合并成“输出” */
 const TYPE_CLASS_KEYS = new Set(['tank', 'fighter', 'mage', 'marksman', 'assassin', 'support']);
 const TEAMMATE_BAD_TAG = /^队友(?:小坑|很坑|坑|巨坑|逃跑)$/;
 const SELF_BAD_TAG = /^自己(?:小坑|很坑|坑|巨坑|逃跑)$/;
 
-function typeBucketKey(championId?: number): string {
+/** 英雄 ID → type-tank / type-mage 等分类 key */
+export function championTypeKey(championId?: number): string {
   const id = Number(championId) || 0;
   const normalized = id >= 60000 ? id - 60000 : id;
   const official = championRoleProfile(normalized).classes?.find((cls) =>
@@ -334,7 +369,7 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
     const positionBucket = positionByKey.get(positionBucketKey(game.position));
     if (positionBucket) addGame(positionBucket, win, teammateBad, selfBad, score);
 
-    const typeBucket = typeByKey.get(typeBucketKey(game.championId));
+    const typeBucket = typeByKey.get(championTypeKey(game.championId));
     if (typeBucket) addGame(typeBucket, win, teammateBad, selfBad, score);
 
     const weekStart = startOfWeek(date);
@@ -377,6 +412,92 @@ export function summarizeTimeStats(games: TimeStatsGame[]): TimeStatsSummary {
       type: typeBuckets.map(finalizeBucket),
     },
   };
+}
+
+const TYPE_RADAR_METRICS: Array<{
+  key: TypeRadarMetricKey;
+  label: string;
+  format: (value: number) => string;
+}> = [
+  { key: 'kp', label: '参团', format: (value) => `${Math.round(value)}%` },
+  { key: 'gpm', label: '经济', format: compactRadarValue },
+  { key: 'kda', label: 'KDA', format: (value) => value.toFixed(2) },
+  { key: 'dtpm', label: '承伤', format: compactRadarValue },
+  { key: 'dpm', label: '伤害', format: compactRadarValue },
+  { key: 'hpm', label: '治疗', format: compactRadarValue },
+];
+
+function compactRadarValue(value: number): string {
+  const number = Number(value) || 0;
+  if (number <= 0) return '0';
+  if (number >= 1000) {
+    const kiloValue = number / 1000;
+    return `${kiloValue >= 10 ? Math.round(kiloValue) : kiloValue.toFixed(1)}k`;
+  }
+  if (number >= 100) return String(Math.round(number));
+  if (number >= 10) return number.toFixed(0);
+  return number.toFixed(1);
+}
+
+/**
+ * 按英雄官方主分类汇总我和所有玩家的六项指标。
+ * 每个英雄先由 SQL 算出平均值，再按场次加权合并到同一类型，避免小样本英雄被放大。
+ */
+export function buildTypeRadar(samples: TypeRadarSample[]): TypeRadarEntry[] {
+  const accumulators = new Map<
+    string,
+    {
+      allGames: number;
+      selfGames: number;
+      all: Record<TypeRadarMetricKey, number>;
+      self: Record<TypeRadarMetricKey, number>;
+    }
+  >();
+  for (const key of Object.keys(CHAMPION_TYPE_LABELS)) {
+    accumulators.set(key, {
+      allGames: 0,
+      selfGames: 0,
+      all: { kp: 0, gpm: 0, kda: 0, dtpm: 0, dpm: 0, hpm: 0 },
+      self: { kp: 0, gpm: 0, kda: 0, dtpm: 0, dpm: 0, hpm: 0 },
+    });
+  }
+
+  for (const sample of samples) {
+    const entry = accumulators.get(championTypeKey(sample.championId));
+    if (!entry) continue;
+    const allGames = Math.max(0, Number(sample.allGames) || 0);
+    const selfGames = Math.max(0, Number(sample.selfGames) || 0);
+    entry.allGames += allGames;
+    entry.selfGames += selfGames;
+    for (const metric of TYPE_RADAR_METRICS) {
+      entry.all[metric.key] += (Number(sample.all[metric.key]) || 0) * allGames;
+      entry.self[metric.key] += (Number(sample.self[metric.key]) || 0) * selfGames;
+    }
+  }
+
+  return Object.entries(CHAMPION_TYPE_LABELS).map(([key, label]) => {
+    const entry = accumulators.get(key);
+    const metrics = TYPE_RADAR_METRICS.map((metric) => {
+      const self = entry?.selfGames
+        ? (entry.self[metric.key] ?? 0) / entry.selfGames
+        : 0;
+      const all = entry?.allGames ? (entry.all[metric.key] ?? 0) / entry.allGames : 0;
+      return {
+        label: metric.label,
+        self: round1(self),
+        all: round1(all),
+        selfText: metric.format(self),
+        allText: metric.format(all),
+      };
+    });
+    return {
+      key,
+      label,
+      selfGames: entry?.selfGames ?? 0,
+      allGames: entry?.allGames ?? 0,
+      metrics,
+    };
+  });
 }
 
 /** 把最近战绩列表转换成时段统计（本地存档不可用时的兜底） */

@@ -28,7 +28,13 @@ import { queueName } from './constants.js';
 import { capAfkScores, isAfkLikeRelative, type AfkRelativeStats } from './rating.js';
 import { championProficiency } from './proficiency.js';
 import { getDb, getSavedMatchTimeline, readMeta, saveTimelineAfkStats, withTransaction, writeMeta } from './store.js';
-import { summarizeTimeStats, type TimeStatsSummary } from './time-stats.js';
+import {
+  buildTypeRadar,
+  summarizeTimeStats,
+  type TypeRadarEntry,
+  type TypeRadarSample,
+  type TimeStatsSummary,
+} from './time-stats.js';
 
 /** 长期保存的单场战绩（按玩家维度查询） */
 export interface ArchivedMatch {
@@ -755,6 +761,106 @@ export async function getPlayerTimeStats(
     );
   } catch {
     return summarizeTimeStats([]);
+  }
+}
+
+/** 六角星对比缓存：全服平均值变化很慢，5 分钟内复用，避免每次点开都扫全表 */
+const TYPE_RADAR_CACHE_TTL_MS = 5 * 60_000;
+const typeRadarCache = new Map<string, { at: number; types: TypeRadarEntry[] }>();
+
+/**
+ * 按英雄官方主分类汇总“我”和“所有玩家”的六项数据。
+ * 每个英雄先在 SQL 里算出平均值，再按场次加权合并到类型，避免单个英雄样本过大。
+ */
+export async function getPlayerTypeRadar(
+  puuid: string,
+  mode?: GameModeKey,
+): Promise<TypeRadarEntry[]> {
+  const db = await getDb();
+  if (!db || !puuid) return [];
+  const cacheKey = `${puuid}:${mode ?? 'ALL'}`;
+  const cached = typeRadarCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < TYPE_RADAR_CACHE_TTL_MS) {
+    return cached.types;
+  }
+
+  const conditions = [
+    'p.puuid IS NOT NULL',
+    'p.champion_id IS NOT NULL',
+    'm.duration_seconds > 300',
+    "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
+  ];
+  const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
+  if (modeFilter) conditions.push(modeFilter);
+
+  // self_games 一次 + 六项 self 平均值各一次，共 7 个 puuid 参数
+  const params: Array<string | number> = new Array(7).fill(puuid);
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT ${NORMALIZED_CHAMPION_ID} AS champion_id,
+              COUNT(*) AS all_games,
+              SUM(p.puuid = ?) AS self_games,
+              AVG((p.kills + p.assists) / GREATEST(1, tk.team_kills) * 100) AS all_kp,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN (p.kills + p.assists) / GREATEST(1, tk.team_kills) * 100
+                  END) AS self_kp,
+              AVG(p.gold / (m.duration_seconds / 60)) AS all_gpm,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN p.gold / (m.duration_seconds / 60)
+                  END) AS self_gpm,
+              AVG((p.kills + p.assists) / GREATEST(1, p.deaths)) AS all_kda,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN (p.kills + p.assists) / GREATEST(1, p.deaths)
+                  END) AS self_kda,
+              AVG(p.damage_taken / (m.duration_seconds / 60)) AS all_dtpm,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN p.damage_taken / (m.duration_seconds / 60)
+                  END) AS self_dtpm,
+              AVG(p.damage / (m.duration_seconds / 60)) AS all_dpm,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN p.damage / (m.duration_seconds / 60)
+                  END) AS self_dpm,
+              AVG(p.heal / (m.duration_seconds / 60)) AS all_hpm,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN p.heal / (m.duration_seconds / 60)
+                  END) AS self_hpm
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       JOIN (
+         SELECT game_id, team_id, SUM(kills) AS team_kills
+         FROM match_participants
+         GROUP BY game_id, team_id
+       ) tk ON tk.game_id = p.game_id AND tk.team_id = p.team_id
+       WHERE ${conditions.join(' AND ')}
+       GROUP BY ${NORMALIZED_CHAMPION_ID}`,
+      params,
+    );
+    const samples: TypeRadarSample[] = rows.map((row) => ({
+      championId: Number(row.champion_id) || 0,
+      allGames: Number(row.all_games) || 0,
+      selfGames: Number(row.self_games) || 0,
+      all: {
+        kp: Number(row.all_kp) || 0,
+        gpm: Number(row.all_gpm) || 0,
+        kda: Number(row.all_kda) || 0,
+        dtpm: Number(row.all_dtpm) || 0,
+        dpm: Number(row.all_dpm) || 0,
+        hpm: Number(row.all_hpm) || 0,
+      },
+      self: {
+        kp: Number(row.self_kp) || 0,
+        gpm: Number(row.self_gpm) || 0,
+        kda: Number(row.self_kda) || 0,
+        dtpm: Number(row.self_dtpm) || 0,
+        dpm: Number(row.self_dpm) || 0,
+        hpm: Number(row.self_hpm) || 0,
+      },
+    }));
+    const types = buildTypeRadar(samples);
+    typeRadarCache.set(cacheKey, { at: Date.now(), types });
+    return types;
+  } catch {
+    return [];
   }
 }
 
