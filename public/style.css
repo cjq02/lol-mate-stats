@@ -625,6 +625,11 @@ body::before {
   color: var(--muted);
 }
 
+.champion-radar-items-note {
+  font-size: 10px;
+  color: #ffab5e;
+}
+
 .champion-radar-items-legend {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) 54px 54px;

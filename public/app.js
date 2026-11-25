@@ -5443,8 +5443,8 @@ function championRadarItemsHtml(radar) {
     .filter((row) => isCompletedItemMeta(row.meta))
     .sort(
       (a, b) =>
-        (b.self?.count || 0) - (a.self?.count || 0) ||
-        (b.all?.count || 0) - (a.all?.count || 0),
+        (b.all?.count || 0) - (a.all?.count || 0) ||
+        (b.self?.count || 0) - (a.self?.count || 0),
     );
   if (!rows.length) {
     return `<div class="champion-radar-items empty">
@@ -5457,6 +5457,11 @@ function championRadarItemsHtml(radar) {
       <span>整装</span>
       <small>我 ${items.selfGames} 场 / 全体 ${items.allGames} 场有装备</small>
     </div>
+    ${
+      items.selfGames > 0 && items.selfGames < 3
+        ? `<div class="champion-radar-items-note">我的装备样本只有 ${items.selfGames} 场，百分比仅供参考</div>`
+        : ''
+    }
     <div class="champion-radar-items-legend"><span>我</span><span>全体</span></div>
     ${rows
       .map(
