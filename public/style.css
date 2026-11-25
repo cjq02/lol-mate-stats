@@ -626,6 +626,42 @@ body::before {
   transition: width 0.25s ease;
 }
 
+.time-stat-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.time-stat-bar-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.time-stat-bar-row .time-stat-bar {
+  height: 6px;
+}
+
+.time-stat-bar-label {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+  text-align: right;
+}
+
+.time-stat-bar-games {
+  display: flex;
+}
+
+.time-stat-bar-games > span {
+  border-radius: 0;
+}
+
+.time-stat-bar-games::after {
+  display: none;
+}
+
 .time-stat-sub {
   font-size: 11px;
   color: var(--muted);
@@ -738,6 +774,15 @@ body::before {
 
 .time-stat-row.score-low .time-stat-bar > span {
   background: var(--score-low);
+}
+
+/* 场次条：总长表示场次，内部按胜负切分，避免被胜率 / 评分色阶覆盖 */
+.time-stat-row .time-stat-bar.time-stat-bar-games > .time-stat-bar-win {
+  background: #3ddc97;
+}
+
+.time-stat-row .time-stat-bar.time-stat-bar-games > .time-stat-bar-loss {
+  background: #ff6b81;
 }
 
 .time-stat-row.noisy {

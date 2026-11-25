@@ -228,8 +228,8 @@ const TIME_STATS_VIEW_LABELS = {
   score: '评分',
 };
 
-/** 天 / 周 / 月按时间倒序展示，最新的排在最前面 */
-const TIME_STATS_DESCENDING_DIMENSIONS = new Set(['day', 'week', 'month']);
+/** 天 / 周 / 月趋势维度：最新在前，胜率视图用场次胜负条 */
+const TIME_STATS_TREND_DIMENSIONS = new Set(['day', 'week', 'month']);
 
 function currentModeLabel() {
   const snapshot = state.snapshot;
@@ -5473,7 +5473,44 @@ function timeStatsHighlight(label, period, detail) {
     : '';
 }
 
-function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods) {
+function timeStatsValueRow(valuePct, valueLabel) {
+  const width = Math.max(0, Math.min(100, Number(valuePct) || 0));
+  return `<div class="time-stat-bar-row">
+    <span class="time-stat-bar-label">${valueLabel}</span>
+    <div class="time-stat-bar"><span style="width:${width.toFixed(1)}%"></span></div>
+  </div>`;
+}
+
+function timeStatsGamesRow(games, wins, losses, maxGames) {
+  const total = Math.max(0, Number(games) || 0);
+  const kept = Number(wins) || 0;
+  const lost = Number(losses) || 0;
+  // 条总长表示场次占当前维度最高场次的比例，内部再按胜负切分
+  const totalWidth = Math.min(
+    100,
+    (total / Math.max(1, Number(maxGames) || 1)) * 100,
+  );
+  const winWidth = total ? totalWidth * (kept / total) : 0;
+  const lossWidth = Math.max(0, totalWidth - winWidth);
+  return `<div class="time-stat-bar-row">
+    <span class="time-stat-bar-label">场次</span>
+    <div class="time-stat-bar time-stat-bar-games" title="${total} 场 · ${kept} 胜 ${lost} 负">
+      <span class="time-stat-bar-win" style="width:${winWidth.toFixed(1)}%"></span>
+      <span class="time-stat-bar-loss" style="width:${lossWidth.toFixed(1)}%"></span>
+    </div>
+  </div>`;
+}
+
+function timeStatsBars(valuePct, valueLabel, period, maxGames, options = {}) {
+  const rows = [];
+  if (!options.volumeOnly) rows.push(timeStatsValueRow(valuePct, valueLabel));
+  rows.push(
+    timeStatsGamesRow(period.games, period.wins, period.losses, maxGames),
+  );
+  return `<div class="time-stat-bars">${rows.join('')}</div>`;
+}
+
+function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods, volumeOnly = false) {
   const scoreMeta = data.scoreGames
     ? ` · 均分 ${Number(data.avgScore).toFixed(1)}（${data.scoreGames} 场有评分）`
     : '';
@@ -5493,6 +5530,7 @@ function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods) {
       )
     : null;
   const badPeriod = mostBad && mostBad.teammateBadGames > 0 ? mostBad : null;
+  const maxGames = Math.max(1, ...periods.map((period) => Number(period.games) || 0));
 
   els.timeStatsSummary.innerHTML = `<div class="time-stat-highlights">
     ${timeStatsHighlight(
@@ -5518,7 +5556,7 @@ function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods) {
       return `<div class="time-stat-row ${tone}${noisy ? ' noisy' : ''}">
         <span class="time-stat-range">${escapeHtml(period.label)}</span>
         <div class="time-stat-main">
-          <div class="time-stat-bar"><span style="width:${width.toFixed(1)}%"></span></div>
+          ${timeStatsBars(width, '胜率', period, maxGames, { volumeOnly })}
           <div class="time-stat-sub">
             <b class="time-stat-games">${period.games} 场</b>
             · ${period.wins}胜${period.losses}负
@@ -5567,6 +5605,7 @@ function renderTimeStatsScore(data, modeLabel, dimensionLabel, periods) {
         period.avgScore < current.avgScore ? period : current,
       )
     : null;
+  const maxGames = Math.max(1, ...periods.map((period) => Number(period.games) || 0));
 
   els.timeStatsSummary.innerHTML = `<div class="time-stat-highlights">
     ${timeStatsHighlight(
@@ -5587,7 +5626,7 @@ function renderTimeStatsScore(data, modeLabel, dimensionLabel, periods) {
         return `<div class="time-stat-row empty">
           <span class="time-stat-range">${escapeHtml(period.label)}</span>
           <div class="time-stat-main">
-            <div class="time-stat-bar"><span style="width:0%"></span></div>
+            ${timeStatsBars(0, '评分', period, maxGames)}
             <div class="time-stat-sub"><b class="time-stat-games">${period.games} 场</b> · 暂无评分</div>
           </div>
           <span class="time-stat-rate">--</span>
@@ -5598,7 +5637,7 @@ function renderTimeStatsScore(data, modeLabel, dimensionLabel, periods) {
       return `<div class="time-stat-row ${tone}">
         <span class="time-stat-range">${escapeHtml(period.label)}</span>
         <div class="time-stat-main">
-          <div class="time-stat-bar"><span style="width:${width.toFixed(1)}%"></span></div>
+          ${timeStatsBars(width, '评分', period, maxGames)}
           <div class="time-stat-sub">
             <b class="time-stat-games">${period.games} 场</b>
             · ${period.scoreGames} 场有评分
@@ -5636,14 +5675,13 @@ function renderTimeStats(data, mode = state.timeStatsMode) {
   }
 
   const periods = buckets.filter((period) => Number(period.games) > 0);
-  const ordered = TIME_STATS_DESCENDING_DIMENSIONS.has(dimension)
-    ? [...periods].reverse()
-    : periods;
+  const isTrend = TIME_STATS_TREND_DIMENSIONS.has(dimension);
+  const ordered = isTrend ? [...periods].reverse() : periods;
   if (view === 'score') {
     renderTimeStatsScore(data, modeLabel, dimensionLabel, ordered);
     return;
   }
-  renderTimeStatsWinRate(data, modeLabel, dimensionLabel, ordered);
+  renderTimeStatsWinRate(data, modeLabel, dimensionLabel, ordered, isTrend);
 }
 
 async function loadTimeStats() {
