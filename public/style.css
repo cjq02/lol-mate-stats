@@ -632,6 +632,17 @@ body::before {
   line-height: 1.4;
 }
 
+.time-stat-games {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid rgba(143, 184, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(143, 184, 255, 0.16);
+  color: #bfd3ff;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
 .time-stat-rate {
   text-align: right;
   font-size: 14px;

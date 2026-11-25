@@ -228,6 +228,9 @@ const TIME_STATS_VIEW_LABELS = {
   score: '评分',
 };
 
+/** 天 / 周 / 月按时间倒序展示，最新的排在最前面 */
+const TIME_STATS_DESCENDING_DIMENSIONS = new Set(['day', 'week', 'month']);
+
 function currentModeLabel() {
   const snapshot = state.snapshot;
   if (snapshot?.queueId && QUEUE_LABELS[snapshot.queueId]) {
@@ -5517,7 +5520,8 @@ function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods) {
         <div class="time-stat-main">
           <div class="time-stat-bar"><span style="width:${width.toFixed(1)}%"></span></div>
           <div class="time-stat-sub">
-            ${period.games} 场 · ${period.wins}胜${period.losses}负
+            <b class="time-stat-games">${period.games} 场</b>
+            · ${period.wins}胜${period.losses}负
             · 队友坑/逃 ${period.teammateBadGames} 场（${pct(badRate)}）
             ${
               period.scoreGames
@@ -5584,7 +5588,7 @@ function renderTimeStatsScore(data, modeLabel, dimensionLabel, periods) {
           <span class="time-stat-range">${escapeHtml(period.label)}</span>
           <div class="time-stat-main">
             <div class="time-stat-bar"><span style="width:0%"></span></div>
-            <div class="time-stat-sub">${period.games} 场 · 暂无评分</div>
+            <div class="time-stat-sub"><b class="time-stat-games">${period.games} 场</b> · 暂无评分</div>
           </div>
           <span class="time-stat-rate">--</span>
         </div>`;
@@ -5596,7 +5600,8 @@ function renderTimeStatsScore(data, modeLabel, dimensionLabel, periods) {
         <div class="time-stat-main">
           <div class="time-stat-bar"><span style="width:${width.toFixed(1)}%"></span></div>
           <div class="time-stat-sub">
-            ${period.games} 场 · ${period.scoreGames} 场有评分
+            <b class="time-stat-games">${period.games} 场</b>
+            · ${period.scoreGames} 场有评分
             · 最高 ${Number(period.bestScore).toFixed(1)}
             · 最低 ${Number(period.worstScore).toFixed(1)}
             · ${period.wins}胜${period.losses}负
@@ -5631,11 +5636,14 @@ function renderTimeStats(data, mode = state.timeStatsMode) {
   }
 
   const periods = buckets.filter((period) => Number(period.games) > 0);
+  const ordered = TIME_STATS_DESCENDING_DIMENSIONS.has(dimension)
+    ? [...periods].reverse()
+    : periods;
   if (view === 'score') {
-    renderTimeStatsScore(data, modeLabel, dimensionLabel, periods);
+    renderTimeStatsScore(data, modeLabel, dimensionLabel, ordered);
     return;
   }
-  renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods);
+  renderTimeStatsWinRate(data, modeLabel, dimensionLabel, ordered);
 }
 
 async function loadTimeStats() {
