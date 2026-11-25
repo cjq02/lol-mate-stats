@@ -5445,8 +5445,7 @@ function championRadarItemsHtml(radar) {
       (a, b) =>
         (b.self?.count || 0) - (a.self?.count || 0) ||
         (b.all?.count || 0) - (a.all?.count || 0),
-    )
-    .slice(0, 6);
+    );
   if (!rows.length) {
     return `<div class="champion-radar-items empty">
       <div class="champion-radar-items-head"><span>整装</span><small>暂无可识别的成装</small></div>
