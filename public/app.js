@@ -49,6 +49,7 @@ const els = {
   infoTip: document.getElementById('info-tip'),
   matchSummary: document.getElementById('match-summary'),
   matchesSummary: document.getElementById('matches-summary'),
+  championRadar: document.getElementById('champion-radar'),
   matchesRangeTabs: document.getElementById('matches-range-tabs'),
   matchFlags: document.getElementById('match-flags'),
   aiModal: document.getElementById('ai-modal'),
@@ -3608,6 +3609,7 @@ function renderMatchesView(games, title, showScore) {
   els.matchTabs.classList.add('hidden');
   els.myMatchesTabs?.classList.add('hidden');
   els.matchesTitle.textContent = title;
+  renderChampionMatchRadar();
   updateMatchesRangeTabs(games.length > 0);
   renderMatchesSummary(showScore ? games : []);
   els.matchesList.className = 'match-list';
@@ -4337,6 +4339,11 @@ async function openMyMatches(options = {}) {
   setMatchesCardWidth('list');
   updateMatchesBackButton();
   els.matchesTitle.textContent = filter ? championFilterTitle(filter) : '我的最近战绩';
+  if (filter) {
+    void loadChampionRadar(filter.championId, filter.championName, filter.mode);
+  } else {
+    resetChampionRadar();
+  }
   updateMyMatchesTabs(!filter);
   setMatchesRefresh(null);
   beginMatchesLoading(
@@ -5132,6 +5139,7 @@ function renderMatchDetailView(detail, tab = 'scoreboard') {
   state.matchDetail = detail;
   state.matchTab = tab;
   els.matchesSummary?.classList.add('hidden');
+  els.championRadar?.classList.add('hidden');
   els.matchesRangeTabs?.classList.add('hidden');
   state.currentView = () => renderMatchDetailView(detail, tab);
   // 用点击时的当前页签，保证在「近期战绩」里更新后不会跳回「本局详情」
@@ -5270,6 +5278,7 @@ function closeMatches() {
   els.matchesList.replaceChildren();
   els.matchTabs.classList.add('hidden');
   els.matchesSummary?.classList.add('hidden');
+  resetChampionRadar();
   els.matchesRangeTabs?.classList.add('hidden');
   clearMatchFlags();
   els.matchesAi.classList.add('hidden');
@@ -5293,54 +5302,105 @@ function resetChampionRadar() {
   state.championRadar = null;
   state.championRadarLoading = false;
   state.championRadarError = '';
+  if (els.championRadar) {
+    els.championRadar.innerHTML = '';
+    els.championRadar.classList.add('hidden');
+  }
+  els.matchesModal
+    ?.querySelector('.modal-card')
+    ?.classList.remove('champion-radar-open');
 }
 
-function championRadarPanel(item) {
-  const championId = Number(item.championId) || 0;
+function renderChampionMatchRadar() {
+  if (!els.championRadar) return;
+  const filter = state.championFilter;
+  if (!filter?.championId) {
+    els.championRadar.innerHTML = '';
+    els.championRadar.classList.add('hidden');
+    els.matchesModal
+      ?.querySelector('.modal-card')
+      ?.classList.remove('champion-radar-open');
+    return;
+  }
+  els.matchesModal
+    ?.querySelector('.modal-card')
+    ?.classList.add('champion-radar-open');
+  const name = filter.championName || state.championRadarName || '该英雄';
+  let html = '';
   if (state.championRadarLoading) {
-    return `<div class="champion-radar-panel type-radar-panel">
+    html = `<div class="champion-radar-card">
+      <div class="champion-radar-head"><span class="champion-radar-title">${escapeHtml(
+        name,
+      )}<small>英雄对比</small></span></div>
       <div class="search-status"><span class="spinner"></span><span>正在汇总所有玩家…</span></div>
     </div>`;
-  }
-  if (state.championRadarError) {
-    return `<div class="champion-radar-panel type-radar-panel">
+  } else if (state.championRadarError) {
+    html = `<div class="champion-radar-card">
+      <div class="champion-radar-head"><span class="champion-radar-title">${escapeHtml(
+        name,
+      )}<small>英雄对比</small></span></div>
       <div class="search-status error">${escapeHtml(state.championRadarError)}</div>
     </div>`;
+  } else {
+    const radar = state.championRadar;
+    if (
+      !radar ||
+      radar.championId !== Number(filter.championId) ||
+      !radar.selfGames
+    ) {
+      html = `<div class="champion-radar-card">
+        <div class="champion-radar-head"><span class="champion-radar-title">${escapeHtml(
+          name,
+        )}<small>英雄对比</small></span></div>
+        <div class="type-radar-empty">这个英雄还没有你的历史对局</div>
+      </div>`;
+    } else {
+      const series = timeStatsRadarSeries(radar);
+      const metricsHtml = (Array.isArray(radar.metrics) ? radar.metrics : [])
+        .map(
+          (metric) => `<div class="champion-radar-metric">
+            <span class="champion-radar-metric-label">${escapeHtml(metric.label)}</span>
+            <b class="champion-radar-metric-self">${escapeHtml(metric.selfText)}</b>
+            <span class="champion-radar-metric-all">全体 ${escapeHtml(metric.allText)}</span>
+          </div>`,
+        )
+        .join('');
+      html = `<div class="champion-radar-card">
+        <div class="champion-radar-head">
+          <span class="champion-radar-title">${escapeHtml(
+            name,
+          )}<small>我 ${radar.selfGames} 场 / 所有玩家 ${radar.allGames} 场</small></span>
+        </div>
+        <div class="champion-radar-chart">${radarSvg(series, {
+          selfLabel: '我',
+          avgLabel: '所有玩家',
+          ariaLabel: `${name}对比`,
+        })}</div>
+        <div class="champion-radar-compare">${metricsHtml}</div>
+        <div class="champion-radar-note">实线：我 · 虚线：所有玩家；经济 / 承伤 / 伤害 / 治疗为分均</div>
+      </div>`;
+    }
   }
-  const radar = state.championRadar;
-  if (!radar || radar.championId !== championId || !radar.selfGames) {
-    return `<div class="champion-radar-panel type-radar-panel">
-      <div class="type-radar-empty">这个英雄还没有你的历史对局</div>
-    </div>`;
-  }
-  const series = timeStatsRadarSeries(radar);
-  if (!series.length) return '';
-  return `<div class="champion-radar-panel type-radar-panel">
-    <div class="type-radar-head">${escapeHtml(item.championName || '该英雄')} · 我 ${radar.selfGames} 场 / 所有玩家 ${radar.allGames} 场</div>
-    ${radarSvg(series, {
-      selfLabel: '我',
-      avgLabel: '所有玩家',
-      ariaLabel: `${item.championName || '英雄'}对比`,
-    })}
-    <div class="type-radar-note">实线：我 · 虚线：所有玩家；经济 / 承伤 / 伤害 / 治疗为分均</div>
-    <button class="btn champion-radar-matches" type="button" data-champion-matches="${championId}" data-champion-name="${escapeHtml(item.championName || '')}">查看该英雄战绩</button>
-  </div>`;
+  els.championRadar.innerHTML = html;
+  els.championRadar.classList.remove('hidden');
 }
 
-async function loadChampionRadar(championId) {
+async function loadChampionRadar(championId, championName, mode) {
   const token = (state.championRadarToken ?? 0) + 1;
   state.championRadarToken = token;
+  state.championRadarId = championId;
+  state.championRadarName = championName || '';
+  state.championRadar = null;
   state.championRadarLoading = true;
   state.championRadarError = '';
-  renderChampionRanking(state.championRankingData, state.championRankingMode);
+  renderChampionMatchRadar();
   try {
     const params = new URLSearchParams({ championId: String(championId) });
-    if (state.championRankingMode !== 'all') {
-      params.set('mode', state.championRankingMode);
-    }
-    const response = await fetch(`/api/archive/champion-radar?${params.toString()}`, {
-      cache: 'no-store',
-    });
+    if (mode && mode !== 'all') params.set('mode', mode);
+    const response = await fetch(
+      `/api/archive/champion-radar?${params.toString()}`,
+      { cache: 'no-store' },
+    );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok === false) {
       throw new Error(payload?.error ?? `HTTP ${response.status}`);
@@ -5357,24 +5417,9 @@ async function loadChampionRadar(championId) {
   } finally {
     if (token === state.championRadarToken) {
       state.championRadarLoading = false;
-      renderChampionRanking(state.championRankingData, state.championRankingMode);
+      renderChampionMatchRadar();
     }
   }
-}
-
-async function toggleChampionRadar(championId, championName) {
-  if (state.championRadarId === championId) {
-    state.championRadarId = 0;
-    state.championRadarName = '';
-    state.championRadar = null;
-    state.championRadarError = '';
-    renderChampionRanking(state.championRankingData, state.championRankingMode);
-    return;
-  }
-  state.championRadarId = championId;
-  state.championRadarName = championName;
-  state.championRadar = null;
-  await loadChampionRadar(championId);
 }
 
 function renderChampionRanking(champions, mode = state.championRankingMode) {
@@ -5430,46 +5475,55 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const championId = Number(item.championId) || 0;
       const avg = Number(item.avgScore) || 0;
       const prof = Number(item.proficiency) || 0;
-      const expanded = championId > 0 && state.championRadarId === championId;
-      return `<div class="champion-rank-item">
-        <button class="champion-rank-row${expanded ? ' expanded' : ''}" type="button" data-champion-id="${championId}" data-champion-name="${escapeHtml(
-          name,
-        )}" aria-expanded="${expanded}" title="点击查看我和所有玩家的六角星对比">
-          <span class="champion-rank-no ${rankingClass(rank)}">${rank}</span>
-          ${champIconHtml(item.championId, name, 'sm')}
-          <span class="champion-rank-main">
-            <b>${escapeHtml(name)}</b>
-            <small>${Number(item.games) || 0} 场 · 胜率 ${winRatePct(
-              item.winRate,
-            )} · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${num(
-              prof,
-              0,
-            )}</span></small>
+      const overall = item.overall ?? null;
+      const overallTitle = overall
+        ? `所有玩家 ${Number(overall.games) || 0} 场`
+        : '暂无所有玩家数据';
+      const overallWin = overall ? winRatePct(overall.winRate) : '-';
+      const overallAvg = overall ? num(overall.avgScore, 1) : '-';
+      const overallRank = overall ? num(overall.avgRank, 1) : '-';
+      return `<button class="champion-rank-row" type="button" data-champion-id="${championId}" data-champion-name="${escapeHtml(
+        name,
+      )}" title="点击查看该英雄的战绩">
+        <span class="champion-rank-no ${rankingClass(rank)}">${rank}</span>
+        ${champIconHtml(item.championId, name, 'sm')}
+        <span class="champion-rank-main">
+          <b>${escapeHtml(name)}</b>
+          <small>${Number(item.games) || 0} 场 · 胜率 ${winRatePct(
+            item.winRate,
+          )} <span class="champion-rank-overall" title="${escapeHtml(
+            overallTitle,
+          )}">/ 全体 ${overallWin}</span> · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${num(
+            prof,
+            0,
+          )}</span></small>
+        </span>
+        <span class="champion-rank-stats">
+          <span class="champion-rank-stat">
+            <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(
+              avg,
+              1,
+            )}</span>
+            <small>平均分 <span class="champion-rank-overall" title="${escapeHtml(
+              overallTitle,
+            )}">/ ${overallAvg}</span></small>
           </span>
-          <span class="champion-rank-stats">
-            <span class="champion-rank-stat">
-              <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(
-                avg,
-                1,
-              )}</span>
-              <small>平均分</small>
-            </span>
-            <span class="champion-rank-stat">
-              <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${
-                Number(item.games) >= MIN_AVG_RANK_GAMES && Number(item.avgRank) > 0
-                  ? num(item.avgRank, 1)
-                  : '-'
-              }</b>
-              <small>平均排名</small>
-            </span>
+          <span class="champion-rank-stat">
+            <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${
+              Number(item.games) >= MIN_AVG_RANK_GAMES && Number(item.avgRank) > 0
+                ? num(item.avgRank, 1)
+                : '-'
+            }</b>
+            <small>平均排名 <span class="champion-rank-overall" title="${escapeHtml(
+              overallTitle,
+            )}">/ ${overallRank}</span></small>
           </span>
-          <span class="champion-rank-extra">
-            <span>最高 <b>${num(item.bestScore, 0)}</b></span>
-            <span>最低 <b>${num(item.worstScore, 0)}</b></span>
-          </span>
-        </button>
-        ${expanded ? championRadarPanel(item) : ''}
-      </div>`;
+        </span>
+        <span class="champion-rank-extra">
+          <span>最高 <b>${num(item.bestScore, 0)}</b></span>
+          <span>最低 <b>${num(item.worstScore, 0)}</b></span>
+        </span>
+      </button>`;
     })
     .join('');
 }
@@ -6151,28 +6205,21 @@ els.championRankingSort.addEventListener('change', () => {
   renderChampionRanking(state.championRankingData, state.championRankingMode);
 });
 els.championRankingList.addEventListener('click', (event) => {
-  const matchesButton = event.target.closest('[data-champion-matches]');
-  if (matchesButton) {
-    const championId = Number(matchesButton.dataset.championMatches) || 0;
-    const championName = matchesButton.dataset.championName || '';
-    if (!championId) return;
-    const mode =
-      state.championRankingMode === 'all' ? undefined : state.championRankingMode;
-    closeChampionRanking();
-    openChampionMatches(championId, championName, {
-      mode,
-      back: () => {
-        closeMatches();
-        openChampionRanking({ keepMode: true });
-      },
-    });
-    return;
-  }
   const row = event.target.closest('[data-champion-id]');
   if (!row) return;
   const championId = Number(row.dataset.championId) || 0;
   if (!championId) return;
-  void toggleChampionRadar(championId, row.dataset.championName || '');
+  const championName = row.dataset.championName || '';
+  const mode =
+    state.championRankingMode === 'all' ? undefined : state.championRankingMode;
+  closeChampionRanking();
+  openChampionMatches(championId, championName, {
+    mode,
+    back: () => {
+      closeMatches();
+      openChampionRanking({ keepMode: true });
+    },
+  });
 });
 els.latestMatch.addEventListener('click', () => void openLatestMatch());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));

@@ -37,6 +37,7 @@ import {
   archiveGames,
   countPlayerMatches,
   getChampionModeRecords,
+  getChampionOverallScores,
   getPlayerChampionScores,
   getPlayerChampionRadar,
   getPlayerMatchRanks,
@@ -1161,7 +1162,24 @@ export class LiveSource implements DataSource {
   }> {
     const id = await this.resolveArchivePuuid(puuid);
     if (!id) return { puuid: '', champions: [] };
-    return { puuid: id, champions: await getPlayerChampionScores(id, minGames, mode) };
+    const champions = await getPlayerChampionScores(id, minGames, mode);
+    if (champions.length) {
+      const overall = await getChampionOverallScores(
+        champions.map((champion) => champion.championId),
+        mode,
+      );
+      for (const champion of champions) {
+        const record = overall.get(champion.championId);
+        if (!record) continue;
+        champion.overall = {
+          games: record.games,
+          winRate: record.winRate,
+          avgScore: record.avgScore,
+          avgRank: record.avgRank,
+        };
+      }
+    }
+    return { puuid: id, champions };
   }
 
   /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */

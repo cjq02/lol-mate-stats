@@ -288,7 +288,7 @@ body::before {
 }
 
 .champion-ranking-card {
-  width: min(740px, 100%);
+  width: min(980px, 100%);
 }
 
 .champion-ranking-meta {
@@ -397,24 +397,122 @@ body::before {
   min-height: 0;
 }
 
-.champion-rank-item {
+.champion-rank-overall {
+  color: var(--muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.matches-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.matches-body > .match-list {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.champion-match-radar {
+  flex: 0 0 380px;
+  min-width: 320px;
+  overflow: auto;
+  padding: 12px 14px;
+  border-left: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.champion-radar-card {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+
+.champion-radar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.champion-radar-title {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #dbe6ff;
+}
+
+.champion-radar-title small {
+  margin-left: 6px;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.champion-radar-chart {
+  display: flex;
+  justify-content: center;
+}
+
+.champion-radar-chart svg {
+  width: 300px;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.champion-radar-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 10px;
+}
+
+.champion-radar-metric {
+  display: flex;
+  align-items: baseline;
   gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+  font-size: 11px;
 }
 
-.champion-rank-row.expanded {
-  border-color: rgba(94, 234, 212, 0.45);
+.champion-radar-metric-label {
+  width: 30px;
+  color: var(--muted);
 }
 
-.champion-radar-panel {
-  padding-left: 12px;
-  padding-right: 12px;
+.champion-radar-metric-self {
+  font-size: 12.5px;
+  color: #e8f0ff;
 }
 
-.champion-radar-matches {
-  align-self: center;
-  margin-top: 2px;
+.champion-radar-metric-all {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.champion-radar-note {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.modal-card.match-list-card.champion-radar-open {
+  width: min(1480px, 96vw);
+}
+
+@media (max-width: 1100px) {
+  .matches-body {
+    flex-direction: column;
+  }
+
+  .champion-match-radar {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-height: 40vh;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
 }
 
 .champion-rank-row {
