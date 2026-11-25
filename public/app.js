@@ -5710,7 +5710,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
   );
 
   const myRangeLabel =
-    state.championRankingRange > 0 ? `我近 ${state.championRankingRange} 场` : '我全部场次';
+    state.championRankingRange > 0
+      ? `每个英雄近 ${state.championRankingRange} 场`
+      : '我全部场次';
   els.championRankingMeta.innerHTML = list.length
     ? `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · 按${sortLabel} · <b>${
         list.length

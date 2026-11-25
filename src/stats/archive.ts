@@ -653,73 +653,25 @@ function championModeFilterSql(
   );
 }
 
-/** 只靠对局表的模式条件，给没有参与者上下文的「最近 N 场」子查询复用 */
-function championMatchModeFilterSql(mode: GameModeKey, matchAlias = 'm'): string {
-  if (mode === 'ARAM') {
-    return `(${matchAlias}.queue_id IN (450, 720) OR ${matchAlias}.game_mode = 'ARAM')`;
-  }
-  if (mode === 'ARENA') {
-    return `(${matchAlias}.queue_id IN (1700, 1710) OR ${matchAlias}.game_mode = 'CHERRY')`;
-  }
-  return (
-    `(${matchAlias}.game_mode IN ('CLASSIC', 'SWIFTPLAY') ` +
-    `OR ${matchAlias}.queue_id IN (400, 420, 430, 440, 890))`
-  );
-}
-
 const CHAMPION_MODE_FILTERS: Record<GameModeKey, string> = {
   ARAM: championModeFilterSql('ARAM'),
   ARENA: championModeFilterSql('ARENA'),
   SR: championModeFilterSql('SR'),
 };
 
-/** 「我最近 N 场」派生表：range 为空或 0 时不做限制 */
-function recentPlayerGamesJoin(
-  puuid: string,
-  mode: GameModeKey | undefined,
-  range: number | undefined,
-): { sql: string; params: Array<string | number> } | undefined {
-  if (!range || range <= 0) return undefined;
-  const conditions = [
-    'rp.puuid = ?',
-    'rp.score IS NOT NULL',
-    'rm.duration_seconds > 300',
-    "COALESCE(rm.game_mode, '') <> 'PRACTICETOOL'",
-  ];
-  if (mode) conditions.push(championModeFilterSql(mode, 'rm', 'rp'));
-  // MySQL 不支持在 IN 子查询里用 LIMIT，这里改成派生表 JOIN
+/** 每个英雄只保留最近 N 次出场；range 为空或 0 时不限制 */
+function championAppearanceWindow(range: number | undefined): {
+  rankColumn: string;
+  filter: string;
+  params: number[];
+} {
+  if (!range || range <= 0) return { rankColumn: '', filter: '', params: [] };
   return {
-    sql: `JOIN (
-        SELECT rp.game_id
-        FROM match_participants rp
-        JOIN matches rm ON rm.game_id = rp.game_id
-        WHERE ${conditions.join(' AND ')}
-        ORDER BY rm.game_creation DESC, rm.game_id DESC
-        LIMIT ?
-      ) recent ON recent.game_id = p.game_id`,
-    params: [puuid, Math.trunc(range)],
-  };
-}
-
-/** 「全体最近 N 场」派生表：按对局倒序取，range 为空或 0 时不做限制 */
-function recentMatchesJoin(
-  mode: GameModeKey | undefined,
-  range: number | undefined,
-): { sql: string; params: Array<string | number> } | undefined {
-  if (!range || range <= 0) return undefined;
-  const conditions = [
-    'rm.duration_seconds > 300',
-    "COALESCE(rm.game_mode, '') <> 'PRACTICETOOL'",
-  ];
-  if (mode) conditions.push(championMatchModeFilterSql(mode, 'rm'));
-  return {
-    sql: `JOIN (
-        SELECT rm.game_id
-        FROM matches rm
-        WHERE ${conditions.join(' AND ')}
-        ORDER BY rm.game_creation DESC, rm.game_id DESC
-        LIMIT ?
-      ) recent ON recent.game_id = m.game_id`,
+    rankColumn: `ROW_NUMBER() OVER (
+              PARTITION BY CASE WHEN p.champion_id >= 60000 THEN p.champion_id - 60000 ELSE p.champion_id END
+              ORDER BY MAX(m.game_creation) DESC, p.game_id DESC
+            ) AS appearance_rank`,
+    filter: 'WHERE r.appearance_rank <= ?',
     params: [Math.trunc(range)],
   };
 }
@@ -1194,10 +1146,12 @@ export async function getChampionOverallScores(
   if (!missing.length) return result;
 
   const placeholders = missing.flatMap(() => ['?', '?']).join(',');
-  const params: Array<string | number> = [];
-  const recent = recentMatchesJoin(mode, range);
-  if (recent) params.push(...recent.params);
-  params.push(...missing, ...missing.map((id) => id + 60000));
+  const window = championAppearanceWindow(range);
+  const params: Array<string | number> = [
+    ...missing,
+    ...missing.map((id) => id + 60000),
+    ...window.params,
+  ];
   const conditions = [
     `p.champion_id IN (${placeholders})`,
     'p.score IS NOT NULL',
@@ -1218,15 +1172,17 @@ export async function getChampionOverallScores(
               AVG(r.game_rank) AS avg_rank
        FROM (
          SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win,
-                1 + COUNT(q.game_id) AS game_rank
+                1 + COUNT(q.game_id) AS game_rank${
+                  window.rankColumn ? `,\n                ${window.rankColumn}` : ''
+                }
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
-         ${recent ? `${recent.sql}` : ''}
          LEFT JOIN match_participants q
            ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
          WHERE ${conditions.join(' AND ')}
          GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
        ) r
+       ${window.filter}
        GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END`,
       params,
     );
@@ -1267,13 +1223,14 @@ export async function getChampionOverallScores(
   return result;
 }
 
-/** 当前模式下所有玩家的总场次，用作登场率分母 */
+/** 当前模式下所有玩家的总出场数，用作登场率分母；range > 0 时每个英雄只算最近 N 次出场 */
 export async function getChampionOverallTotal(
   mode?: GameModeKey,
   range?: number,
 ): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
+  const capped = Boolean(range && range > 0);
   const key = `${mode ?? 'ALL'}:${range ?? 0}`;
   const cached = championOverallTotalCache.get(key);
   if (cached && Date.now() - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
@@ -1287,16 +1244,22 @@ export async function getChampionOverallTotal(
   ];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
-  const recent = recentMatchesJoin(mode, range);
-  const params: Array<string | number> = recent ? [...recent.params] : [];
   try {
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT COUNT(*) AS total
-       FROM match_participants p
-       JOIN matches m ON m.game_id = p.game_id
-       ${recent ? `${recent.sql}` : ''}
-       WHERE ${conditions.join(' AND ')}`,
-      params,
+      capped
+        ? `SELECT COALESCE(SUM(LEAST(c.games, ?)), 0) AS total
+           FROM (
+             SELECT COUNT(*) AS games
+             FROM match_participants p
+             JOIN matches m ON m.game_id = p.game_id
+             WHERE ${conditions.join(' AND ')}
+             GROUP BY CASE WHEN p.champion_id >= 60000 THEN p.champion_id - 60000 ELSE p.champion_id END
+           ) c`
+        : `SELECT COUNT(*) AS total
+           FROM match_participants p
+           JOIN matches m ON m.game_id = p.game_id
+           WHERE ${conditions.join(' AND ')}`,
+      capped ? [Math.trunc(range as number)] : [],
     );
     const total = Number(rows[0]?.total) || 0;
     championOverallTotalCache.set(key, { at: Date.now(), total });
@@ -1336,8 +1299,8 @@ export async function getAllChampionOverallScores(
   ];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
-  const recent = recentMatchesJoin(mode, range);
-  const params: Array<string | number> = recent ? [...recent.params] : [];
+  const window = championAppearanceWindow(range);
+  const params: Array<string | number> = [...window.params];
 
   try {
     const [rows] = await db.query<RowDataPacket[]>(
@@ -1349,15 +1312,17 @@ export async function getAllChampionOverallScores(
               AVG(r.game_rank) AS avg_rank
        FROM (
          SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win,
-                1 + COUNT(q.game_id) AS game_rank
+                1 + COUNT(q.game_id) AS game_rank${
+                  window.rankColumn ? `,\n                ${window.rankColumn}` : ''
+                }
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
-         ${recent ? `${recent.sql}` : ''}
          LEFT JOIN match_participants q
            ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
          WHERE ${conditions.join(' AND ')}
          GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
        ) r
+       ${window.filter}
        GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END`,
       params,
     );
@@ -1420,7 +1385,7 @@ export interface ChampionScoreSummary {
  * 某个玩家各英雄的平均单场评分（来自长期存档）。
  * 重开/训练模式不计入，只统计有评分的场次，按平均分从高到低排序。
  * 特殊模式的英雄 ID（如 60067）会归一化到基础英雄 ID（67）。
- * range > 0 时只取该玩家最近 N 场有评分的对局。
+ * range > 0 时每个英雄只取最近 N 次出场。
  */
 export async function getPlayerChampionScores(
   puuid: string,
@@ -1439,10 +1404,8 @@ export async function getPlayerChampionScores(
   ];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
-  const recent = recentPlayerGamesJoin(puuid, mode, range);
-  const params: Array<string | number> = [];
-  if (recent) params.push(...recent.params);
-  params.push(puuid);
+  const window = championAppearanceWindow(range);
+  const params: Array<string | number> = [puuid, ...window.params];
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END AS champion_id,
@@ -1455,15 +1418,17 @@ export async function getPlayerChampionScores(
               AVG(r.game_rank) AS avg_rank
        FROM (
          SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win,
-                1 + COUNT(q.game_id) AS game_rank
+                1 + COUNT(q.game_id) AS game_rank${
+                  window.rankColumn ? `,\n                ${window.rankColumn}` : ''
+                }
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
-         ${recent ? `${recent.sql}` : ''}
          LEFT JOIN match_participants q
            ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
          WHERE ${conditions.join(' AND ')}
          GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
        ) r
+       ${window.filter}
        GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END
        HAVING games >= ?
        ORDER BY avg_score DESC, games DESC`,
