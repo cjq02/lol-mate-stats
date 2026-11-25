@@ -70,6 +70,8 @@ const els = {
   myMatches: document.getElementById('my-matches'),
   championRanking: document.getElementById('champion-ranking'),
   championRankingModal: document.getElementById('champion-ranking-modal'),
+  championRankingTitle: document.getElementById('champion-ranking-title'),
+  championRankingAll: document.getElementById('champion-ranking-all'),
   championRankingList: document.getElementById('champion-ranking-list'),
   championRankingTabs: document.getElementById('champion-ranking-tabs'),
   championRankingSort: document.getElementById('champion-ranking-sort'),
@@ -214,6 +216,7 @@ const CHAMPION_RANKING_SORT_LABELS = {
   overallAvg: '全体平均分',
   overallWinRate: '全体胜率',
   overallRank: '全体平均排名',
+  overallPickRate: '全体登场率',
 };
 
 const TIME_STATS_DIMENSION_LABELS = {
@@ -298,6 +301,9 @@ const state = {
   championRankingSort: 'avg',
   championRankingData: [],
   championRankingToken: 0,
+  /** 英雄排名是否显示所有英雄（否则只显示我玩过的） */
+  championRankingShowAll: false,
+  championRankingTotalGames: 0,
   /** 英雄排名里展开的单个英雄六角星 */
   championRadarId: 0,
   championRadarName: '',
@@ -5631,8 +5637,11 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     : 'avg';
   const number = (value) => Number(value) || 0;
   const overallOf = (item) => item?.overall ?? {};
+  const showAll = state.championRankingShowAll;
   const list = (Array.isArray(champions) ? champions : [])
-    .filter((item) => Number(item?.games) > 0)
+    .filter((item) =>
+      showAll ? number(item?.overall?.games) > 0 : number(item?.games) > 0,
+    )
     .sort((a, b) => {
       if (sort === 'games') {
         return number(b.games) - number(a.games) || number(b.avgScore) - number(a.avgScore);
@@ -5677,21 +5686,34 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           number(b.avgScore) - number(a.avgScore)
         );
       }
+      if (sort === 'overallPickRate') {
+        return (
+          number(overallOf(b).pickRate) - number(overallOf(a).pickRate) ||
+          number(overallOf(b).games) - number(overallOf(a).games) ||
+          number(b.avgScore) - number(a.avgScore)
+        );
+      }
       return number(b.avgScore) - number(a.avgScore) || number(b.games) - number(a.games);
     });
   const modeLabel =
     CHAMPION_RANKING_MODE_LABELS[mode] ?? CHAMPION_RANKING_MODE_LABELS.all;
   const sortLabel = CHAMPION_RANKING_SORT_LABELS[sort];
-  const totalGames = list.reduce((sum, item) => sum + (Number(item.games) || 0), 0);
+  const totalGames = list.reduce(
+    (sum, item) =>
+      sum + (showAll ? number(overallOf(item).games) : number(item.games)),
+    0,
+  );
 
   els.championRankingMeta.textContent = list.length
-    ? `${modeLabel} · 按${sortLabel} · ${list.length} 个英雄 · ${totalGames} 场`
+    ? `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · 按${sortLabel} · ${
+        list.length
+      } 个英雄 · ${totalGames} 场`
     : '';
 
   if (!list.length) {
     els.championRankingList.innerHTML = `<div class="search-status">${escapeHtml(
       modeLabel,
-    )}还没有带评分的英雄战绩，多打几局后再来看看</div>`;
+    )}${showAll ? '还没有所有英雄的评分数据' : '还没有带评分的英雄战绩，多打几局后再来看看'}</div>`;
     return;
   }
 
@@ -5700,15 +5722,32 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const rank = index + 1;
       const name = item.championName || '未知英雄';
       const championId = Number(item.championId) || 0;
+      const myGames = Number(item.games) || 0;
+      const hasMine = myGames > 0;
       const avg = Number(item.avgScore) || 0;
       const prof = Number(item.proficiency) || 0;
       const overall = item.overall ?? null;
       const overallTitle = overall
         ? `所有玩家 ${Number(overall.games) || 0} 场`
         : '暂无所有玩家数据';
+      const overallGames = overall ? num(overall.games, 0) : '-';
       const overallWin = overall ? winRatePct(overall.winRate) : '-';
       const overallAvg = overall ? num(overall.avgScore, 1) : '-';
       const overallRank = overall ? num(overall.avgRank, 1) : '-';
+      const overallPickRate = overall ? pct(overall.pickRate) : '-';
+      const myWin = hasMine ? winRatePct(item.winRate) : '-';
+      const myAvg = hasMine ? num(avg, 1) : '-';
+      const myRank =
+        myGames >= MIN_AVG_RANK_GAMES && Number(item.avgRank) > 0
+          ? num(item.avgRank, 1)
+          : '-';
+      const myProf = hasMine ? num(prof, 0) : '-';
+      const bestColor = hasMine
+        ? ratingColor(Number(item.bestScore) || 0)
+        : 'var(--muted-2)';
+      const worstColor = hasMine
+        ? ratingColor(Number(item.worstScore) || 0)
+        : 'var(--muted-2)';
       return `<button class="champion-rank-row" type="button" data-champion-id="${championId}" data-champion-name="${escapeHtml(
         name,
       )}" title="点击查看该英雄的战绩">
@@ -5716,39 +5755,46 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
         ${champIconHtml(item.championId, name, 'sm')}
         <span class="champion-rank-main">
           <b>${escapeHtml(name)}</b>
-          <small>${Number(item.games) || 0} 场 · 胜率 ${winRatePct(
-            item.winRate,
-          )} <span class="champion-rank-overall" title="${escapeHtml(
-            overallTitle,
-          )}">/ 全体 ${overallWin}</span> · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${num(
-            prof,
-            0,
-          )}</span></small>
+          <small>${
+            hasMine
+              ? `${myGames} 场 · 胜率 ${myWin} · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${myProf}</span>`
+              : '<span class="champion-rank-not-played">我还没玩过这个英雄</span>'
+          }</small>
+          <small class="champion-rank-overall-line">
+            <span class="champion-rank-overall" title="${escapeHtml(
+              overallTitle,
+            )}">全体 ${overallGames} 场</span>
+            <span class="champion-rank-overall" title="${escapeHtml(
+              overallTitle,
+            )}">登场率 ${overallPickRate}</span>
+            <span class="champion-rank-overall" title="${escapeHtml(
+              overallTitle,
+            )}">胜率 ${overallWin}</span>
+          </small>
         </span>
         <span class="champion-rank-stats">
           <span class="champion-rank-stat">
-            <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(
-              avg,
-              1,
-            )}</span>
+            <span class="champion-rank-score" style="color:${
+              hasMine ? ratingColor(avg) : 'var(--muted-2)'
+            }">${myAvg}</span>
             <small>平均分 <span class="champion-rank-overall" title="${escapeHtml(
               overallTitle,
-            )}">/ ${overallAvg}</span></small>
+            )}">/ 全体 ${overallAvg}</span></small>
           </span>
           <span class="champion-rank-stat">
-            <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${
-              Number(item.games) >= MIN_AVG_RANK_GAMES && Number(item.avgRank) > 0
-                ? num(item.avgRank, 1)
-                : '-'
-            }</b>
+            <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${myRank}</b>
             <small>平均排名 <span class="champion-rank-overall" title="${escapeHtml(
               overallTitle,
-            )}">/ ${overallRank}</span></small>
+            )}">/ 全体 ${overallRank}</span></small>
           </span>
         </span>
         <span class="champion-rank-extra">
-          <span>最高 <b>${num(item.bestScore, 0)}</b></span>
-          <span>最低 <b>${num(item.worstScore, 0)}</b></span>
+          <span>最高 <b style="color:${bestColor}">${
+            hasMine ? num(item.bestScore, 0) : '-'
+          }</b></span>
+          <span>最低 <b style="color:${worstColor}">${
+            hasMine ? num(item.worstScore, 0) : '-'
+          }</b></span>
         </span>
       </button>`;
     })
@@ -5777,6 +5823,7 @@ async function loadChampionRanking() {
   try {
     const params = new URLSearchParams();
     if (mode !== 'all') params.set('mode', mode);
+    if (state.championRankingShowAll) params.set('all', '1');
     const query = params.toString();
     const response = await fetch(
       `/api/archive/champions${query ? `?${query}` : ''}`,
@@ -5788,6 +5835,7 @@ async function loadChampionRanking() {
     }
     if (token !== state.championRankingToken) return;
     state.selfPuuid = payload.puuid ?? state.selfPuuid;
+    state.championRankingTotalGames = Number(payload.totalGames) || 0;
     state.championRankingData = Array.isArray(payload.champions) ? payload.champions : [];
     renderChampionRanking(state.championRankingData, mode);
   } catch (error) {
@@ -5804,6 +5852,14 @@ async function loadChampionRanking() {
 function openChampionRanking(options = {}) {
   if (!options.keepMode) state.championRankingMode = 'ARAM';
   if (els.championRankingSort) els.championRankingSort.value = state.championRankingSort;
+  if (els.championRankingAll) {
+    els.championRankingAll.checked = state.championRankingShowAll;
+  }
+  if (els.championRankingTitle) {
+    els.championRankingTitle.textContent = state.championRankingShowAll
+      ? '所有英雄排名'
+      : '我的英雄排名';
+  }
   updateChampionRankingTabs();
   els.championRankingModal.classList.remove('hidden');
   void loadChampionRanking();
@@ -6443,6 +6499,15 @@ els.championRankingTabs.addEventListener('click', (event) => {
   }
   state.championRankingMode = mode;
   updateChampionRankingTabs();
+  void loadChampionRanking();
+});
+els.championRankingAll?.addEventListener('change', () => {
+  state.championRankingShowAll = Boolean(els.championRankingAll.checked);
+  if (els.championRankingTitle) {
+    els.championRankingTitle.textContent = state.championRankingShowAll
+      ? '所有英雄排名'
+      : '我的英雄排名';
+  }
   void loadChampionRanking();
 });
 els.championRankingSort.addEventListener('change', () => {

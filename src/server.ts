@@ -669,8 +669,9 @@ async function handleRequest(
     const rawMode = url.searchParams.get('mode');
     const mode: GameModeKey | undefined =
       rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    const showAll = url.searchParams.get('all') === '1';
     try {
-      const data = await source.getArchivedChampionScores(puuid, minGames, mode);
+      const data = await source.getArchivedChampionScores(puuid, minGames, mode, showAll);
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {
       sendJson(res, 502, {

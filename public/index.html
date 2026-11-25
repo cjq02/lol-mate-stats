@@ -181,7 +181,7 @@
       >
         <div class="modal-card champion-ranking-card">
           <div class="modal-head">
-            <h2 id="champion-ranking-title">我的英雄平均分排名</h2>
+            <h2 id="champion-ranking-title">我的英雄排名</h2>
             <div class="modal-actions">
               <span id="champion-ranking-meta" class="champion-ranking-meta"></span>
               <button id="champion-ranking-close" class="btn" type="button">关闭</button>
@@ -192,6 +192,14 @@
             <button class="tab" type="button" data-ranking-mode="SR">召唤师峡谷</button>
             <button class="tab active" type="button" data-ranking-mode="ARAM">极地大乱斗</button>
             <button class="tab" type="button" data-ranking-mode="ARENA">斗魂竞技场</button>
+            <label
+              class="champion-ranking-scope"
+              title="显示所有英雄，而不只是我玩过的英雄"
+            >
+              <input id="champion-ranking-all" type="checkbox" />
+              <span class="scope-slider" aria-hidden="true"></span>
+              <span>所有英雄</span>
+            </label>
             <select
               id="champion-ranking-sort"
               class="champion-ranking-sort"
@@ -205,6 +213,7 @@
               <option value="overallAvg">按全体平均分</option>
               <option value="overallWinRate">按全体胜率</option>
               <option value="overallRank">按全体平均排名</option>
+              <option value="overallPickRate">按全体登场率</option>
             </select>
           </div>
           <div id="champion-ranking-list" class="champion-ranking-list"></div>

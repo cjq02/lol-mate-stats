@@ -38,6 +38,8 @@ import {
   countPlayerMatches,
   getChampionModeRecords,
   getChampionOverallScores,
+  getChampionOverallTotal,
+  getAllChampionOverallScores,
   getPlayerChampionScores,
   getPlayerChampionRadar,
   getPlayerMatchRanks,
@@ -1157,19 +1159,24 @@ export class LiveSource implements DataSource {
     puuid?: string,
     minGames = 1,
     mode?: GameModeKey,
+    showAll = false,
   ): Promise<{
     puuid: string;
     champions: Awaited<ReturnType<typeof getPlayerChampionScores>>;
+    totalGames: number;
   }> {
     const id = await this.resolveArchivePuuid(puuid);
-    if (!id) return { puuid: '', champions: [] };
-    const champions = await getPlayerChampionScores(id, minGames, mode);
-    if (champions.length) {
-      const overall = await getChampionOverallScores(
-        champions.map((champion) => champion.championId),
-        mode,
-      );
-      for (const champion of champions) {
+    if (!id) return { puuid: '', champions: [], totalGames: 0 };
+    if (!showAll) {
+      const mine = await getPlayerChampionScores(id, minGames, mode);
+      const [overall, totalGames] = await Promise.all([
+        getChampionOverallScores(
+          mine.map((champion) => champion.championId),
+          mode,
+        ),
+        getChampionOverallTotal(mode),
+      ]);
+      for (const champion of mine) {
         const record = overall.get(champion.championId);
         if (!record) continue;
         champion.overall = {
@@ -1177,10 +1184,42 @@ export class LiveSource implements DataSource {
           winRate: record.winRate,
           avgScore: record.avgScore,
           avgRank: record.avgRank,
+          pickRate: totalGames > 0 ? record.games / totalGames : 0,
         };
       }
+      return { puuid: id, champions: mine, totalGames };
     }
-    return { puuid: id, champions };
+
+    const [mine, overall] = await Promise.all([
+      getPlayerChampionScores(id, minGames, mode),
+      getAllChampionOverallScores(mode),
+    ]);
+    const mineById = new Map(
+      mine.map((champion) => [champion.championId, champion]),
+    );
+    const champions = overall.champions.map((record) => {
+      const own = mineById.get(record.championId);
+      return {
+        championId: record.championId,
+        championName: record.championName || own?.championName || '',
+        games: own?.games ?? 0,
+        wins: own?.wins ?? 0,
+        winRate: own?.winRate ?? 0,
+        avgScore: own?.avgScore ?? 0,
+        bestScore: own?.bestScore ?? 0,
+        worstScore: own?.worstScore ?? 0,
+        avgRank: own?.avgRank ?? 0,
+        proficiency: own?.proficiency ?? 0,
+        overall: {
+          games: record.games,
+          winRate: record.winRate,
+          avgScore: record.avgScore,
+          avgRank: record.avgRank,
+          pickRate: record.pickRate,
+        },
+      };
+    });
+    return { puuid: id, champions, totalGames: overall.totalGames };
   }
 
   /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */

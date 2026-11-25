@@ -1071,23 +1071,24 @@ export async function getPlayerChampionRadar(
 
 export interface ChampionOverallRecord {
   championId: number;
+  championName: string;
   games: number;
   wins: number;
   winRate: number;
   avgScore: number;
   avgRank: number;
+  /** 该英雄的全体场次 / 当前模式全体场次 */
+  pickRate: number;
 }
 
 const CHAMPION_OVERALL_CACHE_TTL_MS = 5 * 60_000;
-const championOverallCache = new Map<
+const championOverallPartCache = new Map<
   string,
   { at: number; record: ChampionOverallRecord | null }
 >();
+const championOverallTotalCache = new Map<string, { at: number; total: number }>();
 
-/**
- * 这些英雄在指定模式下“所有玩家”的胜率、平均分和平均排名。
- * 只查当前榜单里的英雄，按英雄单独缓存，避免切换排序时反复扫全表。
- */
+/** 指定英雄集合的全体数据；只查当前榜单里的英雄，避免默认视图扫全表 */
 export async function getChampionOverallScores(
   championIds: number[],
   mode?: GameModeKey,
@@ -1103,7 +1104,7 @@ export async function getChampionOverallScores(
   const missing: number[] = [];
   for (const id of ids) {
     const key = `${mode ?? 'ALL'}:${id}`;
-    const cached = championOverallCache.get(key);
+    const cached = championOverallPartCache.get(key);
     if (cached && now - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
       if (cached.record) result.set(id, cached.record);
     } else {
@@ -1128,19 +1129,20 @@ export async function getChampionOverallScores(
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END AS champion_id,
+              MAX(r.champion_name) AS champion_name,
               COUNT(*) AS games,
               COALESCE(SUM(r.win = 1), 0) AS wins,
               AVG(r.score) AS avg_score,
               AVG(r.game_rank) AS avg_rank
        FROM (
-         SELECT p.game_id, p.champion_id, p.score, p.win,
+         SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win,
                 1 + COUNT(q.game_id) AS game_rank
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
          LEFT JOIN match_participants q
            ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
          WHERE ${conditions.join(' AND ')}
-         GROUP BY p.game_id, p.champion_id, p.score, p.win
+         GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
        ) r
        GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END`,
       params,
@@ -1153,14 +1155,16 @@ export async function getChampionOverallScores(
       const wins = Number(row.wins) || 0;
       const record: ChampionOverallRecord = {
         championId,
+        championName: String(row.champion_name ?? ''),
         games,
         wins,
         winRate: games > 0 ? wins / games : 0,
         avgScore: Number(row.avg_score) || 0,
         avgRank: Number(row.avg_rank) || 0,
+        pickRate: 0,
       };
       result.set(championId, record);
-      championOverallCache.set(`${mode ?? 'ALL'}:${championId}`, {
+      championOverallPartCache.set(`${mode ?? 'ALL'}:${championId}`, {
         at: now,
         record,
       });
@@ -1168,13 +1172,126 @@ export async function getChampionOverallScores(
     }
     for (const id of missing) {
       if (!found.has(id)) {
-        championOverallCache.set(`${mode ?? 'ALL'}:${id}`, { at: now, record: null });
+        championOverallPartCache.set(`${mode ?? 'ALL'}:${id}`, { at: now, record: null });
       }
     }
   } catch {
     /* 查询失败时按无整体数据降级，不影响个人榜单 */
   }
   return result;
+}
+
+/** 当前模式下所有玩家的总场次，用作登场率分母 */
+export async function getChampionOverallTotal(mode?: GameModeKey): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const key = mode ?? 'ALL';
+  const cached = championOverallTotalCache.get(key);
+  if (cached && Date.now() - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
+    return cached.total;
+  }
+  const conditions = [
+    'p.score IS NOT NULL',
+    'm.duration_seconds > 300',
+    "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
+    'p.puuid IS NOT NULL',
+  ];
+  const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
+  if (modeFilter) conditions.push(modeFilter);
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       WHERE ${conditions.join(' AND ')}`,
+    );
+    const total = Number(rows[0]?.total) || 0;
+    championOverallTotalCache.set(key, { at: Date.now(), total });
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
+
+const championOverallAllCache = new Map<
+  string,
+  { at: number; totalGames: number; champions: ChampionOverallRecord[] }
+>();
+
+/**
+ * 指定模式下“所有玩家”在每个英雄上的场次、胜率、平均分、平均排名和登场率。
+ * 结果按模式缓存 5 分钟，切换“我的英雄 / 所有英雄”时不再重复扫全表。
+ */
+export async function getAllChampionOverallScores(
+  mode?: GameModeKey,
+): Promise<{ totalGames: number; champions: ChampionOverallRecord[] }> {
+  const db = await getDb();
+  if (!db) return { totalGames: 0, champions: [] };
+  const cacheKey = mode ?? 'ALL';
+  const cached = championOverallAllCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
+    return { totalGames: cached.totalGames, champions: cached.champions };
+  }
+
+  const conditions = [
+    'p.score IS NOT NULL',
+    'm.duration_seconds > 300',
+    "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
+    'p.puuid IS NOT NULL',
+  ];
+  const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
+  if (modeFilter) conditions.push(modeFilter);
+
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END AS champion_id,
+              MAX(r.champion_name) AS champion_name,
+              COUNT(*) AS games,
+              COALESCE(SUM(r.win = 1), 0) AS wins,
+              AVG(r.score) AS avg_score,
+              AVG(r.game_rank) AS avg_rank
+       FROM (
+         SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win,
+                1 + COUNT(q.game_id) AS game_rank
+         FROM match_participants p
+         JOIN matches m ON m.game_id = p.game_id
+         LEFT JOIN match_participants q
+           ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
+         WHERE ${conditions.join(' AND ')}
+         GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
+       ) r
+       GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END`,
+    );
+    const totalGames = rows.reduce((sum, row) => sum + (Number(row.games) || 0), 0);
+    const champions = rows
+      .map((row) => {
+        const championId = Number(row.champion_id);
+        if (!championId) return null;
+        const games = Number(row.games) || 0;
+        const wins = Number(row.wins) || 0;
+        return {
+          championId,
+          championName: String(row.champion_name ?? ''),
+          games,
+          wins,
+          winRate: games > 0 ? wins / games : 0,
+          avgScore: Number(row.avg_score) || 0,
+          avgRank: Number(row.avg_rank) || 0,
+          pickRate: totalGames > 0 ? games / totalGames : 0,
+        } satisfies ChampionOverallRecord;
+      })
+      .filter((record): record is ChampionOverallRecord => record !== null)
+      .sort((a, b) => b.games - a.games || b.avgScore - a.avgScore);
+    championOverallAllCache.set(cacheKey, {
+      at: Date.now(),
+      totalGames,
+      champions,
+    });
+    return { totalGames, champions };
+  } catch {
+    return { totalGames: 0, champions: [] };
+  }
 }
 
 export interface ChampionScoreSummary {
@@ -1196,6 +1313,8 @@ export interface ChampionScoreSummary {
     winRate: number;
     avgScore: number;
     avgRank: number;
+    /** 该英雄的全体场次 / 当前模式全体场次 */
+    pickRate: number;
   };
 }
 
