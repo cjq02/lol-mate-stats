@@ -434,12 +434,15 @@ const TYPE_RADAR_METRICS: Array<{
   { key: 'hpm', label: '治疗', format: compactRadarValue },
 ];
 
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function compactRadarValue(value: number): string {
   const number = Number(value) || 0;
   if (number <= 0) return '0';
   if (number >= 1000) {
-    const kiloValue = number / 1000;
-    return `${kiloValue >= 10 ? Math.round(kiloValue) : kiloValue.toFixed(1)}k`;
+    return `${(number / 1000).toFixed(2)}k`;
   }
   if (number >= 100) return String(Math.round(number));
   if (number >= 10) return number.toFixed(0);
@@ -453,10 +456,11 @@ function radarMetrics(
   return TYPE_RADAR_METRICS.map((metric) => {
     const selfValue = Number(self[metric.key]) || 0;
     const allValue = Number(all[metric.key]) || 0;
+    const round = metric.key === 'kda' ? round2 : round1;
     return {
       label: metric.label,
-      self: round1(selfValue),
-      all: round1(allValue),
+      self: round(selfValue),
+      all: round(allValue),
       selfText: metric.format(selfValue),
       allText: metric.format(allValue),
     };

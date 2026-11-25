@@ -2536,7 +2536,13 @@ test('单个英雄雷达直接使用该英雄的平均值', () => {
   const damage = radar.metrics.find((metric) => metric.label === '伤害');
   assert.ok(damage);
   assert.equal(damage.self, 1800);
-  assert.equal(damage.selfText, '1.8k');
+  assert.equal(damage.selfText, '1.80k');
+
+  const kda = radar.metrics.find((metric) => metric.label === 'KDA');
+  assert.ok(kda);
+  assert.equal(kda.self, 4);
+  assert.equal(kda.selfText, '4.00');
+  assert.equal(kda.allText, '3.00');
 });
 
 test('时段统计使用当前坑线重新判断结果', () => {
