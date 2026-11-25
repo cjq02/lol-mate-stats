@@ -293,6 +293,13 @@ const state = {
   championRankingSort: 'avg',
   championRankingData: [],
   championRankingToken: 0,
+  /** 英雄排名里展开的单个英雄六角星 */
+  championRadarId: 0,
+  championRadarName: '',
+  championRadar: null,
+  championRadarLoading: false,
+  championRadarError: '',
+  championRadarToken: 0,
   /** 时段胜率当前模式：all / SR / ARAM / ARENA */
   timeStatsMode: 'ARAM',
   /** 时段统计口径：winRate / score */
@@ -5279,6 +5286,97 @@ function rankingClass(rank) {
   return 'rank-mid';
 }
 
+function resetChampionRadar() {
+  state.championRadarToken = (state.championRadarToken ?? 0) + 1;
+  state.championRadarId = 0;
+  state.championRadarName = '';
+  state.championRadar = null;
+  state.championRadarLoading = false;
+  state.championRadarError = '';
+}
+
+function championRadarPanel(item) {
+  const championId = Number(item.championId) || 0;
+  if (state.championRadarLoading) {
+    return `<div class="champion-radar-panel type-radar-panel">
+      <div class="search-status"><span class="spinner"></span><span>正在汇总所有玩家…</span></div>
+    </div>`;
+  }
+  if (state.championRadarError) {
+    return `<div class="champion-radar-panel type-radar-panel">
+      <div class="search-status error">${escapeHtml(state.championRadarError)}</div>
+    </div>`;
+  }
+  const radar = state.championRadar;
+  if (!radar || radar.championId !== championId || !radar.selfGames) {
+    return `<div class="champion-radar-panel type-radar-panel">
+      <div class="type-radar-empty">这个英雄还没有你的历史对局</div>
+    </div>`;
+  }
+  const series = timeStatsRadarSeries(radar);
+  if (!series.length) return '';
+  return `<div class="champion-radar-panel type-radar-panel">
+    <div class="type-radar-head">${escapeHtml(item.championName || '该英雄')} · 我 ${radar.selfGames} 场 / 所有玩家 ${radar.allGames} 场</div>
+    ${radarSvg(series, {
+      selfLabel: '我',
+      avgLabel: '所有玩家',
+      ariaLabel: `${item.championName || '英雄'}对比`,
+    })}
+    <div class="type-radar-note">实线：我 · 虚线：所有玩家；经济 / 承伤 / 伤害 / 治疗为分均</div>
+    <button class="btn champion-radar-matches" type="button" data-champion-matches="${championId}" data-champion-name="${escapeHtml(item.championName || '')}">查看该英雄战绩</button>
+  </div>`;
+}
+
+async function loadChampionRadar(championId) {
+  const token = (state.championRadarToken ?? 0) + 1;
+  state.championRadarToken = token;
+  state.championRadarLoading = true;
+  state.championRadarError = '';
+  renderChampionRanking(state.championRankingData, state.championRankingMode);
+  try {
+    const params = new URLSearchParams({ championId: String(championId) });
+    if (state.championRankingMode !== 'all') {
+      params.set('mode', state.championRankingMode);
+    }
+    const response = await fetch(`/api/archive/champion-radar?${params.toString()}`, {
+      cache: 'no-store',
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    if (token !== state.championRadarToken) return;
+    state.selfPuuid = payload.puuid ?? state.selfPuuid;
+    state.championRadar = payload.radar ?? null;
+  } catch (error) {
+    if (token !== state.championRadarToken) return;
+    state.championRadar = null;
+    state.championRadarError = `读取英雄对比失败：${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  } finally {
+    if (token === state.championRadarToken) {
+      state.championRadarLoading = false;
+      renderChampionRanking(state.championRankingData, state.championRankingMode);
+    }
+  }
+}
+
+async function toggleChampionRadar(championId, championName) {
+  if (state.championRadarId === championId) {
+    state.championRadarId = 0;
+    state.championRadarName = '';
+    state.championRadar = null;
+    state.championRadarError = '';
+    renderChampionRanking(state.championRankingData, state.championRankingMode);
+    return;
+  }
+  state.championRadarId = championId;
+  state.championRadarName = championName;
+  state.championRadar = null;
+  await loadChampionRadar(championId);
+}
+
 function renderChampionRanking(champions, mode = state.championRankingMode) {
   const sort = CHAMPION_RANKING_SORT_LABELS[state.championRankingSort]
     ? state.championRankingSort
@@ -5329,44 +5427,49 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     .map((item, index) => {
       const rank = index + 1;
       const name = item.championName || '未知英雄';
+      const championId = Number(item.championId) || 0;
       const avg = Number(item.avgScore) || 0;
       const prof = Number(item.proficiency) || 0;
-      return `<button class="champion-rank-row" type="button" data-champion-id="${
-        Number(item.championId) || 0
-      }" data-champion-name="${escapeHtml(name)}">
-        <span class="champion-rank-no ${rankingClass(rank)}">${rank}</span>
-        ${champIconHtml(item.championId, name, 'sm')}
-        <span class="champion-rank-main">
-          <b>${escapeHtml(name)}</b>
-          <small>${Number(item.games) || 0} 场 · 胜率 ${winRatePct(
-            item.winRate,
-          )} · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${num(
-            prof,
-            0,
-          )}</span></small>
-        </span>
-        <span class="champion-rank-stats">
-          <span class="champion-rank-stat">
-            <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(
-              avg,
-              1,
-            )}</span>
-            <small>平均分</small>
+      const expanded = championId > 0 && state.championRadarId === championId;
+      return `<div class="champion-rank-item">
+        <button class="champion-rank-row${expanded ? ' expanded' : ''}" type="button" data-champion-id="${championId}" data-champion-name="${escapeHtml(
+          name,
+        )}" aria-expanded="${expanded}" title="点击查看我和所有玩家的六角星对比">
+          <span class="champion-rank-no ${rankingClass(rank)}">${rank}</span>
+          ${champIconHtml(item.championId, name, 'sm')}
+          <span class="champion-rank-main">
+            <b>${escapeHtml(name)}</b>
+            <small>${Number(item.games) || 0} 场 · 胜率 ${winRatePct(
+              item.winRate,
+            )} · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${num(
+              prof,
+              0,
+            )}</span></small>
           </span>
-          <span class="champion-rank-stat">
-            <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${
-              Number(item.games) >= MIN_AVG_RANK_GAMES && Number(item.avgRank) > 0
-                ? num(item.avgRank, 1)
-                : '-'
-            }</b>
-            <small>平均排名</small>
+          <span class="champion-rank-stats">
+            <span class="champion-rank-stat">
+              <span class="champion-rank-score" style="color:${ratingColor(avg)}">${num(
+                avg,
+                1,
+              )}</span>
+              <small>平均分</small>
+            </span>
+            <span class="champion-rank-stat">
+              <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${
+                Number(item.games) >= MIN_AVG_RANK_GAMES && Number(item.avgRank) > 0
+                  ? num(item.avgRank, 1)
+                  : '-'
+              }</b>
+              <small>平均排名</small>
+            </span>
           </span>
-        </span>
-        <span class="champion-rank-extra">
-          <span>最高 <b>${num(item.bestScore, 0)}</b></span>
-          <span>最低 <b>${num(item.worstScore, 0)}</b></span>
-        </span>
-      </button>`;
+          <span class="champion-rank-extra">
+            <span>最高 <b>${num(item.bestScore, 0)}</b></span>
+            <span>最低 <b>${num(item.worstScore, 0)}</b></span>
+          </span>
+        </button>
+        ${expanded ? championRadarPanel(item) : ''}
+      </div>`;
     })
     .join('');
 }
@@ -5385,6 +5488,7 @@ async function loadChampionRanking() {
   const token = (state.championRankingToken ?? 0) + 1;
   state.championRankingToken = token;
   state.championRankingLoading = true;
+  resetChampionRadar();
   const mode = state.championRankingMode;
   els.championRankingMeta.textContent = '';
   els.championRankingList.innerHTML =
@@ -5427,6 +5531,7 @@ function openChampionRanking(options = {}) {
 function closeChampionRanking() {
   state.championRankingToken = (state.championRankingToken ?? 0) + 1;
   state.championRankingLoading = false;
+  resetChampionRadar();
   els.championRankingModal.classList.add('hidden');
 }
 
@@ -6046,21 +6151,28 @@ els.championRankingSort.addEventListener('change', () => {
   renderChampionRanking(state.championRankingData, state.championRankingMode);
 });
 els.championRankingList.addEventListener('click', (event) => {
+  const matchesButton = event.target.closest('[data-champion-matches]');
+  if (matchesButton) {
+    const championId = Number(matchesButton.dataset.championMatches) || 0;
+    const championName = matchesButton.dataset.championName || '';
+    if (!championId) return;
+    const mode =
+      state.championRankingMode === 'all' ? undefined : state.championRankingMode;
+    closeChampionRanking();
+    openChampionMatches(championId, championName, {
+      mode,
+      back: () => {
+        closeMatches();
+        openChampionRanking({ keepMode: true });
+      },
+    });
+    return;
+  }
   const row = event.target.closest('[data-champion-id]');
   if (!row) return;
   const championId = Number(row.dataset.championId) || 0;
   if (!championId) return;
-  const championName = row.dataset.championName || '';
-  const mode =
-    state.championRankingMode === 'all' ? undefined : state.championRankingMode;
-  closeChampionRanking();
-  openChampionMatches(championId, championName, {
-    mode,
-    back: () => {
-      closeMatches();
-      openChampionRanking({ keepMode: true });
-    },
-  });
+  void toggleChampionRadar(championId, row.dataset.championName || '');
 });
 els.latestMatch.addEventListener('click', () => void openLatestMatch());
 els.searchForm.addEventListener('submit', (event) => void submitSearch(event));

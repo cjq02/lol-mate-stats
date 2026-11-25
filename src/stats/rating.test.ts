@@ -17,6 +17,7 @@ import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queue
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import {
+  buildChampionRadar,
   buildTypeRadar,
   championTypeKey,
   summarizeTimeStats,
@@ -2508,6 +2509,34 @@ test('英雄类型雷达按场次加权汇总我和所有玩家', () => {
   assert.equal(championTypeKey(103), 'type-mage');
   assert.equal(championTypeKey(7), 'type-assassin');
   assert.equal(championTypeKey(999999), 'type-default');
+});
+
+test('单个英雄雷达直接使用该英雄的平均值', () => {
+  const radar = buildChampionRadar(
+    {
+      championId: 103,
+      allGames: 100,
+      selfGames: 20,
+      all: { kp: 55, gpm: 400, kda: 3, dtpm: 1000, dpm: 1500, hpm: 100 },
+      self: { kp: 60, gpm: 500, kda: 4, dtpm: 1200, dpm: 1800, hpm: 120 },
+    },
+    103,
+  );
+  assert.equal(radar.championId, 103);
+  assert.equal(radar.selfGames, 20);
+  assert.equal(radar.allGames, 100);
+
+  const kp = radar.metrics.find((metric) => metric.label === '参团');
+  assert.ok(kp);
+  assert.equal(kp.self, 60);
+  assert.equal(kp.all, 55);
+  assert.equal(kp.selfText, '60%');
+  assert.equal(kp.allText, '55%');
+
+  const damage = radar.metrics.find((metric) => metric.label === '伤害');
+  assert.ok(damage);
+  assert.equal(damage.self, 1800);
+  assert.equal(damage.selfText, '1.8k');
 });
 
 test('时段统计使用当前坑线重新判断结果', () => {

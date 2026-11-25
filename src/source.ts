@@ -15,7 +15,7 @@ import type {
   PlayerMatchFilter,
   PlayerWinRecord,
 } from './stats/archive.js';
-import type { TimeStatsSummary, TypeRadarEntry } from './stats/time-stats.js';
+import type { TimeStatsSummary, TypeRadarEntry, ChampionRadarEntry } from './stats/time-stats.js';
 
 export interface AssetResult {
   body: Buffer;
@@ -88,6 +88,12 @@ export interface DataSource {
     puuid?: string,
     mode?: GameModeKey,
   ): Promise<{ puuid: string; types: TypeRadarEntry[] }>;
+  /** 长期存档：单个英雄对比我和所有玩家的六项指标 */
+  getArchivedChampionRadar?(
+    puuid: string | undefined,
+    championId: number,
+    mode?: GameModeKey,
+  ): Promise<{ puuid: string; radar: ChampionRadarEntry | null }>;
   /** 某场对局里 10 名玩家的近期战绩卡片 */
   getMatchDetail?(
     gameId: number,

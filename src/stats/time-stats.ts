@@ -111,6 +111,13 @@ export interface TypeRadarEntry {
   metrics: TypeRadarMetric[];
 }
 
+export interface ChampionRadarEntry {
+  championId: number;
+  selfGames: number;
+  allGames: number;
+  metrics: TypeRadarMetric[];
+}
+
 /** 按英雄分组后的一行原始数据，交给 buildTypeRadar 汇总 */
 export interface TypeRadarSample {
   championId: number;
@@ -439,6 +446,23 @@ function compactRadarValue(value: number): string {
   return number.toFixed(1);
 }
 
+function radarMetrics(
+  self: Record<TypeRadarMetricKey, number>,
+  all: Record<TypeRadarMetricKey, number>,
+): TypeRadarMetric[] {
+  return TYPE_RADAR_METRICS.map((metric) => {
+    const selfValue = Number(self[metric.key]) || 0;
+    const allValue = Number(all[metric.key]) || 0;
+    return {
+      label: metric.label,
+      self: round1(selfValue),
+      all: round1(allValue),
+      selfText: metric.format(selfValue),
+      allText: metric.format(allValue),
+    };
+  });
+}
+
 /**
  * 按英雄官方主分类汇总我和所有玩家的六项指标。
  * 每个英雄先由 SQL 算出平均值，再按场次加权合并到同一类型，避免小样本英雄被放大。
@@ -477,27 +501,53 @@ export function buildTypeRadar(samples: TypeRadarSample[]): TypeRadarEntry[] {
 
   return Object.entries(CHAMPION_TYPE_LABELS).map(([key, label]) => {
     const entry = accumulators.get(key);
-    const metrics = TYPE_RADAR_METRICS.map((metric) => {
-      const self = entry?.selfGames
-        ? (entry.self[metric.key] ?? 0) / entry.selfGames
-        : 0;
-      const all = entry?.allGames ? (entry.all[metric.key] ?? 0) / entry.allGames : 0;
-      return {
-        label: metric.label,
-        self: round1(self),
-        all: round1(all),
-        selfText: metric.format(self),
-        allText: metric.format(all),
-      };
-    });
+    const self: Record<TypeRadarMetricKey, number> = {
+      kp: 0,
+      gpm: 0,
+      kda: 0,
+      dtpm: 0,
+      dpm: 0,
+      hpm: 0,
+    };
+    const all: Record<TypeRadarMetricKey, number> = {
+      kp: 0,
+      gpm: 0,
+      kda: 0,
+      dtpm: 0,
+      dpm: 0,
+      hpm: 0,
+    };
+    if (entry) {
+      for (const metric of TYPE_RADAR_METRICS) {
+        self[metric.key] = entry.selfGames
+          ? (entry.self[metric.key] ?? 0) / entry.selfGames
+          : 0;
+        all[metric.key] = entry.allGames
+          ? (entry.all[metric.key] ?? 0) / entry.allGames
+          : 0;
+      }
+    }
     return {
       key,
       label,
       selfGames: entry?.selfGames ?? 0,
       allGames: entry?.allGames ?? 0,
-      metrics,
+      metrics: radarMetrics(self, all),
     };
   });
+}
+
+/** 单个英雄的六角星：直接用 SQL 已经算好的我和所有玩家平均值 */
+export function buildChampionRadar(
+  sample: TypeRadarSample,
+  championId: number,
+): ChampionRadarEntry {
+  return {
+    championId,
+    selfGames: sample.selfGames,
+    allGames: sample.allGames,
+    metrics: radarMetrics(sample.self, sample.all),
+  };
 }
 
 /** 把最近战绩列表转换成时段统计（本地存档不可用时的兜底） */

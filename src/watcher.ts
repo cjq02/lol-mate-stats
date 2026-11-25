@@ -38,6 +38,7 @@ import {
   countPlayerMatches,
   getChampionModeRecords,
   getPlayerChampionScores,
+  getPlayerChampionRadar,
   getPlayerMatchRanks,
   getPlayerMatchTags,
   getPlayerMatches,
@@ -1231,6 +1232,17 @@ export class LiveSource implements DataSource {
     const id = await this.resolveArchivePuuid(puuid);
     if (!id) return { puuid: '', types: [] };
     return { puuid: id, types: await getPlayerTypeRadar(id, mode) };
+  }
+
+  /** 长期存档：单个英雄对比我和所有玩家的六项指标 */
+  async getArchivedChampionRadar(
+    puuid: string | undefined,
+    championId: number,
+    mode?: GameModeKey,
+  ): Promise<{ puuid: string; radar: Awaited<ReturnType<typeof getPlayerChampionRadar>> }> {
+    const id = await this.resolveArchivePuuid(puuid);
+    if (!id) return { puuid: '', radar: null };
+    return { puuid: id, radar: await getPlayerChampionRadar(id, championId, mode) };
   }
 
   private async resolveArchivePuuid(puuid?: string): Promise<string> {

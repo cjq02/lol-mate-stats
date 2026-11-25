@@ -29,8 +29,10 @@ import { capAfkScores, isAfkLikeRelative, type AfkRelativeStats } from './rating
 import { championProficiency } from './proficiency.js';
 import { getDb, getSavedMatchTimeline, readMeta, saveTimelineAfkStats, withTransaction, writeMeta } from './store.js';
 import {
+  buildChampionRadar,
   buildTypeRadar,
   summarizeTimeStats,
+  type ChampionRadarEntry,
   type TypeRadarEntry,
   type TypeRadarSample,
   type TimeStatsSummary,
@@ -861,6 +863,108 @@ export async function getPlayerTypeRadar(
     return types;
   } catch {
     return [];
+  }
+}
+
+/** 单个英雄的六角星缓存，key 带上英雄 ID */
+const championRadarCache = new Map<string, { at: number; radar: ChampionRadarEntry | null }>();
+
+/** 某个英雄上“我”和“所有玩家”的六项指标对比 */
+export async function getPlayerChampionRadar(
+  puuid: string,
+  championId: number,
+  mode?: GameModeKey,
+): Promise<ChampionRadarEntry | null> {
+  const db = await getDb();
+  const id = Number(championId) || 0;
+  if (!db || !puuid || !id) return null;
+  const cacheKey = `${puuid}:${mode ?? 'ALL'}:champion:${id}`;
+  const cached = championRadarCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < TYPE_RADAR_CACHE_TTL_MS) {
+    return cached.radar;
+  }
+
+  const conditions = [
+    'p.puuid IS NOT NULL',
+    'p.champion_id IN (?, ?)',
+    'm.duration_seconds > 300',
+    "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
+  ];
+  const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
+  if (modeFilter) conditions.push(modeFilter);
+
+  // 7 个 self 相关的 puuid 参数，最后两个是基础英雄 ID 和特殊模式 ID
+  const params: Array<string | number> = [...new Array(7).fill(puuid), id, id + 60000];
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS all_games,
+              SUM(p.puuid = ?) AS self_games,
+              AVG((p.kills + p.assists) / GREATEST(1, tk.team_kills) * 100) AS all_kp,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN (p.kills + p.assists) / GREATEST(1, tk.team_kills) * 100
+                  END) AS self_kp,
+              AVG(p.gold / (m.duration_seconds / 60)) AS all_gpm,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN p.gold / (m.duration_seconds / 60)
+                  END) AS self_gpm,
+              AVG((p.kills + p.assists) / GREATEST(1, p.deaths)) AS all_kda,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN (p.kills + p.assists) / GREATEST(1, p.deaths)
+                  END) AS self_kda,
+              AVG(p.damage_taken / (m.duration_seconds / 60)) AS all_dtpm,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN p.damage_taken / (m.duration_seconds / 60)
+                  END) AS self_dtpm,
+              AVG(p.damage / (m.duration_seconds / 60)) AS all_dpm,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN p.damage / (m.duration_seconds / 60)
+                  END) AS self_dpm,
+              AVG(p.heal / (m.duration_seconds / 60)) AS all_hpm,
+              AVG(CASE WHEN p.puuid = ?
+                       THEN p.heal / (m.duration_seconds / 60)
+                  END) AS self_hpm
+       FROM match_participants p
+       JOIN matches m ON m.game_id = p.game_id
+       JOIN (
+         SELECT game_id, team_id, SUM(kills) AS team_kills
+         FROM match_participants
+         GROUP BY game_id, team_id
+       ) tk ON tk.game_id = p.game_id AND tk.team_id = p.team_id
+       WHERE ${conditions.join(' AND ')}`,
+      params,
+    );
+    const row = rows[0];
+    const allGames = Number(row?.all_games) || 0;
+    if (!allGames) {
+      championRadarCache.set(cacheKey, { at: Date.now(), radar: null });
+      return null;
+    }
+    const sample: TypeRadarSample = {
+      championId: id,
+      allGames,
+      selfGames: Number(row?.self_games) || 0,
+      all: {
+        kp: Number(row?.all_kp) || 0,
+        gpm: Number(row?.all_gpm) || 0,
+        kda: Number(row?.all_kda) || 0,
+        dtpm: Number(row?.all_dtpm) || 0,
+        dpm: Number(row?.all_dpm) || 0,
+        hpm: Number(row?.all_hpm) || 0,
+      },
+      self: {
+        kp: Number(row?.self_kp) || 0,
+        gpm: Number(row?.self_gpm) || 0,
+        kda: Number(row?.self_kda) || 0,
+        dtpm: Number(row?.self_dtpm) || 0,
+        dpm: Number(row?.self_dpm) || 0,
+        hpm: Number(row?.self_hpm) || 0,
+      },
+    };
+    const radar = buildChampionRadar(sample, id);
+    championRadarCache.set(cacheKey, { at: Date.now(), radar });
+    return radar;
+  } catch {
+    return null;
   }
 }
 

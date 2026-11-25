@@ -759,6 +759,32 @@ async function handleRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/archive/champion-radar') {
+    if (!source.getArchivedChampionRadar) {
+      sendJson(res, 501, { ok: false, error: '当前模式不支持英雄对比' });
+      return;
+    }
+    const puuid = url.searchParams.get('puuid')?.trim() || undefined;
+    const championId = Number(url.searchParams.get('championId') ?? 0);
+    if (!Number.isFinite(championId) || championId <= 0) {
+      sendJson(res, 400, { ok: false, error: '缺少有效的 championId' });
+      return;
+    }
+    const rawMode = url.searchParams.get('mode');
+    const mode: GameModeKey | undefined =
+      rawMode === 'SR' || rawMode === 'ARAM' || rawMode === 'ARENA' ? rawMode : undefined;
+    try {
+      const data = await source.getArchivedChampionRadar(puuid, championId, mode);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (error) {
+      sendJson(res, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return;
+  }
+
   const matchTimelineRoute = /^\/api\/match\/(\d+)\/timeline$/.exec(url.pathname);
   if (method === 'GET' && matchTimelineRoute) {
     if (!source.getMatchTimeline) {

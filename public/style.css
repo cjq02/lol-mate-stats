@@ -397,6 +397,26 @@ body::before {
   min-height: 0;
 }
 
+.champion-rank-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.champion-rank-row.expanded {
+  border-color: rgba(94, 234, 212, 0.45);
+}
+
+.champion-radar-panel {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.champion-radar-matches {
+  align-self: center;
+  margin-top: 2px;
+}
+
 .champion-rank-row {
   display: grid;
   grid-template-columns: 28px 22px minmax(0, 1fr) auto auto;
