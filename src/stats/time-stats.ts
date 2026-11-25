@@ -1,5 +1,5 @@
 import type { GameModeKey, Grade, MatchSummary } from '../types.js';
-import { championRole } from './champion-roles.js';
+import { championRoleProfile } from './champion-roles.js';
 import { modeFromQueue } from './constants.js';
 import { gradeOf } from './rating.js';
 
@@ -97,22 +97,29 @@ const POSITION_DEFINITIONS: Array<[string, string]> = [
   ['pos-support', '辅助'],
   ['pos-aram', '大乱斗'],
   ['pos-arena', '竞技场'],
-  ['pos-unknown', '未知'],
+  ['pos-unknown', '未分路'],
 ];
 const TYPE_DEFINITIONS: Array<[string, string]> = [
   ['type-tank', '坦克'],
   ['type-fighter', '战士'],
-  ['type-carry', '输出'],
+  ['type-mage', '法师'],
+  ['type-marksman', '射手'],
+  ['type-assassin', '刺客'],
   ['type-support', '辅助'],
   ['type-default', '其他'],
 ];
+/** 官方主分类；按英雄类型统计时不再把法师 / 射手 / 刺客合并成“输出” */
+const TYPE_CLASS_KEYS = new Set(['tank', 'fighter', 'mage', 'marksman', 'assassin', 'support']);
 const TEAMMATE_BAD_TAG = /^队友(?:小坑|很坑|坑|巨坑|逃跑)$/;
 const SELF_BAD_TAG = /^自己(?:小坑|很坑|坑|巨坑|逃跑)$/;
 
 function typeBucketKey(championId?: number): string {
   const id = Number(championId) || 0;
   const normalized = id >= 60000 ? id - 60000 : id;
-  return `type-${championRole(normalized)}`;
+  const official = championRoleProfile(normalized).classes?.find((cls) =>
+    TYPE_CLASS_KEYS.has(cls),
+  );
+  return `type-${official ?? 'default'}`;
 }
 
 function positionBucketKey(position?: string): string {

@@ -217,8 +217,8 @@ const TIME_STATS_DIMENSION_LABELS = {
   month: '按月',
   hour: '按时段',
   weekday: '按星期',
-  position: '按位置',
-  type: '按类型',
+  position: '按分路',
+  type: '按英雄类型',
 };
 
 const TIME_STATS_DEFAULT_DIMENSION = 'day';
@@ -5552,6 +5552,7 @@ function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods, volume
       const tone = timeStatsTone(period);
       const badRate = Number(period.teammateBadRate) || 0;
       const noisy = period.games >= 3 && badRate >= 0.5;
+      const hasGames = Number(period.games) > 0;
       const width = Math.max(0, Math.min(100, (Number(period.winRate) || 0) * 100));
       return `<div class="time-stat-row ${tone}${noisy ? ' noisy' : ''}">
         <span class="time-stat-range">${escapeHtml(period.label)}</span>
@@ -5574,7 +5575,7 @@ function renderTimeStatsWinRate(data, modeLabel, dimensionLabel, periods, volume
             ${noisy ? '<em class="time-stat-warning">坑多</em>' : ''}
           </div>
         </div>
-        <span class="time-stat-rate">${winRatePct(period.winRate)}</span>
+        <span class="time-stat-rate">${hasGames ? winRatePct(period.winRate) : '--'}</span>
       </div>`;
     })
     .join('');
@@ -5674,8 +5675,11 @@ function renderTimeStats(data, mode = state.timeStatsMode) {
     return;
   }
 
-  const periods = buckets.filter((period) => Number(period.games) > 0);
   const isTrend = TIME_STATS_TREND_DIMENSIONS.has(dimension);
+  // 趋势维度只看有对局的时间段；位置 / 类型等固定分类保留全部条目，避免看起来缺项
+  const periods = isTrend
+    ? buckets.filter((period) => Number(period.games) > 0)
+    : buckets;
   const ordered = isTrend ? [...periods].reverse() : periods;
   if (view === 'score') {
     renderTimeStatsScore(data, modeLabel, dimensionLabel, ordered);

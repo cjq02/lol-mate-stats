@@ -2254,7 +2254,7 @@ test('极端低输出且高死亡的对局按巨坑封顶', () => {
   assert.equal(badLevelOfScore(scores[0]), 'severe');
 });
 
-test('时段统计按本地时间统计时段、星期、周、月、位置和类型', () => {
+test('时段统计按本地时间统计时段、星期、周、月、分路和英雄类型', () => {
   const at = (month: number, day: number, hour: number, minute = 0) =>
     new Date(2026, month - 1, day, hour, minute).getTime();
   const summary = summarizeTimeStats([
@@ -2306,6 +2306,7 @@ test('时段统计按本地时间统计时段、星期、周、月、位置和�
   assert.equal(summary.winRate, 0.6);
   assert.equal(summary.dimensions.hour.length, 12);
   assert.equal(summary.dimensions.weekday.length, 7);
+  assert.equal(summary.dimensions.type.length, 7);
 
   const early = summary.dimensions.hour[0];
   assert.ok(early);
@@ -2390,11 +2391,11 @@ test('时段统计按本地时间统计时段、星期、周、月、位置和�
   assert.equal(support.wins, 0);
   assert.equal(support.teammateBadGames, 1);
 
-  const carry = summary.dimensions.type.find((bucket) => bucket.key === 'type-carry');
-  assert.ok(carry);
-  assert.equal(carry.label, '输出');
-  assert.equal(carry.games, 2);
-  assert.equal(carry.wins, 2);
+  const mage = summary.dimensions.type.find((bucket) => bucket.key === 'type-mage');
+  assert.ok(mage);
+  assert.equal(mage.label, '法师');
+  assert.equal(mage.games, 2);
+  assert.equal(mage.wins, 2);
 
   const tank = summary.dimensions.type.find((bucket) => bucket.key === 'type-tank');
   assert.ok(tank);
@@ -2406,6 +2407,12 @@ test('时段统计按本地时间统计时段、星期、周、月、位置和�
   assert.equal(fighter.games, 1);
   assert.equal(fighter.wins, 1);
   assert.equal(fighter.selfBadGames, 1);
+
+  const supportType = summary.dimensions.type.find((bucket) => bucket.key === 'type-support');
+  assert.ok(supportType);
+  assert.equal(supportType.label, '辅助');
+  assert.equal(supportType.games, 1);
+  assert.equal(supportType.wins, 0);
 });
 
 test('时段统计按天汇总最近 30 天的场次、胜率与评分', () => {

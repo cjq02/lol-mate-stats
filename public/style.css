@@ -785,6 +785,10 @@ body::before {
   background: #ff6b81;
 }
 
+.time-stat-row.empty {
+  opacity: 0.5;
+}
+
 .time-stat-row.noisy {
   border-color: rgba(255, 107, 129, 0.35);
   background: rgba(255, 107, 129, 0.06);
