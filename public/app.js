@@ -5630,6 +5630,7 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     ? state.championRankingSort
     : 'avg';
   const number = (value) => Number(value) || 0;
+  const overallOf = (item) => item?.overall ?? {};
   const list = (Array.isArray(champions) ? champions : [])
     .filter((item) => Number(item?.games) > 0)
     .sort((a, b) => {
@@ -5651,6 +5652,29 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           number(b.proficiency) - number(a.proficiency) ||
           number(b.avgScore) - number(a.avgScore) ||
           number(b.games) - number(a.games)
+        );
+      }
+      if (sort === 'overallAvg') {
+        return (
+          number(overallOf(b).avgScore) - number(overallOf(a).avgScore) ||
+          number(b.avgScore) - number(a.avgScore) ||
+          number(b.games) - number(a.games)
+        );
+      }
+      if (sort === 'overallWinRate') {
+        return (
+          number(overallOf(b).winRate) - number(overallOf(a).winRate) ||
+          number(b.winRate) - number(a.winRate) ||
+          number(b.games) - number(a.games)
+        );
+      }
+      if (sort === 'overallRank') {
+        const aRank = number(overallOf(a).avgRank);
+        const bRank = number(overallOf(b).avgRank);
+        return (
+          (aRank > 0 ? aRank : Number.POSITIVE_INFINITY) -
+            (bRank > 0 ? bRank : Number.POSITIVE_INFINITY) ||
+          number(b.avgScore) - number(a.avgScore)
         );
       }
       return number(b.avgScore) - number(a.avgScore) || number(b.games) - number(a.games);
