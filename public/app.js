@@ -336,8 +336,8 @@ const state = {
   championRankingShowAll: false,
   /** 英雄榜我的样本：只统计最近 N 场，0 = 全部 */
   championRankingRange: 0,
-  /** 英雄榜全体样本：只统计最近 N 场，0 = 全部 */
-  championRankingAllRange: 1000,
+  /** 英雄榜全体样本：默认最近 10000 场，0 = 全部 */
+  championRankingAllRange: 10000,
   championRankingTotalGames: 0,
   /** 当前版本官方公告里的英雄加强/削弱，null 表示还没加载过 */
   championPatches: null,
