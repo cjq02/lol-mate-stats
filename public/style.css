@@ -442,7 +442,10 @@ body::before {
 }
 
 .champion-ranking-card .champion-ranking-scope {
-  padding: 4px 10px;
+  /* 和右侧两个下拉保持同样的 27px 高度与底部间距，三者底边对齐 */
+  height: 27px;
+  margin-bottom: 6px;
+  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.03);
