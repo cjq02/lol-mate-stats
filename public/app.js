@@ -584,7 +584,9 @@ function placeTip(tip, anchor) {
     Math.max(margin, window.innerWidth - size.width - margin),
   );
   const above = rect.top - size.height - 10;
-  const top = above >= margin ? above : rect.bottom + 10;
+  // 上下都放不下时把顶部夹回可视区，避免底部被屏幕裁掉
+  const maxTop = Math.max(margin, window.innerHeight - size.height - margin);
+  const top = Math.max(margin, Math.min(above >= margin ? above : rect.bottom + 10, maxTop));
   tip.style.left = `${Math.round(left)}px`;
   tip.style.top = `${Math.round(top)}px`;
 }
@@ -705,7 +707,9 @@ function championTipHtml(info, anchorLabel = '') {
     info.name || anchorLabel || '英雄',
   )}</div>${meta ? `<div class="info-tip-metas">${meta}</div>` : ''}${championPatchTipHtml(
     info,
-  )}${passive}${spells ? `<div class="info-tip-block">${spells}</div>` : ''}`;
+  )}${passive}${
+    spells ? `<div class="info-tip-block info-tip-spells">${spells}</div>` : ''
+  }`;
 }
 
 /** 装备：描述已由后端去掉富文本标签，这里只负责转义和换行 */
@@ -762,6 +766,8 @@ async function showInfoTip(anchor) {
   restoreNativeTitle();
   suppressNativeTitle(anchor);
   const token = ++infoTipToken;
+  // 英雄技能说明内容比装备多，单独放宽一点
+  els.infoTip.classList.toggle('is-champion', kind === 'champ');
   els.infoTip.innerHTML = '<div class="info-tip-loading">加载中…</div>';
   els.infoTip.classList.remove('hidden');
   placeTip(els.infoTip, anchor);

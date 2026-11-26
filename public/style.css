@@ -2994,7 +2994,7 @@ body::before {
   z-index: 80;
   width: 420px;
   max-width: calc(100vw - 24px);
-  max-height: 78vh;
+  max-height: calc(100vh - 20px);
   overflow-y: auto;
   padding: 12px 14px;
   border-radius: 14px;
@@ -3010,6 +3010,24 @@ body::before {
 
 .info-tip::-webkit-scrollbar {
   width: 6px;
+}
+
+/* 英雄技能说明比装备说明宽一些，改前/改后的数值不容易折行 */
+.info-tip.is-champion {
+  width: 660px;
+}
+
+/* 技能改用两列，弹窗高度大约减半，常见的短屏也不用内部滚动 */
+.info-tip.is-champion .info-tip-spells {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .info-tip.is-champion .info-tip-spells {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .info-tip::-webkit-scrollbar-thumb {
