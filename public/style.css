@@ -1654,7 +1654,8 @@ body::before {
 .type-radar-panel.is-pair {
   display: grid;
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
-  align-items: start;
+  /* 右侧英雄列表通常更高，六角星整块在左侧垂直居中 */
+  align-items: center;
   justify-items: stretch;
   gap: 18px;
   padding-top: 10px;
