@@ -26,6 +26,7 @@ import {
 } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
 import { championRole, championRoleProfile } from './champion-roles.js';
+import { classifyPatchDirection, championSectionHtml, parseChampionPatchSection, translatePatchLabel } from './patch-notes.js';
 import { premadeSizesByPuuid, premadeSizesFromGames } from './premade.js';
 import { buildLiveTimeline } from './live-timeline.js';
 import { estimateRespawnMs, parseMatchTimeline } from './timeline.js';
@@ -3962,6 +3963,95 @@ test('复活等待按等级估算，并随游戏时间放大', () => {
     estimateRespawnMs(13, 1_800_000) > estimateRespawnMs(13, 600_000),
     '30 分钟后的复活等待应更长',
   );
+});
+
+const PATCH_NOTES_FIXTURE = `
+<header class="header-primary"><h2 id="patch-champions">Champions</h2></header>
+<div class="content-border"><div class="patch-change-block white-stone accent-before"><div>
+<p><a class="reference-link" href="https://leagueoflegends.com/en-us/champions/ezreal/"><img src="https://am-a.akamaihd.net/image?f=https://ddragon.leagueoflegends.com/cdn/16.22.1/img/champion/Ezreal.png"></a></p>
+<h3 class="change-title" id="patch-ezreal"><a href="https://www.leagueoflegends.com/en-us/champions/ezreal/">Ezreal</a></h3>
+<blockquote class="blockquote context"><p>We're giving him a few buffs to help him succeed.</p></blockquote>
+<hr class="divider">
+<h4 class="change-detail-title ability-title"><img src="https://am-a.akamaihd.net/image?f=https://ddragon.leagueoflegends.com/cdn/16.22.1/img/spell/EzrealW.png">W - Essence Flux</h4>
+<ul><li><strong>Damage</strong>: 80 / 135 / 190 / 245 / 300 (+100% bonus AD) ⇒ <strong>80 / 135 / 190 / 245 / 300 (+115% bonus AD)</strong></li></ul>
+</div></div></div>
+<div class="content-border"><div class="patch-change-block white-stone accent-before"><div>
+<p><a class="reference-link" href="https://leagueoflegends.com/en-us/champions/leblanc/"><img src="https://am-a.akamaihd.net/image?f=https://ddragon.leagueoflegends.com/cdn/16.22.1/img/champion/Leblanc.png"></a></p>
+<h3 class="change-title" id="patch-leblanc"><a href="https://www.leagueoflegends.com/en-us/champions/leblanc/">LeBlanc</a></h3>
+<blockquote class="blockquote context"><p>She has been overperforming, so we are trimming her ratios.</p></blockquote>
+<h4 class="change-detail-title">Base Stats</h4>
+<ul><li><strong>Attack Range</strong>: 525 ⇒ <strong>550</strong></li></ul>
+<h4 class="change-detail-title ability-title"><img src="https://am-a.akamaihd.net/image?f=https://ddragon.leagueoflegends.com/cdn/16.22.1/img/spell/LeblancQ.png">Q - Sigil of Malice</h4>
+<ul><li><strong>Ability Power Ratio</strong>: 40% ⇒ <strong>35%</strong></li></ul>
+</div></div></div>
+<header class="header-primary"><h2 id="patch-items">Items</h2></header>
+<div class="patch-change-block"><h3 class="change-title">Doran's Blade</h3><h4 class="change-detail-title">Stats</h4>
+<ul><li><strong>Health</strong>: 80 ⇒ <strong>100</strong></li></ul></div>
+`;
+
+test('补丁公告只解析英雄段，并识别技能槽位与改动数值', () => {
+  assert.equal(championSectionHtml('<h2>Items</h2><p>no champions</p>'), '', '没有英雄段时应返回空串');
+  const parsed = parseChampionPatchSection(PATCH_NOTES_FIXTURE);
+  assert.equal(parsed.length, 2, '装备段不应该被当成英雄改动');
+  const [ezreal, leblanc] = parsed;
+  assert.equal(ezreal?.championKey, 'Ezreal');
+  assert.equal(ezreal?.changes.length, 1);
+  assert.equal(ezreal?.changes[0]?.slot, 'W');
+  assert.equal(ezreal?.changes[0]?.label, 'Damage');
+  assert.equal(ezreal?.changes[0]?.before, '80 / 135 / 190 / 245 / 300 (+100% bonus AD)');
+  assert.equal(leblanc?.championKey, 'Leblanc');
+  assert.equal(leblanc?.changes.length, 2);
+  assert.equal(leblanc?.changes[0]?.slot, 'BASE');
+  assert.equal(leblanc?.changes[1]?.slot, 'Q');
+});
+
+test('版本改动方向按字段语义判断加强 / 削弱', () => {
+  assert.equal(
+    classifyPatchDirection([{ label: 'Damage', before: '80', after: '95' }]),
+    'buff',
+    '伤害提高是加强',
+  );
+  assert.equal(
+    classifyPatchDirection([{ label: 'Cooldown', before: '10', after: '12' }]),
+    'nerf',
+    '冷却变长是削弱',
+  );
+  assert.equal(
+    classifyPatchDirection([{ label: 'Mana Cost', before: '50', after: '60' }]),
+    'nerf',
+    '蓝耗变高是削弱',
+  );
+  assert.equal(
+    classifyPatchDirection([{ label: 'Attack Range', before: '525', after: '550' }]),
+    'buff',
+    '攻击距离变远是加强',
+  );
+  assert.equal(
+    classifyPatchDirection([
+      { label: 'Attack Range', before: '525', after: '550' },
+      { label: 'Ability Power Ratio', before: '40%', after: '35%' },
+    ]),
+    'mixed',
+    '有加有削记作调整',
+  );
+  assert.equal(
+    classifyPatchDirection([{ label: 'Unknown Thing', before: '1', after: '2' }], 'a small buff'),
+    'buff',
+    '字段方向不明时参考设计师说明',
+  );
+  assert.equal(
+    classifyPatchDirection([{ label: 'Mana', before: '45 / 50 / 55', after: '45', slot: 'W' }]),
+    'buff',
+    '技能里的 Mana 是消耗，数值变低是加强',
+  );
+});
+
+test('改动字段名优先用中文译名，未收录的保留英文', () => {
+  assert.equal(translatePatchLabel('Mana Cost'), '魔法消耗');
+  assert.equal(translatePatchLabel('Health Growth'), '生命值成长');
+  assert.equal(translatePatchLabel('Bonus Attack Damage Ratio'), '额外攻击力加成');
+  assert.equal(translatePatchLabel('Monster Damage Modifier'), '野怪伤害系数');
+  assert.equal(translatePatchLabel('Caustic Wounds'), 'Caustic Wounds');
 });
 
 console.log(`\n${passed} 项测试全部通过`);

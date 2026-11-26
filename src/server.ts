@@ -24,6 +24,7 @@ import {
   saveAiAnalysis,
   saveLiveAiAnalysis,
 } from './stats/store.js';
+import { getChampionPatchDigest } from './stats/patch-notes.js';
 import { logTag, mapLimit } from './util.js';
 
 const execFileAsync = promisify(execFile);
@@ -696,6 +697,23 @@ async function handleRequest(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/champion-patches') {
+    const digest = await getChampionPatchDigest();
+    sendJson(res, 200, {
+      ok: true,
+      patch: digest
+        ? {
+            version: digest.version,
+            title: digest.title,
+            url: digest.url,
+            publishedAt: digest.publishedAt,
+          }
+        : null,
+      champions: digest?.champions ?? [],
+    });
     return;
   }
 

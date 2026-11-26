@@ -1129,6 +1129,13 @@ body::before {
   min-width: 0;
 }
 
+.champion-rank-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .champion-rank-main b {
   font-size: 13.5px;
   font-weight: 700;
@@ -1137,6 +1144,49 @@ body::before {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.champion-rank-name b {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+/* 当前版本公告里的加强 / 削弱标记 */
+.champion-patch-tag {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  cursor: help;
+  white-space: nowrap;
+}
+
+.champion-patch-tag.is-buff {
+  color: #7ff5d8;
+  background: rgba(94, 234, 212, 0.12);
+  border-color: rgba(94, 234, 212, 0.3);
+}
+
+.champion-patch-tag.is-nerf {
+  color: #ffb3c0;
+  background: rgba(255, 107, 129, 0.12);
+  border-color: rgba(255, 107, 129, 0.3);
+}
+
+.champion-patch-tag.is-mixed {
+  color: #ffe0a3;
+  background: rgba(245, 199, 106, 0.12);
+  border-color: rgba(245, 199, 106, 0.3);
+}
+
+.champion-patch-tag.is-unknown {
+  color: #b9c8e8;
+  background: rgba(126, 163, 255, 0.1);
+  border-color: rgba(126, 163, 255, 0.24);
 }
 
 .champion-rank-overall-line {

@@ -37,7 +37,7 @@
 ## 目录职责
 
 - `src/lcu/`：客户端发现、HTTP、WebSocket、Live Client Data API。只做通信，不写业务判断。
-- `src/stats/`：对局解析、评分、坑指数、标签、常量、MySQL 存储。
+- `src/stats/`：对局解析、评分、坑指数、标签、常量、MySQL 存储；`patch-notes.ts` 只负责补丁公告的抓取、解析和缓存。
 - `src/server.ts`：HTTP / SSE 路由、静态资源、图片代理。不要把统计逻辑塞进来。
 - `src/ai.ts`：AI 提示词和流式调用。提示词改动集中在这里。
 - `src/index.ts`：CLI 入口与 `start / once / scan / demo / doctor` 流程。
@@ -62,7 +62,7 @@
 - LCU 接口只读：不注入游戏进程、不修改客户端文件、不自动操作对局。
 - 服务默认只绑定 `127.0.0.1`，不要改成 `0.0.0.0` 或暴露到公网。
 - 禁止把 LCU token、密码、AI API Key、`.env` 内容写入日志、提交记录或前端。
-- 除 AI 接口外，不新增对外网络请求；图标和资源走本地客户端代理。
+- 对外网络请求只有 AI 接口、官方补丁说明（`leagueoflegends.com`）和 Data Dragon；图标和资源走本地客户端代理。
 - 不提交 `dist/`、`.env`、`node_modules/` 或本地数据目录。
 - MySQL 查询必须参数化，不拼接字符串。
 - 前端插入动态文本必须 `escapeHtml`；AI Markdown 走现有 `aiMarkdown`。禁止把未转义的用户数据直接放进 `innerHTML`。

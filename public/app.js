@@ -227,6 +227,14 @@ const CHAMPION_RANKING_SORT_LABELS = {
 /** 排名和最低分默认从小到大（名次越低越好、最低分越低越差）；其余默认从大到小 */
 const CHAMPION_RANKING_ASC_SORTS = new Set(['rank', 'overallRank', 'worst']);
 
+/** 版本公告里英雄改动的方向标签 */
+const CHAMPION_PATCH_DIRECTION_LABELS = {
+  buff: '加强',
+  nerf: '削弱',
+  mixed: '调整',
+  unknown: '改动',
+};
+
 const TIME_STATS_DIMENSION_LABELS = {
   day: '按天',
   week: '按周',
@@ -320,6 +328,9 @@ const state = {
   /** 英雄排名全体样本：只统计最近 N 场，0 = 全部 */
   championRankingAllRange: 1000,
   championRankingTotalGames: 0,
+  /** 当前版本官方公告里的英雄加强/削弱，null 表示还没加载过 */
+  championPatches: null,
+  championPatchesLoading: false,
   /** 英雄排名里展开的单个英雄六角星 */
   championRadarId: 0,
   championRadarName: '',
@@ -5697,6 +5708,56 @@ function championRankDeltaHtml(current, base, options = {}) {
   )}">${arrow}${Math.abs(delta).toFixed(digits)}</em>`;
 }
 
+/* ------------------------------------------------------------------ */
+/* 版本加强 / 削弱                                                      */
+/* ------------------------------------------------------------------ */
+
+/** 打开排名弹窗时顺带拉一次当前版本的英雄改动，失败就静默跳过 */
+async function loadChampionPatches() {
+  if (state.championPatches || state.championPatchesLoading) return;
+  state.championPatchesLoading = true;
+  try {
+    const response = await fetch('/api/champion-patches');
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.error ?? `HTTP ${response.status}`);
+    }
+    state.championPatches = {
+      patch: payload?.patch ?? null,
+      champions: Array.isArray(payload?.champions) ? payload.champions : [],
+    };
+  } catch {
+    state.championPatches = { patch: null, champions: [] };
+  } finally {
+    state.championPatchesLoading = false;
+  }
+  if (
+    els.championRankingModal &&
+    !els.championRankingModal.classList.contains('hidden') &&
+    state.championRankingData.length
+  ) {
+    renderChampionRanking(state.championRankingData, state.championRankingMode);
+  }
+}
+
+function championPatchChangeLine(change) {
+  const head = [change?.section, change?.label].filter(Boolean).join(' · ');
+  const body = `${change?.before ?? ''} → ${change?.after ?? ''}`;
+  return head ? `${head}：${body}` : body;
+}
+
+function championPatchTagHtml(patch) {
+  if (!patch) return '';
+  const label = CHAMPION_PATCH_DIRECTION_LABELS[patch.direction];
+  if (!label) return '';
+  const version = state.championPatches?.patch?.version ?? '';
+  const lines = [`${version ? `${version} 版本` : '本版本'}改动：${label}`];
+  for (const change of patch.changes ?? []) lines.push(championPatchChangeLine(change));
+  return `<span class="champion-patch-tag is-${patch.direction}" title="${escapeHtml(
+    lines.join('\n'),
+  )}">${label}</span>`;
+}
+
 function renderChampionRanking(champions, mode = state.championRankingMode) {
   updateChampionRankingSortHead();
   const sort = CHAMPION_RANKING_SORT_LABELS[state.championRankingSort]
@@ -5707,6 +5768,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
   const overallOf = (item) => item?.overall ?? {};
   const showAll = state.championRankingShowAll;
   const rawList = Array.isArray(champions) ? champions : [];
+  const patchById = new Map(
+    (state.championPatches?.champions ?? []).map((item) => [Number(item.championId), item]),
+  );
   const myTotalGames = rawList.reduce(
     (sum, item) => sum + (Number(item?.games) || 0),
     0,
@@ -5919,7 +5983,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
         <span class="champion-rank-no ${rankingClass(rank)}">${rank}</span>
         ${champIconHtml(item.championId, name, 'sm')}
         <span class="champion-rank-main">
-          <b>${escapeHtml(name)}</b>
+          <span class="champion-rank-name">
+            <b>${escapeHtml(name)}</b>${championPatchTagHtml(patchById.get(championId))}
+          </span>
           <small class="champion-rank-overall-line" title="${escapeHtml(
             overallTitle,
           )}">
@@ -6102,6 +6168,7 @@ function openChampionRanking(options = {}) {
   updateChampionRankingRanges();
   updateChampionRankingSortHead();
   els.championRankingModal.classList.remove('hidden');
+  void loadChampionPatches();
   void loadChampionRanking();
 }
 
