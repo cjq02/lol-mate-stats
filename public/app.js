@@ -6594,7 +6594,7 @@ function renderTimeStatsScore(data, modeLabel, dimensionLabel, periods) {
         rowState.expanded ? ' expanded' : ''
       }`;
       if (!period.scoreGames) {
-        return `<div class="time-stat-row empty${rowClass}"${rowState.attrs}>
+        return `<div class="time-stat-row no-score${rowClass}"${rowState.attrs}>
           <span class="time-stat-range">${escapeHtml(period.label)}</span>
           <div class="time-stat-main">
             ${timeStatsBars(0, '评分', period, maxGames)}

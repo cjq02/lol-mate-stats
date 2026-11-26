@@ -1620,7 +1620,8 @@ body::before {
   background: #ff6b81;
 }
 
-.time-stat-row.empty {
+/* 注意不要用 .empty：全局 .empty 是整页空状态，带 7vh/10vh 内边距 */
+.time-stat-row.no-score {
   opacity: 0.5;
 }
 
