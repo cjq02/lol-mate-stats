@@ -725,6 +725,9 @@ export const AFK_STATIONARY_SECONDS = AFK_STATIONARY_MINUTES * 60;
 /** 单次空闲都没到 5 分钟时，累计空闲达到这个时长且占对局这个比例，仍判分段挂机 */
 export const AFK_TOTAL_IDLE_SECONDS = 5 * 60;
 export const AFK_TOTAL_IDLE_SHARE = 0.35;
+/** 输出/承伤达到队友这个比例时，认为整局一直在参战，不再拿“没补刀”当挂机证据 */
+export const AFK_COMBAT_DAMAGE_SHARE = 0.6;
+export const AFK_COMBAT_TAKEN_SHARE = 0.8;
 
 /**
  * “长时间挂机/逃跑”推断：
@@ -735,6 +738,20 @@ export function isAfkLikeRelative(
   player: AfkRelativeStats,
   team: AfkRelativeStats[],
 ): boolean {
+  const others = team.filter((item) => item !== player);
+  const average = (pick: (item: AfkRelativeStats) => number): number =>
+    others.length
+      ? others.reduce((sum, item) => sum + pick(item), 0) / others.length
+      : 0;
+  const avgDamage = average((item) => item.damage);
+  const avgTaken = average((item) => item.damageTaken ?? 0);
+  // 没补刀不等于没参战：大乱斗里的坦克/辅助经常不吃线，
+  // 只要输出或承伤接近队友水平，就说明一直在打架，不能按“没有补刀和战斗”判挂机。
+  const inCombat =
+    (avgDamage > 0 && player.damage >= avgDamage * AFK_COMBAT_DAMAGE_SHARE) ||
+    (avgTaken > 0 &&
+      (player.damageTaken ?? 0) >= avgTaken * AFK_COMBAT_TAKEN_SHARE);
+
   // 时间线显示连续原地不动超过 3 分钟：典型基地挂机或掉线，
   // 即使前期拿过击杀/助攻，也判逃跑。
   // 这是与时长无关的直接证据，7 分钟速推局里照样成立。
@@ -745,8 +762,10 @@ export function isAfkLikeRelative(
     return true;
   }
   // 分段挂机：单次空闲都没到 5 分钟，但累计有大块时间既没补刀也没参战。
-  // 大乱斗里正常玩家几乎每分钟都有补刀或战斗，累计 5 分钟且占对局 35% 以上基本就是在挂机。
+  // 大乱斗里正常玩家几乎每分钟都有补刀或战斗，累计 5 分钟且占对局 35% 以上基本就是在挂机；
+  // 但如果输出/承伤一直在线，说明只是在打团没补刀，不能算挂机。
   if (
+    !inCombat &&
     player.idleAliveSeconds !== undefined &&
     player.idleAliveSeconds >= AFK_TOTAL_IDLE_SECONDS &&
     player.idleAliveSeconds >= player.durationMin * 60 * AFK_TOTAL_IDLE_SHARE
@@ -765,14 +784,9 @@ export function isAfkLikeRelative(
     return false;
   }
   if (isAfkLikeStats(player)) return true;
-  const others = team.filter((item) => item !== player);
   if (!others.length) return false;
 
-  const average = (pick: (item: AfkRelativeStats) => number): number =>
-    others.reduce((sum, item) => sum + pick(item), 0) / others.length;
-  const avgDamage = average((item) => item.damage);
   const avgGold = average((item) => item.gold);
-  const avgTaken = average((item) => item.damageTaken ?? 0);
   const avgHeal = average((item) => item.heal ?? 0);
   const totalKills = team.reduce((sum, item) => sum + item.kills, 0);
   const participation =

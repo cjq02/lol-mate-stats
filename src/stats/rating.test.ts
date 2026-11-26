@@ -2051,6 +2051,47 @@ test('单次空闲不足 5 分钟但累计大量空闲仍判逃跑', () => {
   );
 });
 
+test('不补刀但承伤在线的坦克不判逃跑', () => {
+  // 13 分钟大乱斗，曙光女神只有 1 个补刀，累计 6 分 25 秒没有补刀和击杀参与，
+  // 但承伤远高于队友、输出也接近队友，说明一直在前排打架。
+  const tank = {
+    durationMin: 13,
+    gold: 6806,
+    damage: 7401,
+    cs: 1,
+    kills: 1,
+    deaths: 8,
+    assists: 3,
+    visionScore: 0,
+    position: 'ARAM' as Lane,
+    killParticipation: 0.18,
+    damageTaken: 26288,
+    heal: 0,
+    idleStreakSeconds: 205,
+    idleAliveSeconds: 385,
+    stationaryStreakSeconds: 0,
+  };
+  const teammates = [
+    { ...tank, damage: 7559, damageTaken: 17893, kills: 0, deaths: 9, assists: 2, idleAliveSeconds: 84, idleStreakSeconds: 60 },
+    { ...tank, damage: 3512, damageTaken: 11902, kills: 1, deaths: 7, assists: 8, idleAliveSeconds: 169, idleStreakSeconds: 59 },
+    { ...tank, damage: 7956, damageTaken: 10212, kills: 3, deaths: 6, assists: 6, idleAliveSeconds: 153, idleStreakSeconds: 60 },
+    { ...tank, damage: 15471, damageTaken: 21943, kills: 7, deaths: 14, assists: 4, idleAliveSeconds: 85, idleStreakSeconds: 60 },
+  ];
+  assert.equal(
+    isAfkLikeRelative(tank, [tank, ...teammates]),
+    false,
+    '承伤是队友 1.4 倍、输出接近队友时，不能因为没补刀就判逃跑',
+  );
+  assert.equal(
+    isAfkLikeRelative(
+      { ...tank, damage: 800, damageTaken: 900 },
+      [tank, ...teammates],
+    ),
+    true,
+    '同样长时间没补刀，但输出和承伤都远低于队友时仍判逃跑',
+  );
+});
+
 test('详情缓存按时间线复核出短局逃跑玩家', () => {
   const scoreboard = [
     {
