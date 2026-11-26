@@ -1147,6 +1147,7 @@ function renderBoard(players) {
     }
     const node = buildCard(player, isLocal, {
       liveView,
+      champSelectView: Boolean(snapshot.inChampSelect),
       context: snapshotContext(),
     });
     node.dataset.key = key;
@@ -1605,9 +1606,9 @@ function buildCard(player, isLocal, options = {}) {
         </div>`
       : '';
 
-  // 对局详情 / 对局阶段：这个英雄在全体玩家里的强度，放在英雄信息下面
+  // 选人阶段 / 对局阶段 / 对局详情：这个英雄在全体玩家里的强度，放在英雄信息下面
   const championOverallBlock =
-    (thisGame || options.liveView) &&
+    (thisGame || options.liveView || options.champSelectView) &&
     championOverall &&
     Number(championOverall.games) > 0
       ? `<div class="champ-overall" title="${escapeHtml(
