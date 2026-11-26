@@ -2621,6 +2621,19 @@ test('英雄类型雷达附带我的常用英雄并按场次取前五', () => {
   const tank = types.find((entry) => entry.key === 'type-tank');
   assert.ok(tank);
   assert.equal(tank.championCount, undefined, '没玩过的类型不附带英雄列表');
+
+  const limited = attachTypeChampions(
+    buildTypeRadar([]),
+    [
+      champion(103, '九尾妖狐', 9, 60),
+      champion(1, '黑暗之女', 8, 61),
+      champion(45, '邪恶小法师', 7, 62),
+    ],
+    2,
+  );
+  const limitedMage = limited.find((entry) => entry.key === 'type-mage');
+  assert.equal(limitedMage?.championCount, 3, 'championCount 仍记录该类型全部英雄数');
+  assert.equal(limitedMage?.champions?.length, 2, '列表只保留前 2 个');
 });
 
 test('单个英雄雷达直接使用该英雄的平均值', () => {

@@ -119,14 +119,14 @@ export interface TypeRadarEntry {
   selfGames: number;
   allGames: number;
   metrics: TypeRadarMetric[];
-  /** 我该类型下按场次排序的常用英雄，最多 5 个 */
+  /** 我该类型下按场次排序的常用英雄，最多 10 个 */
   champions?: TypeChampionSample[];
   /** 我该类型下一共玩过多少个英雄 */
   championCount?: number;
 }
 
 /** 每个类型右侧最多列出几个英雄 */
-const TYPE_CHAMPION_LIMIT = 5;
+const TYPE_CHAMPION_LIMIT = 10;
 
 export interface RadarComparisonSummary {
   games: number;
@@ -628,7 +628,7 @@ export function buildTypeRadar(samples: TypeRadarSample[]): TypeRadarEntry[] {
 
 /**
  * 把「我的英雄」按官方主分类挂到对应的类型条目上。
- * 每个类型按场次取前 5 个，同时记录该类型我一共玩过多少个英雄。
+ * 每个类型按场次取前 10 个，同时记录该类型我一共玩过多少个英雄。
  */
 export function attachTypeChampions(
   types: TypeRadarEntry[],
