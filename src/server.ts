@@ -678,7 +678,7 @@ async function handleRequest(
     const rawAllRange = Number(url.searchParams.get('allRange') ?? 0);
     const allRange =
       Number.isFinite(rawAllRange) && rawAllRange > 0
-        ? Math.min(5000, Math.trunc(rawAllRange))
+        ? Math.min(10000, Math.trunc(rawAllRange))
         : undefined;
     try {
       const data = await source.getArchivedChampionScores(
