@@ -1404,6 +1404,13 @@ export interface ChampionScoreSummary {
     avgRank: number;
     /** 该英雄的全体场次 / 当前模式全体场次 */
     pickRate: number;
+    /** 选中全体近 X 场时附带的全部历史数据，用于展示区间与全部的差值 */
+    baseline?: {
+      winRate: number;
+      avgScore: number;
+      avgRank: number;
+      pickRate: number;
+    };
   };
 }
 

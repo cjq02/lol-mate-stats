@@ -5670,6 +5670,38 @@ function reloadChampionRadar() {
   void loadChampionRadar(filter.championId, filter.championName, filter.mode);
 }
 
+/**
+ * 全体近 X 场页签下，展示当前区间与全部历史的差值。
+ * percent 为真时按百分点显示，inverse 表示数值越小越好（平均排名）。
+ */
+function championRankDeltaHtml(current, base, options = {}) {
+  const {
+    percent = false,
+    digits = 1,
+    inverse = false,
+    tone = 'good',
+    baseText = '',
+  } = options;
+  const currentValue = Number(current);
+  const baseValue = Number(base);
+  if (!Number.isFinite(currentValue) || !Number.isFinite(baseValue)) return '';
+  const scale = percent ? 100 : 1;
+  const delta = (currentValue - baseValue) * scale;
+  const title = `对比全部：${baseText}`;
+  if (Math.abs(delta) < 0.05) {
+    return `<em class="champion-rank-delta is-even" title="${escapeHtml(
+      title,
+    )}">±0</em>`;
+  }
+  const better = inverse ? delta < 0 : delta > 0;
+  const className =
+    tone === 'neutral' ? 'is-neutral' : better ? 'is-better' : 'is-worse';
+  const arrow = delta > 0 ? '↑+' : '↓-';
+  return `<em class="champion-rank-delta ${className}" title="${escapeHtml(
+    title,
+  )}">${arrow}${Math.abs(delta).toFixed(digits)}</em>`;
+}
+
 function renderChampionRanking(champions, mode = state.championRankingMode) {
   updateChampionRankingSortHead();
   const sort = CHAMPION_RANKING_SORT_LABELS[state.championRankingSort]
@@ -5757,10 +5789,16 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     state.championRankingRange > 0
       ? `每个英雄近 ${state.championRankingRange} 场`
       : '我全部场次';
+  const overallRangeLabel =
+    state.championRankingAllRange > 0
+      ? `全体近 ${state.championRankingAllRange} 场（对比全部）`
+      : '全体全部';
+  const metaPrefix = `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · ${overallRangeLabel}`;
+  els.championRankingMeta.title = list.length
+    ? `${metaPrefix} · ${list.length} 个英雄 · ${totalGames} 场 · 按${sortLabel}`
+    : '';
   els.championRankingMeta.innerHTML = list.length
-    ? `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · 按${sortLabel} · <b>${
-        list.length
-      }</b> 个英雄 · <b>${totalGames}</b> 场`
+    ? `${metaPrefix} · <b>${list.length}</b> 个英雄 · <b>${totalGames}</b> 场 · 按${sortLabel}`
     : '';
 
   if (!list.length) {
@@ -5788,6 +5826,32 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const overallAvg = overall ? num(overall.avgScore, 1) : '-';
       const overallRank = overall ? num(overall.avgRank, 1) : '-';
       const overallPickRate = overall ? pct(overall.pickRate, 2) : '-';
+      const baseline = overall?.baseline ?? null;
+      const winDelta = baseline
+        ? championRankDeltaHtml(overall.winRate, baseline.winRate, {
+            percent: true,
+            baseText: winRatePct(baseline.winRate),
+          })
+        : '';
+      const pickDelta = baseline
+        ? championRankDeltaHtml(overall.pickRate, baseline.pickRate, {
+            percent: true,
+            tone: 'neutral',
+            baseText: pct(baseline.pickRate, 2),
+          })
+        : '';
+      const avgDelta = baseline
+        ? championRankDeltaHtml(overall.avgScore, baseline.avgScore, {
+            baseText: num(baseline.avgScore, 1),
+          })
+        : '';
+      const rankDelta = baseline
+        ? championRankDeltaHtml(overall.avgRank, baseline.avgRank, {
+            digits: 2,
+            inverse: true,
+            baseText: num(baseline.avgRank, 1),
+          })
+        : '';
       const myWin = hasMine ? winRatePct(item.winRate) : '-';
       const myAvg = hasMine ? num(avg, 1) : '-';
       const myRank =
@@ -5833,13 +5897,13 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           <b class="champion-rank-rate ${myWinClass}">${myWin}</b>
           <small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
-          )}">/ ${overallWin}</small>
+          )}">/ ${overallWin}${winDelta}</small>
         </span>
         <span class="champion-rank-stat champion-rank-pick">
           <b class="champion-rank-pickrate">${myPickRate}</b>
           <small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
-          )}">/ ${overallPickRate}</small>
+          )}">/ ${overallPickRate}${pickDelta}</small>
         </span>
         <span class="champion-rank-stat">
           <b class="champion-rank-score" style="color:${
@@ -5847,13 +5911,13 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           }">${myAvg}</b>
           <small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
-          )}">/ ${overallAvg}</small>
+          )}">/ ${overallAvg}${avgDelta}</small>
         </span>
         <span class="champion-rank-stat">
           <b class="champion-rank-avg ${myRankTone}" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${myRank}</b>
           <small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
-          )}">/ ${overallRank}</small>
+          )}">/ ${overallRank}${rankDelta}</small>
         </span>
         <span class="champion-rank-extra">
           <span>最高 <b style="color:${bestColor}">${

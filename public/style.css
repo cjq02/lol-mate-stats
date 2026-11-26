@@ -289,8 +289,8 @@ body::before {
 
 .champion-ranking-card {
   /* 排名行和列头共用同一套列宽：排名 / 图标 / 英雄 / 我的表现 / 平均分 / 平均排名 / 最高最低 */
-  --rank-columns: 28px 34px minmax(220px, 2fr) 96px 96px 96px 96px 90px;
-  width: min(1120px, 100%);
+  --rank-columns: 28px 34px minmax(180px, 2fr) 120px 120px 120px 120px 90px;
+  width: min(1320px, 100%);
   background:
     radial-gradient(760px 220px at 12% -14%, rgba(94, 234, 212, 0.09), transparent 62%),
     radial-gradient(680px 260px at 100% 0%, rgba(79, 140, 255, 0.11), transparent 58%),
@@ -1231,6 +1231,31 @@ body::before {
   color: #93a3c6;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* 全体近 X 场页签下，与全部历史的差值 */
+.champion-rank-delta {
+  margin-left: 3px;
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.champion-rank-delta.is-better {
+  color: #5eead4;
+}
+
+.champion-rank-delta.is-worse {
+  color: #ff9aa8;
+}
+
+.champion-rank-delta.is-neutral {
+  color: #9ab4ff;
+}
+
+.champion-rank-delta.is-even {
+  color: var(--muted-2);
 }
 
 .champion-rank-extra {
@@ -5883,7 +5908,7 @@ code {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
   .champion-ranking-card {
     --rank-columns: 26px 32px minmax(0, 1fr) 88px 88px 88px;
   }
@@ -5894,6 +5919,10 @@ code {
 
   .champion-rank-extra,
   .champion-rank-pick {
+    display: none;
+  }
+
+  .champion-rank-delta {
     display: none;
   }
 

@@ -1203,13 +1203,12 @@ export class LiveSource implements DataSource {
     if (!id) return { puuid: '', champions: [], totalGames: 0 };
     if (!showAll) {
       const mine = await getPlayerChampionScores(id, minGames, mode, range);
-      const [overall, totalGames] = await Promise.all([
-        getChampionOverallScores(
-          mine.map((champion) => champion.championId),
-          mode,
-          allRange,
-        ),
+      const ids = mine.map((champion) => champion.championId);
+      const [overall, totalGames, baseline, baselineTotal] = await Promise.all([
+        getChampionOverallScores(ids, mode, allRange),
         getChampionOverallTotal(mode, allRange),
+        allRange ? getChampionOverallScores(ids, mode, 0) : Promise.resolve(null),
+        allRange ? getChampionOverallTotal(mode, 0) : Promise.resolve(0),
       ]);
       for (const champion of mine) {
         const record = overall.get(champion.championId);
@@ -1220,15 +1219,23 @@ export class LiveSource implements DataSource {
           avgScore: record.avgScore,
           avgRank: record.avgRank,
           pickRate: totalGames > 0 ? record.games / totalGames : 0,
+          ...this.championOverallBaseline(
+            baseline?.get(champion.championId),
+            baselineTotal,
+          ),
         };
       }
       return { puuid: id, champions: mine, totalGames };
     }
 
-    const [mine, overall] = await Promise.all([
+    const [mine, overall, baseline] = await Promise.all([
       getPlayerChampionScores(id, minGames, mode, range),
       getAllChampionOverallScores(mode, allRange),
+      allRange ? getAllChampionOverallScores(mode, 0) : Promise.resolve(null),
     ]);
+    const baselineById = new Map(
+      (baseline?.champions ?? []).map((record) => [record.championId, record]),
+    );
     const mineById = new Map(
       mine.map((champion) => [champion.championId, champion]),
     );
@@ -1251,10 +1258,42 @@ export class LiveSource implements DataSource {
           avgScore: record.avgScore,
           avgRank: record.avgRank,
           pickRate: record.pickRate,
+          ...this.championOverallBaseline(baselineById.get(record.championId)),
         },
       };
     });
     return { puuid: id, champions, totalGames: overall.totalGames };
+  }
+
+  /**
+   * 全体选了「近 X 场」时，把全部历史作为对比基线带上；
+   * 选「全部」或没有基线数据时返回空对象。
+   */
+  private championOverallBaseline(
+    base:
+      | {
+          winRate: number;
+          avgScore: number;
+          avgRank: number;
+          games?: number;
+          pickRate?: number;
+        }
+      | undefined,
+    totalGames?: number,
+  ): { baseline?: { winRate: number; avgScore: number; avgRank: number; pickRate: number } } {
+    if (!base) return {};
+    const pickRate =
+      totalGames && totalGames > 0
+        ? (base.games ?? 0) / totalGames
+        : (base.pickRate ?? 0);
+    return {
+      baseline: {
+        winRate: base.winRate,
+        avgScore: base.avgScore,
+        avgRank: base.avgRank,
+        pickRate,
+      },
+    };
   }
 
   /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */
