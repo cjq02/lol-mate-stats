@@ -6346,7 +6346,7 @@ function timeStatsRadarSeries(entry) {
   });
 }
 
-/** 类型面板右侧的一行英雄：点击打开该英雄的战绩 */
+/** 类型面板右侧的一行英雄：上排是我，下排是全体；点击打开该英雄的战绩 */
 function timeStatsTypeChampionHtml(champion) {
   const championId = Number(champion.championId) || 0;
   const name = champion.championName || '未知英雄';
@@ -6355,22 +6355,38 @@ function timeStatsTypeChampionHtml(champion) {
   const avgScore = Number(champion.avgScore) || 0;
   const avgRank = Number(champion.avgRank) || 0;
   const showRank = games >= MIN_AVG_RANK_GAMES && avgRank > 0;
+  const overall = champion.overall ?? null;
+  const allGames = overall ? Math.max(0, Number(overall.games) || 0) : 0;
+  const allWinRate = overall ? Number(overall.winRate) || 0 : 0;
+  const allAvgScore = overall ? Number(overall.avgScore) || 0 : 0;
+  const allAvgRank = overall ? Number(overall.avgRank) || 0 : 0;
+  const showAllRank =
+    Boolean(overall) && allGames >= MIN_AVG_RANK_GAMES && allAvgRank > 0;
   return `<button class="type-radar-champion-row" type="button" data-time-type-champion="${championId}" data-champion-name="${escapeHtml(
     name,
   )}" title="点击查看 ${escapeHtml(name)} 的我的战绩">
     <span class="type-radar-champion-avatar">${champIconHtml(championId, name, 'sm')}</span>
     <span class="type-radar-champion-name">${escapeHtml(name)}</span>
-    <b class="type-radar-champion-games">${games}</b>
-    <b class="type-radar-champion-rate ${
-      winRate >= 0.5 ? 'is-win' : 'is-loss'
-    }">${winRatePct(winRate)}</b>
-    <b class="type-radar-champion-score" style="color:${ratingColor(avgScore)}">${num(
-      avgScore,
-      1,
-    )}</b>
-    <b class="type-radar-champion-rank ${
-      showRank ? rankClass(Math.round(avgRank)) : ''
-    }">${showRank ? num(avgRank, 1) : '-'}</b>
+    <span class="type-radar-champion-stat">
+      <b>${games}</b>
+      <small>${overall ? allGames : '-'}</small>
+    </span>
+    <span class="type-radar-champion-stat">
+      <b class="type-radar-champion-rate ${
+        winRate >= 0.5 ? 'is-win' : 'is-loss'
+      }">${winRatePct(winRate)}</b>
+      <small>${overall ? winRatePct(allWinRate) : '-'}</small>
+    </span>
+    <span class="type-radar-champion-stat">
+      <b style="color:${ratingColor(avgScore)}">${num(avgScore, 1)}</b>
+      <small>${overall ? num(allAvgScore, 1) : '-'}</small>
+    </span>
+    <span class="type-radar-champion-stat">
+      <b class="type-radar-champion-rank ${
+        showRank ? rankClass(Math.round(avgRank)) : ''
+      }">${showRank ? num(avgRank, 1) : '-'}</b>
+      <small>${showAllRank ? num(allAvgRank, 1) : '-'}</small>
+    </span>
   </button>`;
 }
 
@@ -6380,9 +6396,9 @@ function timeStatsTypeChampionList(entry) {
   if (!champions.length) {
     return '<div class="type-radar-empty">这个类型还没有带评分的英雄战绩</div>';
   }
-  return `<div class="type-radar-champion-head">我的英雄 <b>Top ${champions.length}</b>${
+  return `<div class="type-radar-champion-head" title="每个数值上排是我，下排是全体玩家在该模式下的全部历史">我的英雄 <b>Top ${champions.length}</b>${
     count > champions.length ? ` · 共 ${count} 个` : ''
-  } · 按场次</div>
+  } · 按场次 <span class="type-radar-champion-legend">上：我 / 下：全体</span></div>
   <div class="type-radar-champion-table">
     <div class="type-radar-champion-row is-head" aria-hidden="true">
       <span></span>

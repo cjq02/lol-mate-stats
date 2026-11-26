@@ -36,6 +36,7 @@ import {
   summarizeChampionItems,
   summarizeTimeStats,
   type ChampionRadarEntry,
+  type TypeChampionOverall,
   type TypeRadarEntry,
   type TypeRadarSample,
   type TimeStatsSummary,
@@ -869,8 +870,26 @@ export async function getPlayerTypeRadar(
 
   // self_games 一次 + 六项 self 平均值各一次，共 7 个 puuid 参数
   const params: Array<string | number> = new Array(7).fill(puuid);
-  // 右侧「我的英雄」复用英雄评分统计，和雷达查询并行跑，失败时只少一个列表
-  const championsPromise = getPlayerChampionScores(puuid, 1, mode).catch(() => []);
+  // 右侧「我的英雄」复用英雄评分统计，并补上全体数据；和雷达查询并行跑，失败时只少一个列表
+  const championsPromise = getPlayerChampionScores(puuid, 1, mode)
+    .catch(() => [])
+    .then(async (champions) => {
+      const overall = await getChampionOverallScores(
+        champions.map((champion) => champion.championId),
+        mode,
+      );
+      const overallById = new Map<number, TypeChampionOverall>();
+      for (const [championId, record] of overall) {
+        overallById.set(championId, {
+          games: record.games,
+          winRate: record.winRate,
+          avgScore: record.avgScore,
+          avgRank: record.avgRank,
+        });
+      }
+      return { champions, overallById };
+    })
+    .catch(() => ({ champions: [], overallById: new Map<number, TypeChampionOverall>() }));
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT ${NORMALIZED_CHAMPION_ID} AS champion_id,
@@ -933,7 +952,8 @@ export async function getPlayerTypeRadar(
       },
     }));
     const types = buildTypeRadar(samples);
-    attachTypeChampions(types, await championsPromise);
+    const { champions, overallById } = await championsPromise;
+    attachTypeChampions(types, champions, undefined, overallById);
     typeRadarCache.set(cacheKey, { at: Date.now(), types });
     return types;
   } catch {

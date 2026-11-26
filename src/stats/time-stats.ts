@@ -102,6 +102,14 @@ export interface TypeRadarMetric {
   allText: string;
 }
 
+/** 某个英雄的全体（所有玩家）表现 */
+export interface TypeChampionOverall {
+  games: number;
+  winRate: number;
+  avgScore: number;
+  avgRank: number;
+}
+
 /** 类型右侧「我的英雄」列表用的一行 */
 export interface TypeChampionSample {
   championId: number;
@@ -110,6 +118,8 @@ export interface TypeChampionSample {
   winRate: number;
   avgScore: number;
   avgRank: number;
+  /** 所有玩家在该英雄上的全部历史表现 */
+  overall?: TypeChampionOverall;
 }
 
 export interface TypeRadarEntry {
@@ -634,6 +644,7 @@ export function attachTypeChampions(
   types: TypeRadarEntry[],
   champions: TypeChampionSample[],
   limit = TYPE_CHAMPION_LIMIT,
+  overallById?: Map<number, TypeChampionOverall>,
 ): TypeRadarEntry[] {
   const byKey = new Map(types.map((entry) => [entry.key, entry]));
   const grouped = new Map<string, TypeChampionSample[]>();
@@ -654,14 +665,18 @@ export function attachTypeChampions(
     entry.champions = [...list]
       .sort((a, b) => b.games - a.games || b.avgScore - a.avgScore)
       .slice(0, max)
-      .map((champion) => ({
-        championId: champion.championId,
-        championName: champion.championName,
-        games: champion.games,
-        winRate: champion.winRate,
-        avgScore: champion.avgScore,
-        avgRank: champion.avgRank,
-      }));
+      .map((champion) => {
+        const overall = overallById?.get(champion.championId);
+        return {
+          championId: champion.championId,
+          championName: champion.championName,
+          games: champion.games,
+          winRate: champion.winRate,
+          avgScore: champion.avgScore,
+          avgRank: champion.avgRank,
+          ...(overall ? { overall } : {}),
+        };
+      });
   }
   return types;
 }

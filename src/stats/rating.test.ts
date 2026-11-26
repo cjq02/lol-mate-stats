@@ -2583,7 +2583,7 @@ test('英雄类型雷达按场次加权汇总我和所有玩家', () => {
   assert.equal(championTypeKey(999999), 'type-default');
 });
 
-test('英雄类型雷达附带我的常用英雄并按场次取前五', () => {
+test('英雄类型雷达附带我的常用英雄和全体数据', () => {
   const champion = (
     championId: number,
     championName: string,
@@ -2634,6 +2634,21 @@ test('英雄类型雷达附带我的常用英雄并按场次取前五', () => {
   const limitedMage = limited.find((entry) => entry.key === 'type-mage');
   assert.equal(limitedMage?.championCount, 3, 'championCount 仍记录该类型全部英雄数');
   assert.equal(limitedMage?.champions?.length, 2, '列表只保留前 2 个');
+
+  const withOverall = attachTypeChampions(
+    buildTypeRadar([]),
+    [champion(103, '九尾妖狐', 6, 61)],
+    10,
+    new Map([
+      [103, { games: 12000, winRate: 0.51, avgScore: 55.2, avgRank: 4.9 }],
+    ]),
+  );
+  const overallMage = withOverall.find((entry) => entry.key === 'type-mage');
+  assert.deepEqual(
+    overallMage?.champions?.[0]?.overall,
+    { games: 12000, winRate: 0.51, avgScore: 55.2, avgRank: 4.9 },
+    '英雄行附带全体场次 / 胜率 / 平均分 / 平均排名',
+  );
 });
 
 test('单个英雄雷达直接使用该英雄的平均值', () => {
