@@ -102,6 +102,16 @@ export interface TypeRadarMetric {
   allText: string;
 }
 
+/** 类型右侧「我的英雄」列表用的一行 */
+export interface TypeChampionSample {
+  championId: number;
+  championName: string;
+  games: number;
+  winRate: number;
+  avgScore: number;
+  avgRank: number;
+}
+
 export interface TypeRadarEntry {
   /** 与按英雄类型的 bucket key 一致（type-tank 等） */
   key: string;
@@ -109,7 +119,14 @@ export interface TypeRadarEntry {
   selfGames: number;
   allGames: number;
   metrics: TypeRadarMetric[];
+  /** 我该类型下按场次排序的常用英雄，最多 5 个 */
+  champions?: TypeChampionSample[];
+  /** 我该类型下一共玩过多少个英雄 */
+  championCount?: number;
 }
+
+/** 每个类型右侧最多列出几个英雄 */
+const TYPE_CHAMPION_LIMIT = 5;
 
 export interface RadarComparisonSummary {
   games: number;
@@ -607,6 +624,46 @@ export function buildTypeRadar(samples: TypeRadarSample[]): TypeRadarEntry[] {
       metrics: radarMetrics(self, all),
     };
   });
+}
+
+/**
+ * 把「我的英雄」按官方主分类挂到对应的类型条目上。
+ * 每个类型按场次取前 5 个，同时记录该类型我一共玩过多少个英雄。
+ */
+export function attachTypeChampions(
+  types: TypeRadarEntry[],
+  champions: TypeChampionSample[],
+  limit = TYPE_CHAMPION_LIMIT,
+): TypeRadarEntry[] {
+  const byKey = new Map(types.map((entry) => [entry.key, entry]));
+  const grouped = new Map<string, TypeChampionSample[]>();
+  for (const champion of champions) {
+    const key = championTypeKey(champion.championId);
+    const list = grouped.get(key);
+    if (list) {
+      list.push(champion);
+    } else {
+      grouped.set(key, [champion]);
+    }
+  }
+  const max = Math.max(1, Math.trunc(limit));
+  for (const [key, list] of grouped) {
+    const entry = byKey.get(key);
+    if (!entry) continue;
+    entry.championCount = list.length;
+    entry.champions = [...list]
+      .sort((a, b) => b.games - a.games || b.avgScore - a.avgScore)
+      .slice(0, max)
+      .map((champion) => ({
+        championId: champion.championId,
+        championName: champion.championName,
+        games: champion.games,
+        winRate: champion.winRate,
+        avgScore: champion.avgScore,
+        avgRank: champion.avgRank,
+      }));
+  }
+  return types;
 }
 
 /** 单个英雄的六角星：直接用 SQL 已经算好的我和所有玩家平均值 */

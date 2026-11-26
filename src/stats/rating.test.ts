@@ -17,6 +17,7 @@ import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queue
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
 import {
+  attachTypeChampions,
   buildChampionRadar,
   buildTypeRadar,
   championTypeKey,
@@ -2580,6 +2581,46 @@ test('英雄类型雷达按场次加权汇总我和所有玩家', () => {
   assert.equal(championTypeKey(103), 'type-mage');
   assert.equal(championTypeKey(7), 'type-assassin');
   assert.equal(championTypeKey(999999), 'type-default');
+});
+
+test('英雄类型雷达附带我的常用英雄并按场次取前五', () => {
+  const champion = (
+    championId: number,
+    championName: string,
+    games: number,
+    avgScore: number,
+  ) => ({
+    championId,
+    championName,
+    games,
+    winRate: 0.5,
+    avgScore,
+    avgRank: 4,
+  });
+  const types = attachTypeChampions(buildTypeRadar([]), [
+    champion(103, '九尾妖狐', 6, 61),
+    champion(1, '黑暗之女', 9, 55),
+    champion(45, '邪恶小法师', 3, 70),
+    champion(7, '诡术妖姬', 4, 48),
+  ]);
+
+  const mage = types.find((entry) => entry.key === 'type-mage');
+  assert.ok(mage);
+  assert.equal(mage.championCount, 3, '法师一共 3 个英雄');
+  assert.deepEqual(
+    mage.champions?.map((item) => item.championName),
+    ['黑暗之女', '九尾妖狐', '邪恶小法师'],
+    '法师英雄按场次从高到低排列',
+  );
+
+  const assassin = types.find((entry) => entry.key === 'type-assassin');
+  assert.ok(assassin);
+  assert.equal(assassin.championCount, 1);
+  assert.equal(assassin.champions?.[0]?.championName, '诡术妖姬');
+
+  const tank = types.find((entry) => entry.key === 'type-tank');
+  assert.ok(tank);
+  assert.equal(tank.championCount, undefined, '没玩过的类型不附带英雄列表');
 });
 
 test('单个英雄雷达直接使用该英雄的平均值', () => {

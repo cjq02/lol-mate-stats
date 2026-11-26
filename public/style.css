@@ -1361,7 +1361,8 @@ body::before {
 }
 
 .time-stats-card {
-  width: min(780px, 100%);
+  /* 类型面板要左右分栏放六角星 + 我的英雄，比其它弹窗宽一些 */
+  width: min(1040px, 100%);
 }
 
 .time-stats-summary {
@@ -1647,6 +1648,127 @@ body::before {
   padding-top: 8px;
   border-top: 1px dashed var(--line);
   cursor: default;
+}
+
+/* 六角星在左、我的英雄在右，弹窗加宽后正好并排放下 */
+.type-radar-panel.is-pair {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  align-items: start;
+  justify-items: stretch;
+  gap: 18px;
+  padding-top: 10px;
+}
+
+.type-radar-panel.is-pair > * {
+  min-width: 0;
+}
+
+.type-radar-chart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.type-radar-champions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.type-radar-champion-head {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.type-radar-champion-head b {
+  font-size: 11.5px;
+  color: #cbd8ff;
+}
+
+.type-radar-champion-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.type-radar-champion-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 40px 46px 44px 52px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.type-radar-champion-row > :nth-child(2) {
+  text-align: left;
+}
+
+button.type-radar-champion-row {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+}
+
+button.type-radar-champion-row:hover,
+button.type-radar-champion-row:focus-visible {
+  border-color: rgba(143, 184, 255, 0.4);
+  background: rgba(143, 184, 255, 0.08);
+}
+
+.type-radar-champion-row.is-head {
+  padding-top: 0;
+  padding-bottom: 1px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.type-radar-champion-row .icon.sm {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.type-radar-champion-name {
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type-radar-champion-row b {
+  font-weight: 750;
+}
+
+.type-radar-champion-rate.is-win {
+  color: var(--win);
+}
+
+.type-radar-champion-rate.is-loss {
+  color: var(--loss);
+}
+
+.type-radar-champion-rank {
+  color: var(--rank-color, #cbd8ff);
+  font-weight: var(--rank-weight, 750);
+}
+
+/* 再窄就放不下右侧的英雄表格了，退回上下排布 */
+@media (max-width: 760px) {
+  .type-radar-panel.is-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .type-radar-panel .search-status {

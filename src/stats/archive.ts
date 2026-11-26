@@ -30,6 +30,7 @@ import { capAfkScores, isAfkLikeRelative, type AfkRelativeStats } from './rating
 import { championProficiency } from './proficiency.js';
 import { getDb, getSavedMatchTimeline, readMeta, saveTimelineAfkStats, withTransaction, writeMeta } from './store.js';
 import {
+  attachTypeChampions,
   buildChampionRadar,
   buildTypeRadar,
   summarizeChampionItems,
@@ -868,6 +869,8 @@ export async function getPlayerTypeRadar(
 
   // self_games 一次 + 六项 self 平均值各一次，共 7 个 puuid 参数
   const params: Array<string | number> = new Array(7).fill(puuid);
+  // 右侧「我的英雄」复用英雄评分统计，和雷达查询并行跑，失败时只少一个列表
+  const championsPromise = getPlayerChampionScores(puuid, 1, mode).catch(() => []);
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT ${NORMALIZED_CHAMPION_ID} AS champion_id,
@@ -930,6 +933,7 @@ export async function getPlayerTypeRadar(
       },
     }));
     const types = buildTypeRadar(samples);
+    attachTypeChampions(types, await championsPromise);
     typeRadarCache.set(cacheKey, { at: Date.now(), types });
     return types;
   } catch {

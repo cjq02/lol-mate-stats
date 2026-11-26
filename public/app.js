@@ -4444,6 +4444,26 @@ function openChampionMatches(championId, championName, options = {}) {
   void openMyMatches({ keepFilter: true, preserveNavigation: true });
 }
 
+/** 从时间统计的类型面板打开英雄战绩，返回时按原筛选重新打开时间统计 */
+function openTimeStatsChampionMatches(championId, championName) {
+  const id = Number(championId) || 0;
+  if (!id) return;
+  const mode = state.timeStatsMode === 'all' ? undefined : state.timeStatsMode;
+  const radarType = state.timeStatsRadarType;
+  closeTimeStats();
+  openChampionMatches(id, championName, {
+    mode,
+    back: () => {
+      closeMatches();
+      openTimeStats({ keepMode: true });
+      if (radarType) {
+        state.timeStatsRadarType = radarType;
+        void loadTimeStatsRadar();
+      }
+    },
+  });
+}
+
 async function openMyMatches(options = {}) {
   if (!options.keepFilter) state.championFilter = null;
   if (!options.keepMode) {
@@ -6326,33 +6346,86 @@ function timeStatsRadarSeries(entry) {
   });
 }
 
+/** 类型面板右侧的一行英雄：点击打开该英雄的战绩 */
+function timeStatsTypeChampionHtml(champion) {
+  const championId = Number(champion.championId) || 0;
+  const name = champion.championName || '未知英雄';
+  const games = Math.max(0, Number(champion.games) || 0);
+  const winRate = Number(champion.winRate) || 0;
+  const avgScore = Number(champion.avgScore) || 0;
+  const avgRank = Number(champion.avgRank) || 0;
+  const showRank = games >= MIN_AVG_RANK_GAMES && avgRank > 0;
+  return `<button class="type-radar-champion-row" type="button" data-time-type-champion="${championId}" data-champion-name="${escapeHtml(
+    name,
+  )}" title="点击查看 ${escapeHtml(name)} 的我的战绩">
+    <span class="type-radar-champion-avatar">${champIconHtml(championId, name, 'sm')}</span>
+    <span class="type-radar-champion-name">${escapeHtml(name)}</span>
+    <b class="type-radar-champion-games">${games}</b>
+    <b class="type-radar-champion-rate ${
+      winRate >= 0.5 ? 'is-win' : 'is-loss'
+    }">${winRatePct(winRate)}</b>
+    <b class="type-radar-champion-score" style="color:${ratingColor(avgScore)}">${num(
+      avgScore,
+      1,
+    )}</b>
+    <b class="type-radar-champion-rank ${
+      showRank ? rankClass(Math.round(avgRank)) : ''
+    }">${showRank ? num(avgRank, 1) : '-'}</b>
+  </button>`;
+}
+
+function timeStatsTypeChampionList(entry) {
+  const champions = Array.isArray(entry.champions) ? entry.champions : [];
+  const count = Math.max(Number(entry.championCount) || 0, champions.length);
+  if (!champions.length) {
+    return '<div class="type-radar-empty">这个类型还没有带评分的英雄战绩</div>';
+  }
+  return `<div class="type-radar-champion-head">我的英雄 <b>Top ${champions.length}</b>${
+    count > champions.length ? ` · 共 ${count} 个` : ''
+  } · 按场次</div>
+  <div class="type-radar-champion-table">
+    <div class="type-radar-champion-row is-head" aria-hidden="true">
+      <span></span>
+      <span>英雄</span>
+      <span>场次</span>
+      <span>胜率</span>
+      <span>平均分</span>
+      <span>平均排名</span>
+    </div>
+    ${champions.map(timeStatsTypeChampionHtml).join('')}
+  </div>`;
+}
+
 function timeStatsRadarPanel(period) {
   if (state.timeStatsRadarLoading) {
-    return `<div class="type-radar-panel">
+    return `<div class="type-radar-panel is-solo">
       <div class="search-status"><span class="spinner"></span><span>正在汇总所有玩家…</span></div>
     </div>`;
   }
   if (state.timeStatsRadarError) {
-    return `<div class="type-radar-panel">
+    return `<div class="type-radar-panel is-solo">
       <div class="search-status error">${escapeHtml(state.timeStatsRadarError)}</div>
     </div>`;
   }
   const entry = timeStatsRadarEntry(period.key);
   if (!entry || !entry.selfGames) {
-    return `<div class="type-radar-panel">
+    return `<div class="type-radar-panel is-solo">
       <div class="type-radar-empty">这个类型还没有你的历史对局</div>
     </div>`;
   }
   const series = timeStatsRadarSeries(entry);
   if (!series.length) return '';
-  return `<div class="type-radar-panel">
-    <div class="type-radar-head">${escapeHtml(entry.label)} · 我 ${entry.selfGames} 场 / 所有玩家 ${entry.allGames} 场</div>
-    ${radarSvg(series, {
-      selfLabel: '我',
-      avgLabel: '所有玩家',
-      ariaLabel: `${entry.label}类型对比`,
-    })}
-    <div class="type-radar-note">实线：我 · 虚线：所有玩家；经济 / 承伤 / 伤害 / 治疗为分均，按本轴较大值归一化</div>
+  return `<div class="type-radar-panel is-pair">
+    <div class="type-radar-chart">
+      <div class="type-radar-head">${escapeHtml(entry.label)} · 我 ${entry.selfGames} 场 / 所有玩家 ${entry.allGames} 场</div>
+      ${radarSvg(series, {
+        selfLabel: '我',
+        avgLabel: '所有玩家',
+        ariaLabel: `${entry.label}类型对比`,
+      })}
+      <div class="type-radar-note">实线：我 · 虚线：所有玩家；经济 / 承伤 / 伤害 / 治疗为分均，按本轴较大值归一化</div>
+    </div>
+    <div class="type-radar-champions">${timeStatsTypeChampionList(entry)}</div>
   </div>`;
 }
 
@@ -6862,6 +6935,14 @@ els.timeStatsDimension.addEventListener('change', () => {
   }
 });
 els.timeStatsList.addEventListener('click', (event) => {
+  const championRow = event.target.closest?.('[data-time-type-champion]');
+  if (championRow) {
+    openTimeStatsChampionMatches(
+      championRow.dataset.timeTypeChampion,
+      championRow.dataset.championName || '',
+    );
+    return;
+  }
   if (event.target.closest?.('.type-radar-panel')) return;
   const row = event.target.closest?.('[data-type-radar]');
   if (!row) return;
