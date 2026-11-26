@@ -212,6 +212,7 @@ const CHAMPION_RANKING_SORT_LABELS = {
   avg: '我的平均分',
   games: '我的场次',
   winRate: '我的胜率',
+  pickRate: '我的登场率',
   rank: '我的平均排名',
   best: '我的最高分',
   worst: '我的最低分',
@@ -302,6 +303,8 @@ const state = {
   archiveCursor: null,
   archiveLoading: false,
   championRankingLoading: false,
+  /** 英雄排名加载计时器（setInterval id） */
+  championRankingTimer: 0,
   /** 英雄评分排名当前模式：all / SR / ARAM / ARENA */
   championRankingMode: 'ARAM',
   /** 英雄评分排名排序：avg / games / winRate / rank / overall* 等 */
@@ -5676,6 +5679,11 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
   const number = (value) => Number(value) || 0;
   const overallOf = (item) => item?.overall ?? {};
   const showAll = state.championRankingShowAll;
+  const rawList = Array.isArray(champions) ? champions : [];
+  const myTotalGames = rawList.reduce(
+    (sum, item) => sum + (Number(item?.games) || 0),
+    0,
+  );
   /** 取排序指标；null 表示没有样本，始终沉底 */
   const metricOf = (item, key) => {
     const overall = overallOf(item);
@@ -5685,6 +5693,10 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
         return number(item.games);
       case 'winRate':
         return hasMine ? number(item.winRate) : null;
+      case 'pickRate':
+        return hasMine && myTotalGames > 0
+          ? number(item.games) / myTotalGames
+          : null;
       case 'avg':
         return hasMine ? number(item.avgScore) : null;
       case 'rank': {
@@ -5717,7 +5729,7 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
   };
   const tieBreak = (a, b) =>
     number(b.avgScore) - number(a.avgScore) || number(b.games) - number(a.games);
-  const list = (Array.isArray(champions) ? champions : [])
+  const list = rawList
     .filter((item) =>
       showAll ? number(item?.overall?.games) > 0 : number(item?.games) > 0,
     )
@@ -5783,6 +5795,11 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           ? num(item.avgRank, 1)
           : '-';
       const myProf = hasMine ? num(prof, 0) : '-';
+      const profColor = hasMine ? ratingColor(prof) : 'var(--muted-2)';
+      const myPickRate =
+        hasMine && myTotalGames > 0 ? pct(myGames / myTotalGames, 2) : '-';
+      const myRankTone =
+        myRank !== '-' ? rankClass(Math.round(Number(item.avgRank))) : '';
       const myWinClass = hasMine
         ? Number(item.winRate) >= 0.5
           ? 'is-win'
@@ -5806,11 +5823,10 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           )}">
             ${
               hasMine
-                ? `<span class="champion-rank-self" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">我 <b>${myGames}</b> 场 · 熟练度 <b>${myProf}</b></span>`
+                ? `<span class="champion-rank-self" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">我 <b>${myGames}</b> 场 · 熟练度 <b style="color:${profColor}">${myProf}</b></span>`
                 : '<span class="champion-rank-self champion-rank-not-played">我还没玩过</span>'
             }
             <span>全体 <b>${overallGames}</b> 场</span>
-            <span>登场率 <b>${overallPickRate}</b></span>
           </small>
         </span>
         <span class="champion-rank-stat">
@@ -5818,6 +5834,12 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           <small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
           )}">/ ${overallWin}</small>
+        </span>
+        <span class="champion-rank-stat champion-rank-pick">
+          <b class="champion-rank-pickrate">${myPickRate}</b>
+          <small class="champion-rank-compare" title="${escapeHtml(
+            overallTitle,
+          )}">/ ${overallPickRate}</small>
         </span>
         <span class="champion-rank-stat">
           <b class="champion-rank-score" style="color:${
@@ -5828,7 +5850,7 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           )}">/ ${overallAvg}</small>
         </span>
         <span class="champion-rank-stat">
-          <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${myRank}</b>
+          <b class="champion-rank-avg ${myRankTone}" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${myRank}</b>
           <small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
           )}">/ ${overallRank}</small>
@@ -5889,6 +5911,29 @@ function updateChampionRankingSortHead() {
   }
 }
 
+/** 停止英雄排名加载计时 */
+function stopChampionRankingTimer() {
+  if (state.championRankingTimer) {
+    clearInterval(state.championRankingTimer);
+    state.championRankingTimer = 0;
+  }
+}
+
+/** 启动英雄排名加载计时，每 100ms 刷新一次已用秒数 */
+function startChampionRankingTimer() {
+  stopChampionRankingTimer();
+  const startedAt = Date.now();
+  const tick = () => {
+    const timer = els.championRankingList.querySelector(
+      '.champion-ranking-timer',
+    );
+    if (!timer) return;
+    timer.textContent = `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+  };
+  tick();
+  state.championRankingTimer = window.setInterval(tick, 100);
+}
+
 async function loadChampionRanking() {
   const token = (state.championRankingToken ?? 0) + 1;
   state.championRankingToken = token;
@@ -5897,7 +5942,12 @@ async function loadChampionRanking() {
   const mode = state.championRankingMode;
   els.championRankingMeta.textContent = '';
   els.championRankingList.innerHTML =
-    '<div class="search-status"><span class="spinner"></span><span>正在统计英雄平均分…</span></div>';
+    '<div class="search-status champion-ranking-loading">' +
+    '<span class="champion-ranking-loader" aria-hidden="true"></span>' +
+    '<span>正在统计英雄平均分…</span>' +
+    '<span class="champion-ranking-timer">0.0s</span>' +
+    '</div>';
+  startChampionRankingTimer();
   try {
     const params = new URLSearchParams();
     if (mode !== 'all') params.set('mode', mode);
@@ -5929,7 +5979,10 @@ async function loadChampionRanking() {
       error instanceof Error ? error.message : String(error),
     )}</div>`;
   } finally {
-    if (token === state.championRankingToken) state.championRankingLoading = false;
+    if (token === state.championRankingToken) {
+      state.championRankingLoading = false;
+      stopChampionRankingTimer();
+    }
   }
 }
 
@@ -5953,6 +6006,7 @@ function openChampionRanking(options = {}) {
 function closeChampionRanking() {
   state.championRankingToken = (state.championRankingToken ?? 0) + 1;
   state.championRankingLoading = false;
+  stopChampionRankingTimer();
   resetChampionRadar();
   els.championRankingModal.classList.add('hidden');
 }
