@@ -33,6 +33,7 @@ import {
   attachTypeChampions,
   buildChampionRadar,
   buildTypeRadar,
+  championTypeKey,
   summarizeChampionItems,
   summarizeTimeStats,
   type ChampionRadarEntry,
@@ -1157,6 +1158,8 @@ export async function getPlayerChampionRadar(
 export interface ChampionOverallRecord {
   championId: number;
   championName: string;
+  /** 官方主分类 key（type-tank 等），英雄榜按类型过滤用 */
+  typeKey: string;
   games: number;
   wins: number;
   winRate: number;
@@ -1244,6 +1247,7 @@ export async function getChampionOverallScores(
       const record: ChampionOverallRecord = {
         championId,
         championName: String(row.champion_name ?? ''),
+        typeKey: championTypeKey(championId),
         games,
         wins,
         winRate: games > 0 ? wins / games : 0,
@@ -1398,6 +1402,7 @@ export async function getAllChampionOverallScores(
         return {
           championId,
           championName: String(row.champion_name ?? ''),
+          typeKey: championTypeKey(championId),
           games,
           wins,
           winRate: games > 0 ? wins / games : 0,
@@ -1422,6 +1427,8 @@ export async function getAllChampionOverallScores(
 export interface ChampionScoreSummary {
   championId: number;
   championName: string;
+  /** 官方主分类 key（type-tank 等），英雄榜按类型过滤用 */
+  typeKey: string;
   games: number;
   wins: number;
   winRate: number;
@@ -1516,9 +1523,11 @@ export async function getPlayerChampionScores(
       const winRate = games > 0 ? wins / games : 0;
       const avgScore = Number(row.avg_score) || 0;
       const bestScore = Number(row.best_score) || 0;
+      const championId = Number(row.champion_id);
       return {
-        championId: Number(row.champion_id),
+        championId,
         championName: String(row.champion_name ?? ''),
+        typeKey: championTypeKey(championId),
         games,
         wins,
         winRate,

@@ -1270,6 +1270,7 @@ export class LiveSource implements DataSource {
       return {
         championId: record.championId,
         championName: record.championName || own?.championName || '',
+        typeKey: record.typeKey,
         games: own?.games ?? 0,
         wins: own?.wins ?? 0,
         winRate: own?.winRate ?? 0,

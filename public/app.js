@@ -71,6 +71,7 @@ const els = {
   championRanking: document.getElementById('champion-ranking'),
   championRankingModal: document.getElementById('champion-ranking-modal'),
   championRankingAll: document.getElementById('champion-ranking-all'),
+  championRankingType: document.getElementById('champion-ranking-type'),
   championRankingPatch: document.getElementById('champion-ranking-patch'),
   championRankingList: document.getElementById('champion-ranking-list'),
   championRankingTabs: document.getElementById('champion-ranking-tabs'),
@@ -246,6 +247,18 @@ const CHAMPION_PATCH_FILTER_LABELS = {
   changed: '只看有改动',
 };
 
+/** 英雄榜按英雄官方主分类过滤，key 与后端 championTypeKey 一致 */
+const CHAMPION_TYPE_FILTER_LABELS = {
+  all: '全部',
+  'type-tank': '坦克',
+  'type-fighter': '战士',
+  'type-mage': '法师',
+  'type-marksman': '射手',
+  'type-assassin': '刺客',
+  'type-support': '辅助',
+  'type-default': '其他',
+};
+
 const TIME_STATS_DIMENSION_LABELS = {
   day: '按天',
   week: '按周',
@@ -344,6 +357,8 @@ const state = {
   championPatchesLoading: false,
   /** 英雄榜的版本改动过滤：all / buff / nerf / changed */
   championRankingPatch: 'all',
+  /** 英雄榜的英雄类型过滤：all / type-tank / type-mage 等 */
+  championRankingType: 'all',
   /** 英雄榜里展开的单个英雄六角星 */
   championRadarId: 0,
   championRadarName: '',
@@ -5900,10 +5915,17 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     if (patchFilter === 'changed') return true;
     return entry.direction === patchFilter;
   };
+  const typeFilter = CHAMPION_TYPE_FILTER_LABELS[state.championRankingType]
+    ? state.championRankingType
+    : 'all';
+  const typeLabel = CHAMPION_TYPE_FILTER_LABELS[typeFilter];
+  const matchesTypeFilter = (item) =>
+    typeFilter === 'all' || item?.typeKey === typeFilter;
   const list = rawList
     .filter((item) =>
       showAll ? number(item?.overall?.games) > 0 : number(item?.games) > 0,
     )
+    .filter(matchesTypeFilter)
     .filter(matchesPatchFilter)
     .sort((a, b) => {
       const aValue = metricOf(a, sort);
@@ -5938,8 +5960,8 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       ? `全体近 ${state.championRankingAllRange} 场（对比全部）`
       : '全体全部';
   const metaPrefix = `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · ${overallRangeLabel}${
-    patchFilter === 'all' ? '' : ` · ${CHAMPION_PATCH_FILTER_LABELS[patchFilter]}`
-  }`;
+    typeFilter === 'all' ? '' : ` · 类型：${typeLabel}`
+  }${patchFilter === 'all' ? '' : ` · ${CHAMPION_PATCH_FILTER_LABELS[patchFilter]}`}`;
   els.championRankingMeta.title = list.length
     ? `${metaPrefix} · ${list.length} 个英雄 · ${totalGames} 场 · 按${sortLabel}`
     : '';
@@ -5951,6 +5973,11 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     let status = `${modeLabel}${
       showAll ? '还没有所有英雄的评分数据' : '还没有带评分的英雄战绩，多打几局后再来看看'
     }`;
+    if (typeFilter !== 'all') {
+      status = showAll
+        ? `${modeLabel}还没有${typeLabel}类型英雄的数据`
+        : `${modeLabel}我还没有玩过${typeLabel}类型的英雄`;
+    }
     if (patchFilter !== 'all') {
       status = state.championPatches?.patch
         ? '当前版本没有符合这个过滤条件的英雄'
@@ -6257,6 +6284,9 @@ function openChampionRanking(options = {}) {
   if (!options.keepMode) state.championRankingMode = 'ARAM';
   if (els.championRankingAll) {
     els.championRankingAll.checked = state.championRankingShowAll;
+  }
+  if (els.championRankingType) {
+    els.championRankingType.value = state.championRankingType;
   }
   if (els.championRankingPatch) {
     els.championRankingPatch.value = state.championRankingPatch;
@@ -6986,6 +7016,13 @@ els.championRankingTabs.addEventListener('click', (event) => {
 els.championRankingAll?.addEventListener('change', () => {
   state.championRankingShowAll = Boolean(els.championRankingAll.checked);
   void loadChampionRanking();
+});
+els.championRankingType?.addEventListener('change', () => {
+  const value = els.championRankingType.value;
+  state.championRankingType = CHAMPION_TYPE_FILTER_LABELS[value] ? value : 'all';
+  if (state.championRankingData.length) {
+    renderChampionRanking(state.championRankingData, state.championRankingMode);
+  }
 });
 els.championRankingPatch?.addEventListener('change', () => {
   const value = els.championRankingPatch.value;

@@ -448,8 +448,9 @@ body::before {
   background: rgba(255, 255, 255, 0.03);
 }
 
-/* 版本筛选和「所有英雄」并排放在右侧 */
-.champion-ranking-card .champion-ranking-patch {
+/* 类型 / 版本筛选和「所有英雄」并排放在右侧 */
+.champion-ranking-card .champion-ranking-patch,
+.champion-ranking-card .champion-ranking-type {
   margin: 0 0 6px 8px;
 }
 

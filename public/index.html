@@ -201,6 +201,21 @@
               <span>所有英雄</span>
             </label>
             <select
+              id="champion-ranking-type"
+              class="champion-ranking-sort champion-ranking-type"
+              aria-label="按英雄类型过滤"
+              title="只看某一官方主分类（坦克 / 战士 / 法师 / 射手 / 刺客 / 辅助）的英雄"
+            >
+              <option value="all">类型：全部</option>
+              <option value="type-tank">坦克</option>
+              <option value="type-fighter">战士</option>
+              <option value="type-mage">法师</option>
+              <option value="type-marksman">射手</option>
+              <option value="type-assassin">刺客</option>
+              <option value="type-support">辅助</option>
+              <option value="type-default">其他</option>
+            </select>
+            <select
               id="champion-ranking-patch"
               class="champion-ranking-sort champion-ranking-patch"
               aria-label="按版本改动过滤"
