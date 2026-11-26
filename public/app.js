@@ -1147,7 +1147,7 @@ function renderBoard(players) {
     }
     const node = buildCard(player, isLocal, {
       liveView,
-      champSelectView: Boolean(snapshot.inChampSelect),
+      champSelectView: Boolean(state.snapshot?.inChampSelect),
       context: snapshotContext(),
     });
     node.dataset.key = key;
