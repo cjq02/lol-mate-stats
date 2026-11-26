@@ -1210,6 +1210,24 @@ body::before {
   font-variant-numeric: tabular-nums;
 }
 
+.champion-rank-mine,
+.champion-rank-against {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* 我和全体两侧都有区间差值时，数值与对比值分两行，箭头各贴自己的数值 */
+@media (min-width: 1025px) {
+  .champion-ranking-list.has-rank-deltas .champion-rank-stat {
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 2px;
+  }
+}
+
 .champion-rank-score {
   font-size: 20px;
   font-weight: 850;
@@ -1248,14 +1266,6 @@ body::before {
 
 .champion-rank-delta.is-worse {
   color: #ff9aa8;
-}
-
-.champion-rank-delta.is-neutral {
-  color: #9ab4ff;
-}
-
-.champion-rank-delta.is-even {
-  color: var(--muted-2);
 }
 
 .champion-rank-extra {

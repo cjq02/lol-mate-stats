@@ -1396,6 +1396,13 @@ export interface ChampionScoreSummary {
   avgRank: number;
   /** 综合熟练度 0-100（场次经验 + 表现分 × 样本置信度） */
   proficiency: number;
+  /** 选中「我近 X 场」时附带的全部历史数据，用于展示区间与全部的差值 */
+  baseline?: {
+    winRate: number;
+    avgScore: number;
+    avgRank: number;
+    pickRate: number;
+  };
   /** 所有玩家的同英雄数据，用于对比 */
   overall?: {
     games: number;

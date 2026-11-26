@@ -5679,7 +5679,7 @@ function championRankDeltaHtml(current, base, options = {}) {
     percent = false,
     digits = 1,
     inverse = false,
-    tone = 'good',
+    titlePrefix = '对比全部',
     baseText = '',
   } = options;
   const currentValue = Number(current);
@@ -5687,18 +5687,13 @@ function championRankDeltaHtml(current, base, options = {}) {
   if (!Number.isFinite(currentValue) || !Number.isFinite(baseValue)) return '';
   const scale = percent ? 100 : 1;
   const delta = (currentValue - baseValue) * scale;
-  const title = `对比全部：${baseText}`;
-  if (Math.abs(delta) < 0.05) {
-    return `<em class="champion-rank-delta is-even" title="${escapeHtml(
-      title,
-    )}">±0</em>`;
-  }
+  // 按显示精度四舍五入后为 0 的变化不显示，避免整列都是 ±0
+  if (Math.abs(delta) < 0.5 * 10 ** -digits) return '';
   const better = inverse ? delta < 0 : delta > 0;
-  const className =
-    tone === 'neutral' ? 'is-neutral' : better ? 'is-better' : 'is-worse';
+  const className = better ? 'is-better' : 'is-worse';
   const arrow = delta > 0 ? '↑+' : '↓-';
   return `<em class="champion-rank-delta ${className}" title="${escapeHtml(
-    title,
+    `${titlePrefix}：${baseText}`,
   )}">${arrow}${Math.abs(delta).toFixed(digits)}</em>`;
 }
 
@@ -5776,6 +5771,10 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     });
   const modeLabel =
     CHAMPION_RANKING_MODE_LABELS[mode] ?? CHAMPION_RANKING_MODE_LABELS.all;
+  els.championRankingList.classList.toggle(
+    'has-rank-deltas',
+    list.some((item) => Boolean(item?.baseline || item?.overall?.baseline)),
+  );
   const sortLabel = `${CHAMPION_RANKING_SORT_LABELS[sort]} ${
     sortDir === 1 ? '↑' : '↓'
   }`;
@@ -5787,7 +5786,7 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
 
   const myRangeLabel =
     state.championRankingRange > 0
-      ? `每个英雄近 ${state.championRankingRange} 场`
+      ? `每个英雄近 ${state.championRankingRange} 场（对比全部）`
       : '我全部场次';
   const overallRangeLabel =
     state.championRankingAllRange > 0
@@ -5836,7 +5835,6 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const pickDelta = baseline
         ? championRankDeltaHtml(overall.pickRate, baseline.pickRate, {
             percent: true,
-            tone: 'neutral',
             baseText: pct(baseline.pickRate, 2),
           })
         : '';
@@ -5852,6 +5850,42 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
             baseText: num(baseline.avgRank, 1),
           })
         : '';
+      const mineBaseline = item.baseline ?? null;
+      const myWinDelta =
+        mineBaseline && hasMine
+          ? championRankDeltaHtml(item.winRate, mineBaseline.winRate, {
+              percent: true,
+              titlePrefix: '对比我的全部',
+              baseText: winRatePct(mineBaseline.winRate),
+            })
+          : '';
+      const myPickDelta =
+        mineBaseline && hasMine && myTotalGames > 0 && mineBaseline.pickRate > 0
+          ? championRankDeltaHtml(myGames / myTotalGames, mineBaseline.pickRate, {
+              percent: true,
+              titlePrefix: '对比我的全部',
+              baseText: pct(mineBaseline.pickRate, 2),
+            })
+          : '';
+      const myAvgDelta =
+        mineBaseline && hasMine
+          ? championRankDeltaHtml(avg, mineBaseline.avgScore, {
+              titlePrefix: '对比我的全部',
+              baseText: num(mineBaseline.avgScore, 1),
+            })
+          : '';
+      const myRankDelta =
+        mineBaseline &&
+        myGames >= MIN_AVG_RANK_GAMES &&
+        Number(item.avgRank) > 0 &&
+        mineBaseline.avgRank > 0
+          ? championRankDeltaHtml(Number(item.avgRank), mineBaseline.avgRank, {
+              digits: 2,
+              inverse: true,
+              titlePrefix: '对比我的全部',
+              baseText: num(mineBaseline.avgRank, 1),
+            })
+          : '';
       const myWin = hasMine ? winRatePct(item.winRate) : '-';
       const myAvg = hasMine ? num(avg, 1) : '-';
       const myRank =
@@ -5894,30 +5928,30 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           </small>
         </span>
         <span class="champion-rank-stat">
-          <b class="champion-rank-rate ${myWinClass}">${myWin}</b>
-          <small class="champion-rank-compare" title="${escapeHtml(
+          <span class="champion-rank-mine"><b class="champion-rank-rate ${myWinClass}">${myWin}</b>${myWinDelta}</span>
+          <span class="champion-rank-against"><small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
-          )}">/ ${overallWin}${winDelta}</small>
+          )}">/ ${overallWin}</small>${winDelta}</span>
         </span>
         <span class="champion-rank-stat champion-rank-pick">
-          <b class="champion-rank-pickrate">${myPickRate}</b>
-          <small class="champion-rank-compare" title="${escapeHtml(
+          <span class="champion-rank-mine"><b class="champion-rank-pickrate">${myPickRate}</b>${myPickDelta}</span>
+          <span class="champion-rank-against"><small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
-          )}">/ ${overallPickRate}${pickDelta}</small>
+          )}">/ ${overallPickRate}</small>${pickDelta}</span>
         </span>
         <span class="champion-rank-stat">
-          <b class="champion-rank-score" style="color:${
+          <span class="champion-rank-mine"><b class="champion-rank-score" style="color:${
             hasMine ? ratingColor(avg) : 'var(--muted-2)'
-          }">${myAvg}</b>
-          <small class="champion-rank-compare" title="${escapeHtml(
+          }">${myAvg}</b>${myAvgDelta}</span>
+          <span class="champion-rank-against"><small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
-          )}">/ ${overallAvg}${avgDelta}</small>
+          )}">/ ${overallAvg}</small>${avgDelta}</span>
         </span>
         <span class="champion-rank-stat">
-          <b class="champion-rank-avg ${myRankTone}" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${myRank}</b>
-          <small class="champion-rank-compare" title="${escapeHtml(
+          <span class="champion-rank-mine"><b class="champion-rank-avg ${myRankTone}" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${myRank}</b>${myRankDelta}</span>
+          <span class="champion-rank-against"><small class="champion-rank-compare" title="${escapeHtml(
             overallTitle,
-          )}">/ ${overallRank}${rankDelta}</small>
+          )}">/ ${overallRank}</small>${rankDelta}</span>
         </span>
         <span class="champion-rank-extra">
           <span>最高 <b style="color:${bestColor}">${

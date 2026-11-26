@@ -1204,15 +1204,29 @@ export class LiveSource implements DataSource {
     if (!showAll) {
       const mine = await getPlayerChampionScores(id, minGames, mode, range);
       const ids = mine.map((champion) => champion.championId);
-      const [overall, totalGames, baseline, baselineTotal] = await Promise.all([
-        getChampionOverallScores(ids, mode, allRange),
-        getChampionOverallTotal(mode, allRange),
-        allRange ? getChampionOverallScores(ids, mode, 0) : Promise.resolve(null),
-        allRange ? getChampionOverallTotal(mode, 0) : Promise.resolve(0),
-      ]);
+      const [overall, totalGames, overallBase, overallBaseTotal, allTime] =
+        await Promise.all([
+          getChampionOverallScores(ids, mode, allRange),
+          getChampionOverallTotal(mode, allRange),
+          allRange ? getChampionOverallScores(ids, mode, 0) : Promise.resolve(null),
+          allRange ? getChampionOverallTotal(mode, 0) : Promise.resolve(0),
+          range ? getPlayerChampionScores(id, minGames, mode, 0) : Promise.resolve(null),
+        ]);
+      const allTimeById = new Map(
+        (allTime ?? []).map((champion) => [champion.championId, champion]),
+      );
+      const allTimeTotal = ids.reduce(
+        (sum, championId) => sum + (allTimeById.get(championId)?.games ?? 0),
+        0,
+      );
       for (const champion of mine) {
         const record = overall.get(champion.championId);
         if (!record) continue;
+        const selfBaseline = this.championSelfBaseline(
+          allTimeById.get(champion.championId),
+          allTimeTotal,
+        );
+        if (selfBaseline) champion.baseline = selfBaseline;
         champion.overall = {
           games: record.games,
           winRate: record.winRate,
@@ -1220,27 +1234,39 @@ export class LiveSource implements DataSource {
           avgRank: record.avgRank,
           pickRate: totalGames > 0 ? record.games / totalGames : 0,
           ...this.championOverallBaseline(
-            baseline?.get(champion.championId),
-            baselineTotal,
+            overallBase?.get(champion.championId),
+            overallBaseTotal,
           ),
         };
       }
       return { puuid: id, champions: mine, totalGames };
     }
 
-    const [mine, overall, baseline] = await Promise.all([
+    const [mine, overall, overallBase, allTime] = await Promise.all([
       getPlayerChampionScores(id, minGames, mode, range),
       getAllChampionOverallScores(mode, allRange),
       allRange ? getAllChampionOverallScores(mode, 0) : Promise.resolve(null),
+      range ? getPlayerChampionScores(id, minGames, mode, 0) : Promise.resolve(null),
     ]);
-    const baselineById = new Map(
-      (baseline?.champions ?? []).map((record) => [record.championId, record]),
+    const overallBaseById = new Map(
+      (overallBase?.champions ?? []).map((record) => [record.championId, record]),
+    );
+    const allTimeById = new Map(
+      (allTime ?? []).map((champion) => [champion.championId, champion]),
+    );
+    const allTimeTotal = mine.reduce(
+      (sum, champion) => sum + (allTimeById.get(champion.championId)?.games ?? 0),
+      0,
     );
     const mineById = new Map(
       mine.map((champion) => [champion.championId, champion]),
     );
     const champions = overall.champions.map((record) => {
       const own = mineById.get(record.championId);
+      const selfBaseline = this.championSelfBaseline(
+        allTimeById.get(record.championId),
+        allTimeTotal,
+      );
       return {
         championId: record.championId,
         championName: record.championName || own?.championName || '',
@@ -1252,13 +1278,14 @@ export class LiveSource implements DataSource {
         worstScore: own?.worstScore ?? 0,
         avgRank: own?.avgRank ?? 0,
         proficiency: own?.proficiency ?? 0,
+        ...(selfBaseline ? { baseline: selfBaseline } : {}),
         overall: {
           games: record.games,
           winRate: record.winRate,
           avgScore: record.avgScore,
           avgRank: record.avgRank,
           pickRate: record.pickRate,
-          ...this.championOverallBaseline(baselineById.get(record.championId)),
+          ...this.championOverallBaseline(overallBaseById.get(record.championId)),
         },
       };
     });
@@ -1293,6 +1320,30 @@ export class LiveSource implements DataSource {
         avgRank: base.avgRank,
         pickRate,
       },
+    };
+  }
+
+  /**
+   * 我的英雄选了「近 X 场」时，把全部历史作为对比基线带上；
+   * 选「全部」或没有基线数据时返回 null。
+   */
+  private championSelfBaseline(
+    base:
+      | {
+          winRate: number;
+          avgScore: number;
+          avgRank: number;
+          games: number;
+        }
+      | undefined,
+    totalGames: number,
+  ): { winRate: number; avgScore: number; avgRank: number; pickRate: number } | null {
+    if (!base) return null;
+    return {
+      winRate: base.winRate,
+      avgScore: base.avgScore,
+      avgRank: base.avgRank,
+      pickRate: totalGames > 0 ? base.games / totalGames : 0,
     };
   }
 
