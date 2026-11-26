@@ -1232,7 +1232,12 @@ export class LiveSource implements DataSource {
           winRate: record.winRate,
           avgScore: record.avgScore,
           avgRank: record.avgRank,
-          pickRate: totalGames > 0 ? record.games / totalGames : 0,
+          pickRate:
+            allRange && allRange > 0
+              ? record.pickRate
+              : totalGames > 0
+                ? record.games / totalGames
+                : 0,
           ...this.championOverallBaseline(
             overallBase?.get(champion.championId),
             overallBaseTotal,

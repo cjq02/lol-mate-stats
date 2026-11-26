@@ -5825,6 +5825,10 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const overallAvg = overall ? num(overall.avgScore, 1) : '-';
       const overallRank = overall ? num(overall.avgRank, 1) : '-';
       const overallPickRate = overall ? pct(overall.pickRate, 2) : '-';
+      const overallPickTitle =
+        state.championRankingAllRange > 0
+          ? `最近 ${state.championRankingAllRange} 场对局中的出场占比`
+          : '全部对局中的出场占比';
       const baseline = overall?.baseline ?? null;
       const winDelta = baseline
         ? championRankDeltaHtml(overall.winRate, baseline.winRate, {
@@ -5934,9 +5938,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           )}">/ ${overallWin}</small>${winDelta}</span>
         </span>
         <span class="champion-rank-stat champion-rank-pick">
-          <span class="champion-rank-mine"><b class="champion-rank-pickrate">${myPickRate}</b>${myPickDelta}</span>
+          <span class="champion-rank-mine"><b class="champion-rank-pickrate" title="我的登场率：该英雄场次 ÷ 我当前样本总场次">${myPickRate}</b>${myPickDelta}</span>
           <span class="champion-rank-against"><small class="champion-rank-compare" title="${escapeHtml(
-            overallTitle,
+            overallPickTitle,
           )}">/ ${overallPickRate}</small>${pickDelta}</span>
         </span>
         <span class="champion-rank-stat">
