@@ -70,8 +70,8 @@ const els = {
   myMatches: document.getElementById('my-matches'),
   championRanking: document.getElementById('champion-ranking'),
   championRankingModal: document.getElementById('champion-ranking-modal'),
-  championRankingTitle: document.getElementById('champion-ranking-title'),
   championRankingAll: document.getElementById('champion-ranking-all'),
+  championRankingPatch: document.getElementById('champion-ranking-patch'),
   championRankingList: document.getElementById('champion-ranking-list'),
   championRankingTabs: document.getElementById('champion-ranking-tabs'),
   championRankingRanges: document.getElementById('champion-ranking-ranges'),
@@ -235,6 +235,17 @@ const CHAMPION_PATCH_DIRECTION_LABELS = {
   unknown: '改动',
 };
 
+/** 英雄榜的版本改动过滤：仅加强 / 仅削弱 / 有改动 */
+const CHAMPION_PATCH_FILTERS = new Set(['all', 'buff', 'nerf', 'changed']);
+
+/** 过滤生效时在 title 里补充口径 */
+const CHAMPION_PATCH_FILTER_LABELS = {
+  all: '版本全部',
+  buff: '仅看加强',
+  nerf: '仅看削弱',
+  changed: '只看有改动',
+};
+
 const TIME_STATS_DIMENSION_LABELS = {
   day: '按天',
   week: '按周',
@@ -311,7 +322,7 @@ const state = {
   archiveCursor: null,
   archiveLoading: false,
   championRankingLoading: false,
-  /** 英雄排名加载计时器（setInterval id） */
+  /** 英雄榜加载计时器（setInterval id） */
   championRankingTimer: 0,
   /** 英雄评分排名当前模式：all / SR / ARAM / ARENA */
   championRankingMode: 'ARAM',
@@ -321,17 +332,19 @@ const state = {
   championRankingSortDir: 'desc',
   championRankingData: [],
   championRankingToken: 0,
-  /** 英雄排名是否显示所有英雄（否则只显示我玩过的） */
+  /** 英雄榜是否显示所有英雄（否则只显示我玩过的） */
   championRankingShowAll: false,
-  /** 英雄排名我的样本：只统计最近 N 场，0 = 全部 */
+  /** 英雄榜我的样本：只统计最近 N 场，0 = 全部 */
   championRankingRange: 0,
-  /** 英雄排名全体样本：只统计最近 N 场，0 = 全部 */
+  /** 英雄榜全体样本：只统计最近 N 场，0 = 全部 */
   championRankingAllRange: 1000,
   championRankingTotalGames: 0,
   /** 当前版本官方公告里的英雄加强/削弱，null 表示还没加载过 */
   championPatches: null,
   championPatchesLoading: false,
-  /** 英雄排名里展开的单个英雄六角星 */
+  /** 英雄榜的版本改动过滤：all / buff / nerf / changed */
+  championRankingPatch: 'all',
+  /** 英雄榜里展开的单个英雄六角星 */
   championRadarId: 0,
   championRadarName: '',
   championRadar: null,
@@ -608,6 +621,37 @@ function spellValuesText(values, suffix = '') {
   return `${unique.join(' / ')}${suffix}`;
 }
 
+/** 当前版本公告里这个英雄的改动，没有就返回 null */
+function championPatchEntry(championId) {
+  const id = Number(championId);
+  if (!id || !state.championPatches?.champions?.length) return null;
+  return (
+    state.championPatches.champions.find((item) => Number(item.championId) === id) ?? null
+  );
+}
+
+/** 技能说明里补一段当前版本的加强 / 削弱 */
+function championPatchTipHtml(info) {
+  const entry = championPatchEntry(info?.id);
+  if (!entry) return '';
+  const label = CHAMPION_PATCH_DIRECTION_LABELS[entry.direction];
+  if (!label) return '';
+  const version = state.championPatches?.patch?.version ?? '';
+  const rows = (entry.changes ?? [])
+    .map((change) => {
+      const head = [change.section, change.label].filter(Boolean).join(' · ');
+      const values = `${change.before ?? ''} → ${change.after ?? ''}`;
+      return `<div class="info-tip-patch-row"><b>${escapeHtml(
+        head,
+      )}</b><span>${escapeHtml(values)}</span></div>`;
+    })
+    .join('');
+  return `<div class="info-tip-patch is-${entry.direction}">
+    <span class="info-tip-patch-head">${escapeHtml(
+      `${version ? `${version} 版本` : '本版本'} · ${label}`,
+    )}</span>${rows}</div>`;
+}
+
 /** 英雄：英雄名 + 官方角色 + 玩法标签 + 被动 + QWER（含每级冷却与消耗） */
 function championTipHtml(info, anchorLabel = '') {
   if (!info) return '<div class="info-tip-empty">暂无英雄资料</div>';
@@ -659,9 +703,9 @@ function championTipHtml(info, anchorLabel = '') {
     .join('');
   return `<div class="info-tip-head">${escapeHtml(
     info.name || anchorLabel || '英雄',
-  )}</div>${meta ? `<div class="info-tip-metas">${meta}</div>` : ''}${passive}${
-    spells ? `<div class="info-tip-block">${spells}</div>` : ''
-  }`;
+  )}</div>${meta ? `<div class="info-tip-metas">${meta}</div>` : ''}${championPatchTipHtml(
+    info,
+  )}${passive}${spells ? `<div class="info-tip-block">${spells}</div>` : ''}`;
 }
 
 /** 装备：描述已由后端去掉富文本标签，这里只负责转义和换行 */
@@ -5820,10 +5864,21 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
   };
   const tieBreak = (a, b) =>
     number(b.avgScore) - number(a.avgScore) || number(b.games) - number(a.games);
+  const patchFilter = CHAMPION_PATCH_FILTERS.has(state.championRankingPatch)
+    ? state.championRankingPatch
+    : 'all';
+  const matchesPatchFilter = (item) => {
+    if (patchFilter === 'all') return true;
+    const entry = patchById.get(Number(item.championId));
+    if (!entry) return false;
+    if (patchFilter === 'changed') return true;
+    return entry.direction === patchFilter;
+  };
   const list = rawList
     .filter((item) =>
       showAll ? number(item?.overall?.games) > 0 : number(item?.games) > 0,
     )
+    .filter(matchesPatchFilter)
     .sort((a, b) => {
       const aValue = metricOf(a, sort);
       const bValue = metricOf(b, sort);
@@ -5856,7 +5911,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     state.championRankingAllRange > 0
       ? `全体近 ${state.championRankingAllRange} 场（对比全部）`
       : '全体全部';
-  const metaPrefix = `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · ${overallRangeLabel}`;
+  const metaPrefix = `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · ${overallRangeLabel}${
+    patchFilter === 'all' ? '' : ` · ${CHAMPION_PATCH_FILTER_LABELS[patchFilter]}`
+  }`;
   els.championRankingMeta.title = list.length
     ? `${metaPrefix} · ${list.length} 个英雄 · ${totalGames} 场 · 按${sortLabel}`
     : '';
@@ -5865,9 +5922,19 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     : '';
 
   if (!list.length) {
+    let status = `${modeLabel}${
+      showAll ? '还没有所有英雄的评分数据' : '还没有带评分的英雄战绩，多打几局后再来看看'
+    }`;
+    if (patchFilter !== 'all') {
+      status = state.championPatches?.patch
+        ? '当前版本没有符合这个过滤条件的英雄'
+        : state.championPatchesLoading
+          ? '正在读取当前版本公告…'
+          : '暂时拿不到当前版本公告，无法按加强 / 削弱过滤';
+    }
     els.championRankingList.innerHTML = `<div class="search-status">${escapeHtml(
-      modeLabel,
-    )}${showAll ? '还没有所有英雄的评分数据' : '还没有带评分的英雄战绩，多打几局后再来看看'}</div>`;
+      status,
+    )}</div>`;
     return;
   }
 
@@ -5977,11 +6044,17 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const worstColor = hasMine
         ? ratingColor(Number(item.worstScore) || 0)
         : 'var(--muted-2)';
+      const avatarAttrs =
+        championId > 0 ? ` data-champ-id="${championId}" data-tip-force="1"` : '';
       return `<button class="champion-rank-row ${rankingClass(rank)}" type="button" data-champion-id="${championId}" data-champion-name="${escapeHtml(
         name,
       )}" title="点击查看该英雄的战绩">
         <span class="champion-rank-no ${rankingClass(rank)}">${rank}</span>
-        ${champIconHtml(item.championId, name, 'sm')}
+        <span class="champion-rank-avatar"${avatarAttrs} title="点击查看英雄技能">${champIconHtml(
+          item.championId,
+          name,
+          'sm',
+        )}</span>
         <span class="champion-rank-main">
           <span class="champion-rank-name">
             <b>${escapeHtml(name)}</b>${championPatchTagHtml(patchById.get(championId))}
@@ -6046,7 +6119,7 @@ function updateChampionRankingTabs() {
   }
 }
 
-/** 同步英雄排名的「我 / 全体」最近场次页签 */
+/** 同步英雄榜的「我 / 全体」最近场次页签 */
 function updateChampionRankingRanges() {
   if (!els.championRankingRanges) return;
   for (const button of els.championRankingRanges.querySelectorAll('[data-ranking-range]')) {
@@ -6079,7 +6152,7 @@ function updateChampionRankingSortHead() {
   }
 }
 
-/** 停止英雄排名加载计时 */
+/** 停止英雄榜加载计时 */
 function stopChampionRankingTimer() {
   if (state.championRankingTimer) {
     clearInterval(state.championRankingTimer);
@@ -6087,7 +6160,7 @@ function stopChampionRankingTimer() {
   }
 }
 
-/** 启动英雄排名加载计时，每 100ms 刷新一次已用秒数 */
+/** 启动英雄榜加载计时，每 100ms 刷新一次已用秒数 */
 function startChampionRankingTimer() {
   stopChampionRankingTimer();
   const startedAt = Date.now();
@@ -6159,10 +6232,8 @@ function openChampionRanking(options = {}) {
   if (els.championRankingAll) {
     els.championRankingAll.checked = state.championRankingShowAll;
   }
-  if (els.championRankingTitle) {
-    els.championRankingTitle.textContent = state.championRankingShowAll
-      ? '所有英雄排名'
-      : '我的英雄排名';
+  if (els.championRankingPatch) {
+    els.championRankingPatch.value = state.championRankingPatch;
   }
   updateChampionRankingTabs();
   updateChampionRankingRanges();
@@ -6811,12 +6882,16 @@ els.championRankingTabs.addEventListener('click', (event) => {
 });
 els.championRankingAll?.addEventListener('change', () => {
   state.championRankingShowAll = Boolean(els.championRankingAll.checked);
-  if (els.championRankingTitle) {
-    els.championRankingTitle.textContent = state.championRankingShowAll
-      ? '所有英雄排名'
-      : '我的英雄排名';
-  }
   void loadChampionRanking();
+});
+els.championRankingPatch?.addEventListener('change', () => {
+  const value = els.championRankingPatch.value;
+  state.championRankingPatch = CHAMPION_PATCH_FILTERS.has(value) ? value : 'all';
+  if (state.championPatches) {
+    renderChampionRanking(state.championRankingData, state.championRankingMode);
+  } else {
+    void loadChampionPatches();
+  }
 });
 els.championRankingRanges?.addEventListener('click', (event) => {
   const myButton = event.target.closest('[data-ranking-range]');
@@ -6853,6 +6928,8 @@ els.championRankingHead?.addEventListener('click', (event) => {
   renderChampionRanking(state.championRankingData, state.championRankingMode);
 });
 els.championRankingList.addEventListener('click', (event) => {
+  // 头像单独用来弹技能说明，不触发「打开该英雄战绩」
+  if (event.target instanceof Element && event.target.closest('[data-tip-force]')) return;
   const row = event.target.closest('[data-champion-id]');
   if (!row) return;
   const championId = Number(row.dataset.championId) || 0;
@@ -6956,7 +7033,9 @@ function tipAnchorFrom(target) {
   if (!(target instanceof Element)) return null;
   const anchor = target.closest(TIP_ANCHOR_SELECTOR);
   if (!anchor) return null;
-  return anchor.closest('button, a') ? null : anchor;
+  // 英雄榜的头像虽然包在整行的按钮里，但要单独弹技能说明
+  if (anchor.closest('button, a') && !anchor.closest('[data-tip-force]')) return null;
+  return anchor;
 }
 
 function toggleTip(anchor) {

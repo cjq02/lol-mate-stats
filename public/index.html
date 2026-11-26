@@ -23,7 +23,7 @@
         <div class="toolbar">
           <button id="my-matches" class="btn" type="button">我的战绩</button>
           <button id="champion-ranking" class="btn" type="button" title="查看我的英雄平均分排名">
-            英雄排名
+            英雄榜
           </button>
           <button id="time-stats" class="btn" type="button" title="按天 / 周 / 月查看场次、胜率和评分">
             时间统计
@@ -181,7 +181,7 @@
       >
         <div class="modal-card champion-ranking-card">
           <div class="modal-head">
-            <h2 id="champion-ranking-title">我的英雄排名</h2>
+            <h2 id="champion-ranking-title">英雄榜</h2>
             <div class="modal-actions">
               <span id="champion-ranking-meta" class="champion-ranking-meta"></span>
               <button id="champion-ranking-close" class="btn" type="button">关闭</button>
@@ -200,12 +200,23 @@
               <span class="scope-slider" aria-hidden="true"></span>
               <span>所有英雄</span>
             </label>
+            <select
+              id="champion-ranking-patch"
+              class="champion-ranking-sort champion-ranking-patch"
+              aria-label="按版本改动过滤"
+              title="只看当前版本公告里被加强或削弱的英雄"
+            >
+              <option value="all">版本：全部</option>
+              <option value="buff">仅加强</option>
+              <option value="nerf">仅削弱</option>
+              <option value="changed">有改动</option>
+            </select>
           </div>
           <div
             id="champion-ranking-ranges"
             class="match-tabs range-tabs"
             role="group"
-            aria-label="英雄排名统计场次范围"
+            aria-label="英雄榜统计场次范围"
           >
             <span class="range-tabs-label">我</span>
             <button class="tab" type="button" data-ranking-range="10">近 10 场</button>

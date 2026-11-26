@@ -411,7 +411,7 @@ body::before {
   font-weight: 700;
 }
 
-/* 英雄排名复用战绩列表的范围页签，内边距对齐弹窗卡片 */
+/* 英雄榜复用战绩列表的范围页签，内边距对齐弹窗卡片 */
 .champion-ranking-card .range-tabs {
   gap: 4px;
   padding: 7px 16px 8px;
@@ -446,6 +446,11 @@ body::before {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.03);
+}
+
+/* 版本筛选和「所有英雄」并排放在右侧 */
+.champion-ranking-card .champion-ranking-patch {
+  margin: 0 0 6px 8px;
 }
 
 .champion-ranking-scope {
@@ -1120,6 +1125,20 @@ body::before {
 
 .champion-rank-row .icon.sm .fb {
   font-size: 13px;
+}
+
+/* 榜上的头像单独点击弹技能说明 */
+.champion-rank-avatar {
+  display: inline-flex;
+  border-radius: 11px;
+  cursor: pointer;
+}
+
+.champion-rank-avatar:hover .icon.sm,
+.champion-rank-avatar:focus-visible .icon.sm {
+  box-shadow:
+    inset 0 0 0 1px rgba(94, 234, 212, 0.5),
+    0 8px 16px -12px rgba(0, 0, 0, 0.95);
 }
 
 .champion-rank-main {
@@ -3035,6 +3054,73 @@ body::before {
   flex: 0 0 28px;
   font-size: 10.5px;
   color: var(--muted);
+}
+
+/* 技能说明里的版本改动，颜色和榜上的加强 / 削弱标记一致 */
+.info-tip-patch {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 9px;
+  padding: 8px 10px;
+  border: 1px solid rgba(126, 163, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.info-tip-patch-head {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #cbd8ff;
+}
+
+.info-tip-patch-row {
+  display: grid;
+  gap: 1px;
+}
+
+.info-tip-patch-row b {
+  font-size: 11px;
+  font-weight: 650;
+  color: #dbe6ff;
+}
+
+.info-tip-patch-row span {
+  font-size: 11px;
+  color: #a8b7d6;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.info-tip-patch.is-buff {
+  border-color: rgba(94, 234, 212, 0.3);
+  background: rgba(94, 234, 212, 0.07);
+}
+
+.info-tip-patch.is-buff .info-tip-patch-head {
+  color: #7ff5d8;
+}
+
+.info-tip-patch.is-nerf {
+  border-color: rgba(255, 107, 129, 0.3);
+  background: rgba(255, 107, 129, 0.07);
+}
+
+.info-tip-patch.is-nerf .info-tip-patch-head {
+  color: #ffb3c0;
+}
+
+.info-tip-patch.is-mixed {
+  border-color: rgba(245, 199, 106, 0.3);
+  background: rgba(245, 199, 106, 0.07);
+}
+
+.info-tip-patch.is-mixed .info-tip-patch-head {
+  color: #ffe0a3;
+}
+
+.info-tip-patch.is-unknown .info-tip-patch-head {
+  color: #b9c8e8;
 }
 
 .info-tip-block {
