@@ -149,6 +149,7 @@ for (const [gameId, list] of byGame) {
               kills,
               teamKills: total.kills,
               teamDeaths: total.deaths,
+              assists,
             }
           : {}),
         role: profile.primary,

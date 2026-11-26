@@ -171,6 +171,7 @@ async function main(): Promise<void> {
           healShare: total.heal > 0 ? Number(participant.heal) / total.heal : 0,
           goldShare: total.gold > 0 ? Number(participant.gold) / total.gold : 0,
           kills,
+          assists,
           teamKills: total.kills,
           teamDeaths: total.deaths,
           role: profile.primary,

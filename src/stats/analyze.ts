@@ -368,6 +368,7 @@ export function computeMatchScores(
         healShare: base.healShareRaw,
         goldShare: base.goldShareRaw,
         kills: base.kills,
+        assists: base.assists,
         teamKills: base.teamKills,
         teamDeaths: base.teamDeaths,
         role: profile.primary,

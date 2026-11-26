@@ -12,7 +12,7 @@ import { analyzeGame, detectLane, matchBestTags, parseGameTimeline } from './ana
 import { liveItemIds } from '../lcu/live.js';
 import { buildAnalysisMessages, buildChampSelectAnalysisMessages, buildLiveAnalysisMessages, buildLiveFollowUpMessages } from '../ai.js';
 import { afkParticipantIds, afkScoreboardIndexes, badLevelLabel, badLevelOfScore, gameFlagTags, isRemakeGame, worseBadLevel } from './flags.js';
-import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, AFK_TOTAL_IDLE_SECONDS, PROFILES, capAfkScores, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, killDeathAdjustments, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, scoreAdjustments, summarize } from './rating.js';
+import { AFK_IDLE_VETO_SECONDS, AFK_STATIONARY_SECONDS, AFK_SCORE_CAP, AFK_TOTAL_IDLE_SECONDS, PROFILES, capAfkScores, compareBaseline, gameTags, isAfkLike, isAfkLikeRelative, killDeathAdjustments, negativeKdaValue, percentileScores, performanceScore, roleProfileWeights, roleScoreWeights, scoreAdjustments, summarize } from './rating.js';
 import { currentQueueGroup, gameQueueGroup, modeFromQueue, queueGroupName, queueName } from './constants.js';
 import { endOfGameToRawGame } from './eog.js';
 import { matchesGameContext, mergeIncrementalGames } from './collector.js';
@@ -950,6 +950,75 @@ test('人头/死亡加减分按位置区分', () => {
     classes: ['mage'],
   });
   assert.equal(carryNoAssassin.length, 0, '普通法师 15 杀还没到输出位的 18 杀门槛');
+});
+
+test('负战绩：击杀+助攻少于死亡时按净亏分档扣分', () => {
+  const base = {
+    kda: 1,
+    killParticipation: 0.4,
+    damageShare: 0.15,
+    tankShare: 0.2,
+    healShare: 0.1,
+  };
+  const value = (
+    role: 'carry' | 'fighter' | 'tank' | 'support',
+    kills: number,
+    deaths: number,
+    assists: number,
+  ) => negativeKdaValue({ ...base, role, kills, deaths, assists });
+
+  assert.equal(value('carry', 5, 4, 3), 0, '击杀+助攻 8 > 死亡 4 不扣分');
+  assert.equal(value('carry', 5, 8, 2), -2, '输出位净亏 1 起扣 -2');
+  assert.equal(value('carry', 4, 8, 2), -2, '净亏 2 仍是 -2');
+  assert.equal(value('carry', 2, 8, 2), -4, '净亏 4 升到 -4');
+  assert.equal(value('carry', 0, 7, 1), -6, '净亏 6 升到 -6');
+  assert.equal(value('carry', 0, 9, 1), -8, '净亏 8 封到 -8');
+  assert.equal(value('carry', 0, 15, 0), -8, '净亏 15 也是 -8');
+  assert.equal(value('fighter', 3, 8, 4), 0, '战士净亏 1 不扣，给换命留空间');
+  assert.equal(value('fighter', 2, 9, 4), -2, '战士净亏 3 起扣 -2');
+  assert.equal(value('tank', 2, 12, 9), 0, '坦克净亏 1 不扣，开团多死不算负战绩');
+  assert.equal(value('tank', 2, 17, 11), -2, '坦克净亏 4 扣 -2');
+  assert.equal(value('support', 0, 8, 2), -6, '辅助净亏 6 扣 -6');
+  assert.equal(value('carry', 0, 0, 5), 0, '0 死不扣');
+  assert.equal(value('carry', 0, 4, 0), 0, '死亡不足 5 次不判负战绩');
+  assert.equal(value('carry', 0, 5, 0), -6, '死亡 5 次且净亏 5 起扣 -6');
+  assert.equal(
+    negativeKdaValue({ ...base, role: 'carry', deaths: 8 }),
+    0,
+    '缺少击杀/助攻时不误伤',
+  );
+
+  const items = killDeathAdjustments({
+    ...base,
+    role: 'carry',
+    kills: 2,
+    deaths: 10,
+    assists: 3,
+    teamKills: 20,
+    teamDeaths: 40,
+  });
+  const negative = items.find((item) => item.key === 'negative');
+  assert.equal(negative?.value, -6, '净亏 5 在最终调整里扣 6 分');
+  assert.equal(negative?.uncapped, true, '负战绩不参与 ±4 封顶');
+});
+
+test('负战绩扣分不参与 ±4 封顶', () => {
+  const base = {
+    kda: 1,
+    killParticipation: 0.4,
+    damageShare: 0.15,
+    tankShare: 0.2,
+    healShare: 0.1,
+    role: 'carry' as const,
+    kills: 0,
+    deaths: 12,
+  };
+  const bad = percentileScores([{ ...base, assists: 0 }])[0]!;
+  const good = percentileScores([{ ...base, assists: 12 }])[0]!;
+  assert.ok(
+    Math.abs(good - bad - 8) < 1e-9,
+    `助攻填平净亏后应相差 8 分：good=${good} bad=${bad}`,
+  );
 });
 
 test('经济转化会进入最终评分', () => {

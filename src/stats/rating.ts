@@ -32,13 +32,18 @@ export const ECONOMY_EFFICIENCY_MIN_GOLD_SHARE = 0.2;
 export const ECONOMY_EFFICIENCY_MIN_DAMAGE_SHARE = 0.2;
 export const ECONOMY_EFFICIENCY_BONUS = 1.5;
 export const ECONOMY_EFFICIENCY_DEDUCTION = 2;
-/** 所有加分/扣分累计后的上限，避免多条规则叠加 */
+/**
+ * 经济/击杀/死亡等加减分累计后的上限，避免多条规则叠加。
+ * 负战绩扣分不参与这个封顶，单独按净亏分档扣。
+ */
 export const MAX_SCORE_ADJUSTMENT = 4;
 
 export interface ScoreAdjustment {
-  key: 'economy' | 'kill' | 'death';
+  key: 'economy' | 'kill' | 'death' | 'negative';
   label: string;
   value: number;
+  /** 不参与 ±MAX_SCORE_ADJUSTMENT 封顶的独立扣分 */
+  uncapped?: boolean;
 }
 
 interface KillDeathRule {
@@ -52,6 +57,7 @@ interface KillDeathRule {
  * - 战士可以换命，死亡占比非常极端才扣
  * - 坦克/辅助不靠击杀加分；坦克要开团，死亡门槛更高
  * 击杀用绝对值，避免队伍总击杀高时把个人击杀稀释掉。
+ * 负战绩（击杀 + 助攻 < 死亡）另按净亏分档扣分，见 NEGATIVE_KDA_RULES。
  */
 const KILL_DEATH_RULES: Record<ChampionRole, KillDeathRule> = {
   carry: {
@@ -73,6 +79,45 @@ const KILL_DEATH_RULES: Record<ChampionRole, KillDeathRule> = {
     death: { minShare: 0.3, minDeaths: 10, value: -1 },
   },
 };
+
+interface NegativeKdaRule {
+  /** 净亏（死亡 - 击杀 - 助攻）达到这些值时分别扣下一档 */
+  edges: [number, number, number, number];
+  values: [number, number, number, number];
+}
+
+/**
+ * 负战绩分档：死亡 > 击杀 + 助攻 时，按净亏 `死亡 - 击杀 - 助攻` 扣分。
+ * 输出/辅助从净亏 1 起扣，战士 2 起，坦克 3 起；坦克开团本来就会多死，门槛最高。
+ * 净亏 1-2 的局往往只是团战换命，第一档只扣 2 分；净亏越大扣得越重。
+ * 这条扣分不参与 MAX_SCORE_ADJUSTMENT 的 ±4 封顶，否则会被击杀/经济加分抵消。
+ */
+const NEGATIVE_KDA_RULES: Record<ChampionRole, NegativeKdaRule> = {
+  carry: { edges: [1, 3, 5, 8], values: [-2, -4, -6, -8] },
+  support: { edges: [1, 3, 5, 8], values: [-2, -4, -6, -8] },
+  fighter: { edges: [2, 4, 6, 10], values: [-2, -4, -6, -8] },
+  tank: { edges: [3, 6, 9, 13], values: [-2, -4, -6, -8] },
+  default: { edges: [1, 3, 5, 8], values: [-2, -4, -6, -8] },
+};
+
+/** 负战绩至少死这么多次才判断，避免短局或单次阵亡被当成送头 */
+export const NEGATIVE_KDA_MIN_DEATHS = 5;
+
+/** 负战绩分档扣分；缺少击杀/助攻数据时返回 0，避免误伤旧调用方 */
+export function negativeKdaValue(input: MatchPercentileInput): number {
+  if (input.kills === undefined || input.assists === undefined) return 0;
+  const kills = Number(input.kills) || 0;
+  const assists = Number(input.assists) || 0;
+  const deaths = Number(input.deaths) || 0;
+  if (deaths < NEGATIVE_KDA_MIN_DEATHS) return 0;
+  const deficit = deaths - kills - assists;
+  if (deficit <= 0) return 0;
+  const rule = NEGATIVE_KDA_RULES[input.role ?? 'default'];
+  for (let index = rule.edges.length - 1; index >= 0; index -= 1) {
+    if (deficit >= rule.edges[index]) return rule.values[index];
+  }
+  return 0;
+}
 
 /**
  * 含刺客标签的英雄按刺客标准算击杀：
@@ -98,7 +143,7 @@ function assassinKillValue(input: MatchPercentileInput): number | null {
   return tier ? tier.value : null;
 }
 
-/** 人头/死亡加减分：击杀看绝对值，死亡看占比，避免不同位置互相误伤 */
+/** 人头/死亡加减分：击杀看绝对值，死亡看占比，负战绩按净亏分档扣分 */
 export function killDeathAdjustments(
   input: MatchPercentileInput,
 ): ScoreAdjustment[] {
@@ -118,6 +163,15 @@ export function killDeathAdjustments(
   }
   if (rule.death && deathShare >= rule.death.minShare && deaths >= rule.death.minDeaths) {
     adjustments.push({ key: 'death', label: '死亡过多', value: rule.death.value });
+  }
+  const negative = negativeKdaValue(input);
+  if (negative !== 0) {
+    adjustments.push({
+      key: 'negative',
+      label: '战绩为负',
+      value: negative,
+      uncapped: true,
+    });
   }
   return adjustments;
 }
@@ -268,6 +322,8 @@ export interface MatchPercentileInput {
   goldShare?: number;
   /** 本人击杀数，用于按位置区分的人头加分 */
   kills?: number;
+  /** 本人助攻数，用于负战绩分档扣分 */
+  assists?: number;
   /** 队伍总击杀 / 总死亡，用于计算击杀、死亡占比 */
   teamKills?: number;
   teamDeaths?: number;
@@ -449,16 +505,23 @@ function scoreWithWeights(
       deduction = weakCount >= 3 ? 8 : pairLow ? 6 : weakCount >= 2 ? 4 : 0;
     }
 
-    const adjustment =
-      applyRoleAdjustments && !catastrophic
-        ? Math.max(
-            -MAX_SCORE_ADJUSTMENT,
-            Math.min(
-              MAX_SCORE_ADJUSTMENT,
-              scoreAdjustments(input).reduce((sum, item) => sum + item.value, 0),
-            ),
-          )
-        : 0;
+    const adjustmentItems =
+      applyRoleAdjustments && !catastrophic ? scoreAdjustments(input) : [];
+    // 负战绩是独立扣分，不参与 ±MAX_SCORE_ADJUSTMENT 封顶；
+    // 其它加减分仍然封顶，避免击杀 + 经济转化叠加把分数抬飞。
+    const cappedAdjustment = Math.max(
+      -MAX_SCORE_ADJUSTMENT,
+      Math.min(
+        MAX_SCORE_ADJUSTMENT,
+        adjustmentItems
+          .filter((item) => !item.uncapped)
+          .reduce((sum, item) => sum + item.value, 0),
+      ),
+    );
+    const uncappedAdjustment = adjustmentItems
+      .filter((item) => item.uncapped)
+      .reduce((sum, item) => sum + item.value, 0);
+    const adjustment = cappedAdjustment + uncappedAdjustment;
 
     return round(
       clamp(

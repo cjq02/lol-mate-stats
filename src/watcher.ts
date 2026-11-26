@@ -877,6 +877,7 @@ export class LiveSource implements DataSource {
                 healShare: 0,
                 goldShare,
                 kills: toNumber(stats.kills),
+                assists: toNumber(stats.assists),
                 deaths: analyzed.deaths,
                 teamKills: teamKillsById.get(toNumber(participant.teamId)) ?? 0,
                 teamDeaths: teamDeathsById.get(toNumber(participant.teamId)) ?? 0,
