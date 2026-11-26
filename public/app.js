@@ -5774,51 +5774,53 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           ? num(item.avgRank, 1)
           : '-';
       const myProf = hasMine ? num(prof, 0) : '-';
+      const myWinClass = hasMine
+        ? Number(item.winRate) >= 0.5
+          ? 'is-win'
+          : 'is-loss'
+        : '';
       const bestColor = hasMine
         ? ratingColor(Number(item.bestScore) || 0)
         : 'var(--muted-2)';
       const worstColor = hasMine
         ? ratingColor(Number(item.worstScore) || 0)
         : 'var(--muted-2)';
-      return `<button class="champion-rank-row" type="button" data-champion-id="${championId}" data-champion-name="${escapeHtml(
+      return `<button class="champion-rank-row ${rankingClass(rank)}" type="button" data-champion-id="${championId}" data-champion-name="${escapeHtml(
         name,
       )}" title="点击查看该英雄的战绩">
         <span class="champion-rank-no ${rankingClass(rank)}">${rank}</span>
         ${champIconHtml(item.championId, name, 'sm')}
         <span class="champion-rank-main">
           <b>${escapeHtml(name)}</b>
-          <small>${
-            hasMine
-              ? `<span class="champion-rank-num">${myGames}</span> 场 · 胜率 <span class="champion-rank-num">${myWin}</span> · <span class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 <span class="champion-rank-num">${myProf}</span></span>`
-              : '<span class="champion-rank-not-played">我还没玩过这个英雄</span>'
-          }</small>
-          <small class="champion-rank-overall-line">
-            <span class="champion-rank-overall" title="${escapeHtml(
-              overallTitle,
-            )}">全体 <span class="champion-rank-num">${overallGames}</span> 场</span>
-            <span class="champion-rank-overall" title="${escapeHtml(
-              overallTitle,
-            )}">登场率 <span class="champion-rank-num">${overallPickRate}</span></span>
-            <span class="champion-rank-overall" title="${escapeHtml(
-              overallTitle,
-            )}">胜率 <span class="champion-rank-num">${overallWin}</span></span>
+          <small class="champion-rank-overall-line" title="${escapeHtml(
+            overallTitle,
+          )}">
+            <span>全体 <b>${overallGames}</b> 场</span>
+            <span>登场率 <b>${overallPickRate}</b></span>
+            <span>胜率 <b>${overallWin}</b></span>
           </small>
         </span>
-        <span class="champion-rank-stats">
-          <span class="champion-rank-stat">
-            <span class="champion-rank-score" style="color:${
-              hasMine ? ratingColor(avg) : 'var(--muted-2)'
-            }">${myAvg}</span>
-            <small>平均分 <span class="champion-rank-overall" title="${escapeHtml(
-              overallTitle,
-            )}">/ 全体 ${overallAvg}</span></small>
-          </span>
-          <span class="champion-rank-stat">
-            <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${myRank}</b>
-            <small>平均排名 <span class="champion-rank-overall" title="${escapeHtml(
-              overallTitle,
-            )}">/ 全体 ${overallRank}</span></small>
-          </span>
+        <span class="champion-rank-mine">
+          ${
+            hasMine
+              ? `<span class="champion-rank-mine-main">${myGames} 场 · <b class="${myWinClass}">${myWin}</b></span>
+                 <small class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${myProf}</small>`
+              : '<span class="champion-rank-not-played">还没玩过</span>'
+          }
+        </span>
+        <span class="champion-rank-stat">
+          <b class="champion-rank-score" style="color:${
+            hasMine ? ratingColor(avg) : 'var(--muted-2)'
+          }">${myAvg}</b>
+          <small class="champion-rank-compare" title="${escapeHtml(
+            overallTitle,
+          )}">/ ${overallAvg}</small>
+        </span>
+        <span class="champion-rank-stat">
+          <b class="champion-rank-avg" title="该英雄至少 ${MIN_AVG_RANK_GAMES} 场时，平均每局在同局有评分玩家中的排名">${myRank}</b>
+          <small class="champion-rank-compare" title="${escapeHtml(
+            overallTitle,
+          )}">/ ${overallRank}</small>
         </span>
         <span class="champion-rank-extra">
           <span>最高 <b style="color:${bestColor}">${
