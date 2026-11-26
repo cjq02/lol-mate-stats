@@ -1182,14 +1182,10 @@ export async function getChampionOverallScores(
     ...missing,
     ...missing.map((id) => id + 60000),
   ];
-  const conditions = [
-    `p.champion_id IN (${placeholders})`,
-    'p.score IS NOT NULL',
-    'm.duration_seconds > 300',
-    "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
-    'p.puuid IS NOT NULL',
-  ];
-  const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
+  // 排名先在「同局所有有评分的参与者」里用窗口函数算好，再筛英雄 / 玩家，
+  // 与原来的自连接计数等价，但不用为每个参与者再扫一遍同局 10 人。
+  const conditions = [`r.champion_id IN (${placeholders})`, 'r.puuid IS NOT NULL'];
+  const modeFilter = mode ? championModeFilterSql(mode, 'r', 'r') : undefined;
   if (modeFilter) conditions.push(modeFilter);
 
   try {
@@ -1201,16 +1197,17 @@ export async function getChampionOverallScores(
               AVG(r.score) AS avg_score,
               AVG(r.game_rank) AS avg_rank
        FROM (
-         SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win,
-                1 + COUNT(q.game_id) AS game_rank
+         SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win, p.puuid,
+                p.\`position\`, m.queue_id, m.game_mode,
+                RANK() OVER (PARTITION BY p.game_id ORDER BY p.score DESC) AS game_rank
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
          ${window.join}
-         LEFT JOIN match_participants q
-           ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
-         WHERE ${conditions.join(' AND ')}
-         GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
+         WHERE p.score IS NOT NULL
+           AND m.duration_seconds > 300
+           AND COALESCE(m.game_mode, '') <> 'PRACTICETOOL'
        ) r
+       WHERE ${conditions.join(' AND ')}
        GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END`,
       params,
     );
@@ -1336,13 +1333,10 @@ export async function getAllChampionOverallScores(
     return { totalGames: cached.totalGames, champions: cached.champions };
   }
 
-  const conditions = [
-    'p.score IS NOT NULL',
-    'm.duration_seconds > 300',
-    "COALESCE(m.game_mode, '') <> 'PRACTICETOOL'",
-    'p.puuid IS NOT NULL',
-  ];
-  const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
+  // 排名先用窗口函数在同局所有有评分的参与者里算好，再筛玩家和模式，
+  // 避免原来每个参与者都回头扫一遍同局 10 人的自连接。
+  const conditions = ['r.puuid IS NOT NULL'];
+  const modeFilter = mode ? championModeFilterSql(mode, 'r', 'r') : undefined;
   if (modeFilter) conditions.push(modeFilter);
   const window = championMatchWindow(mode, range);
   const params: Array<string | number> = [...window.params];
@@ -1356,16 +1350,17 @@ export async function getAllChampionOverallScores(
               AVG(r.score) AS avg_score,
               AVG(r.game_rank) AS avg_rank
        FROM (
-         SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win,
-                1 + COUNT(q.game_id) AS game_rank
+         SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win, p.puuid,
+                p.\`position\`, m.queue_id, m.game_mode,
+                RANK() OVER (PARTITION BY p.game_id ORDER BY p.score DESC) AS game_rank
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
          ${window.join}
-         LEFT JOIN match_participants q
-           ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
-         WHERE ${conditions.join(' AND ')}
-         GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
+         WHERE p.score IS NOT NULL
+           AND m.duration_seconds > 300
+           AND COALESCE(m.game_mode, '') <> 'PRACTICETOOL'
        ) r
+       WHERE ${conditions.join(' AND ')}
        GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END`,
       params,
     );
