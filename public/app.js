@@ -6262,7 +6262,7 @@ function closeChampionRanking() {
 /* ------------------------------------------------------------------ */
 
 function timeStatsTone(period) {
-  if (!period?.games) return 'empty';
+  if (!period?.games) return 'no-score';
   const rate = Number(period.winRate) || 0;
   if (rate >= 0.55) return 'good';
   if (rate >= 0.45) return 'even';
@@ -6271,7 +6271,7 @@ function timeStatsTone(period) {
 }
 
 function timeStatsScoreTone(period) {
-  if (!period?.scoreGames) return 'empty';
+  if (!period?.scoreGames) return 'no-score';
   return ratingTone(Number(period.avgScore) || 0).className;
 }
 
