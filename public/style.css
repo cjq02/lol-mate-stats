@@ -289,7 +289,7 @@ body::before {
 
 .champion-ranking-card {
   /* 排名行和列头共用同一套列宽：排名 / 图标 / 英雄 / 我的表现 / 平均分 / 平均排名 / 最高最低 */
-  --rank-columns: 28px 34px minmax(160px, 1.9fr) 152px 92px 92px 90px;
+  --rank-columns: 28px 34px minmax(240px, 2.2fr) 96px 96px 96px 90px;
   width: min(1120px, 100%);
   background:
     radial-gradient(760px 220px at 12% -14%, rgba(94, 234, 212, 0.09), transparent 62%),
@@ -441,11 +441,6 @@ body::before {
   padding-left: 8px;
 }
 
-.champion-ranking-card .range-tabs .champion-ranking-sort {
-  align-self: center;
-  margin: 0 0 0 auto;
-}
-
 .champion-ranking-card .champion-ranking-scope {
   padding: 4px 10px;
   border: 1px solid var(--line);
@@ -586,33 +581,97 @@ body::before {
   min-height: 0;
 }
 
-/* 列头和行共用列宽，滚动时始终在列表上方 */
+/* 列头和行共用列宽，滚动时始终在列表上方；表头每个数值两侧都能单独排序 */
 .champion-rank-head {
   display: grid;
   grid-template-columns: var(--rank-columns);
   align-items: end;
   gap: 10px;
   margin-top: 2px;
-  padding: 6px 26px 7px;
+  padding: 7px 26px 8px;
   border-bottom: 1px solid rgba(126, 163, 255, 0.09);
-  background: linear-gradient(180deg, rgba(7, 11, 20, 0.4), transparent);
+  background: linear-gradient(180deg, rgba(7, 11, 20, 0.45), transparent);
   color: var(--muted-2);
   font-size: 10px;
   letter-spacing: 0.02em;
 }
 
-.champion-rank-head span:nth-child(5),
-.champion-rank-head span:nth-child(6),
-.champion-rank-head span:nth-child(7) {
-  text-align: right;
+.champion-rank-head > .champion-rank-head-title:first-child {
+  align-self: end;
+  padding-bottom: 4px;
 }
 
-.champion-rank-head small {
-  display: block;
-  margin-top: 1px;
-  color: rgba(139, 154, 192, 0.8);
-  font-size: 9.5px;
-  font-weight: 500;
+.champion-rank-head-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.champion-rank-head-col.is-right {
+  align-items: flex-end;
+}
+
+.champion-rank-head-title {
+  color: var(--muted-2);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.champion-rank-head-sides {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.champion-rank-head-divider {
+  width: 1px;
+  height: 10px;
+  margin: 0 2px;
+  background: var(--line);
+}
+
+.champion-rank-head-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border: 1px solid rgba(126, 163, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted-2);
+  font: inherit;
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.champion-rank-head-sort::after {
+  content: '⇅';
+  font-size: 8px;
+  opacity: 0.45;
+}
+
+.champion-rank-head-sort:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd6ef;
+}
+
+.champion-rank-head-sort.active {
+  color: #b8fff2;
+  border-color: rgba(94, 234, 212, 0.28);
+  background: rgba(94, 234, 212, 0.1);
+}
+
+.champion-rank-head-sort.active::after {
+  content: '↓';
+  opacity: 1;
+}
+
+.champion-rank-head-sort.active.asc::after {
+  content: '↑';
 }
 
 .matches-body {
@@ -1066,49 +1125,43 @@ body::before {
   font-variant-numeric: tabular-nums;
 }
 
-.champion-rank-mine {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  font-size: 10.5px;
-  color: var(--muted);
-}
-
-.champion-rank-mine-main {
+.champion-rank-self {
   color: #cfd9ef;
   font-weight: 600;
-  white-space: nowrap;
+}
+
+.champion-rank-self b {
+  color: #eef4ff;
+  font-weight: 800;
+}
+
+.champion-rank-overall-line .champion-rank-self + span {
+  padding-left: 8px;
+  border-left: 1px solid rgba(126, 163, 255, 0.18);
+}
+
+.champion-rank-overall-line .champion-rank-self + span::before {
+  content: none;
+}
+
+.champion-rank-rate {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  color: #dbe6ff;
   font-variant-numeric: tabular-nums;
 }
 
-.champion-rank-mine small {
-  font-size: 9.5px;
-  color: var(--muted-2);
-  white-space: nowrap;
-}
-
-.champion-rank-mine .champion-rank-prof {
-  color: var(--accent);
-}
-
-.champion-rank-mine-main .is-win {
+.champion-rank-rate.is-win {
   color: var(--win);
-  font-weight: 700;
 }
 
-.champion-rank-mine-main .is-loss {
+.champion-rank-rate.is-loss {
   color: var(--loss);
-  font-weight: 700;
 }
 
 .champion-rank-not-played {
   color: var(--muted-2);
-}
-
-.champion-rank-prof {
-  color: var(--accent);
-  font-weight: 700;
 }
 
 .champion-rank-stat {
@@ -5794,7 +5847,7 @@ code {
 
 @media (max-width: 900px) {
   .champion-ranking-card {
-    --rank-columns: 26px 32px minmax(0, 1fr) 132px auto auto;
+    --rank-columns: 26px 32px minmax(0, 1fr) 88px 88px 88px;
   }
 
   .champion-rank-head {
@@ -5817,7 +5870,7 @@ code {
 
 @media (max-width: 700px) {
   .champion-ranking-card {
-    --rank-columns: 26px 30px minmax(0, 1fr) auto auto;
+    --rank-columns: 26px 30px minmax(0, 1fr) 74px 74px 74px;
   }
 
   .champion-ranking-card .modal-head {
@@ -5845,8 +5898,20 @@ code {
     white-space: nowrap;
   }
 
-  .champion-rank-mine {
+  .champion-rank-overall-line span:last-child {
     display: none;
+  }
+
+  .champion-rank-rate {
+    font-size: 13px;
+  }
+
+  .champion-rank-score {
+    font-size: 18px;
+  }
+
+  .champion-rank-compare {
+    font-size: 10px;
   }
 
   .champion-rank-no {
@@ -5908,7 +5973,6 @@ code {
   }
 
   .champion-rank-row {
-    grid-template-columns: 26px 30px minmax(0, 1fr) auto auto;
     gap: 8px;
     padding: 8px 9px;
   }

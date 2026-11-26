@@ -221,30 +221,108 @@
               <button class="tab active" type="button" data-ranking-all-range="1000">近 1000 场</button>
               <button class="tab" type="button" data-ranking-all-range="0">全部</button>
             </span>
-            <select
-              id="champion-ranking-sort"
-              class="champion-ranking-sort"
-              aria-label="排序方式"
-            >
-              <option value="avg">按平均分</option>
-              <option value="games">按场次</option>
-              <option value="winRate">按胜率</option>
-              <option value="best">按最高分</option>
-              <option value="proficiency">按熟练度</option>
-              <option value="overallAvg">按全体平均分</option>
-              <option value="overallWinRate">按全体胜率</option>
-              <option value="overallRank">按全体平均排名</option>
-              <option value="overallPickRate">按全体登场率</option>
-            </select>
           </div>
-          <div class="champion-rank-head" aria-hidden="true">
-            <span>#</span>
+          <div id="champion-ranking-head" class="champion-rank-head">
+            <span class="champion-rank-head-title">#</span>
             <span></span>
-            <span>英雄</span>
-            <span>我的表现</span>
-            <span>平均分<small>我 / 全体</small></span>
-            <span>平均排名<small>我 / 全体</small></span>
-            <span>最高 / 最低</span>
+            <span class="champion-rank-head-col">
+              <span class="champion-rank-head-title">英雄</span>
+              <span class="champion-rank-head-sides">
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="games"
+                  title="按我的场次排序"
+                >我的场次</button>
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="proficiency"
+                  title="按熟练度排序"
+                >熟练度</button>
+                <span class="champion-rank-head-divider" aria-hidden="true"></span>
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="overallGames"
+                  title="按全体场次排序"
+                >全体场次</button>
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="overallPickRate"
+                  title="按全体登场率排序"
+                >登场率</button>
+              </span>
+            </span>
+            <span class="champion-rank-head-col is-right">
+              <span class="champion-rank-head-title">胜率</span>
+              <span class="champion-rank-head-sides">
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="winRate"
+                  title="按我的胜率排序"
+                >我</button>
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="overallWinRate"
+                  title="按全体胜率排序"
+                >全体</button>
+              </span>
+            </span>
+            <span class="champion-rank-head-col is-right">
+              <span class="champion-rank-head-title">平均分</span>
+              <span class="champion-rank-head-sides">
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="avg"
+                  title="按我的平均分排序"
+                >我</button>
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="overallAvg"
+                  title="按全体平均分排序"
+                >全体</button>
+              </span>
+            </span>
+            <span class="champion-rank-head-col is-right">
+              <span class="champion-rank-head-title">平均排名</span>
+              <span class="champion-rank-head-sides">
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="rank"
+                  title="按我的平均排名排序"
+                >我</button>
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="overallRank"
+                  title="按全体平均排名排序"
+                >全体</button>
+              </span>
+            </span>
+            <span class="champion-rank-head-col is-right">
+              <span class="champion-rank-head-title">最高 / 最低</span>
+              <span class="champion-rank-head-sides">
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="best"
+                  title="按我的最高分排序"
+                >最高</button>
+                <button
+                  class="champion-rank-head-sort"
+                  type="button"
+                  data-ranking-sort="worst"
+                  title="按我的最低分排序"
+                >最低</button>
+              </span>
+            </span>
           </div>
           <div id="champion-ranking-list" class="champion-ranking-list"></div>
         </div>

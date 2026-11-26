@@ -75,7 +75,7 @@ const els = {
   championRankingList: document.getElementById('champion-ranking-list'),
   championRankingTabs: document.getElementById('champion-ranking-tabs'),
   championRankingRanges: document.getElementById('champion-ranking-ranges'),
-  championRankingSort: document.getElementById('champion-ranking-sort'),
+  championRankingHead: document.getElementById('champion-ranking-head'),
   championRankingMeta: document.getElementById('champion-ranking-meta'),
   championRankingClose: document.getElementById('champion-ranking-close'),
   timeStats: document.getElementById('time-stats'),
@@ -209,16 +209,22 @@ const BOT_QUEUE_IDS = new Set([
 ]);
 
 const CHAMPION_RANKING_SORT_LABELS = {
-  avg: '平均分',
-  games: '场次',
-  winRate: '胜率',
-  best: '最高分',
+  avg: '我的平均分',
+  games: '我的场次',
+  winRate: '我的胜率',
+  rank: '我的平均排名',
+  best: '我的最高分',
+  worst: '我的最低分',
   proficiency: '熟练度',
+  overallGames: '全体场次',
   overallAvg: '全体平均分',
   overallWinRate: '全体胜率',
   overallRank: '全体平均排名',
   overallPickRate: '全体登场率',
 };
+
+/** 排名和最低分默认从小到大（名次越低越好、最低分越低越差）；其余默认从大到小 */
+const CHAMPION_RANKING_ASC_SORTS = new Set(['rank', 'overallRank', 'worst']);
 
 const TIME_STATS_DIMENSION_LABELS = {
   day: '按天',
@@ -298,8 +304,10 @@ const state = {
   championRankingLoading: false,
   /** 英雄评分排名当前模式：all / SR / ARAM / ARENA */
   championRankingMode: 'ARAM',
-  /** 英雄评分排名排序：avg / games / winRate / best */
+  /** 英雄评分排名排序：avg / games / winRate / rank / overall* 等 */
   championRankingSort: 'avg',
+  /** 排序方向：desc 降序 / asc 升序 */
+  championRankingSortDir: 'desc',
   championRankingData: [],
   championRankingToken: 0,
   /** 英雄排名是否显示所有英雄（否则只显示我玩过的） */
@@ -5660,72 +5668,73 @@ function reloadChampionRadar() {
 }
 
 function renderChampionRanking(champions, mode = state.championRankingMode) {
+  updateChampionRankingSortHead();
   const sort = CHAMPION_RANKING_SORT_LABELS[state.championRankingSort]
     ? state.championRankingSort
     : 'avg';
+  const sortDir = state.championRankingSortDir === 'asc' ? 1 : -1;
   const number = (value) => Number(value) || 0;
   const overallOf = (item) => item?.overall ?? {};
   const showAll = state.championRankingShowAll;
+  /** 取排序指标；null 表示没有样本，始终沉底 */
+  const metricOf = (item, key) => {
+    const overall = overallOf(item);
+    const hasMine = number(item.games) > 0;
+    switch (key) {
+      case 'games':
+        return number(item.games);
+      case 'winRate':
+        return hasMine ? number(item.winRate) : null;
+      case 'avg':
+        return hasMine ? number(item.avgScore) : null;
+      case 'rank': {
+        const value = number(item.avgRank);
+        return hasMine && number(item.games) >= MIN_AVG_RANK_GAMES && value > 0
+          ? value
+          : null;
+      }
+      case 'best':
+        return hasMine ? number(item.bestScore) : null;
+      case 'worst':
+        return hasMine ? number(item.worstScore) : null;
+      case 'proficiency':
+        return hasMine ? number(item.proficiency) : null;
+      case 'overallGames':
+        return overall.games === undefined ? null : number(overall.games);
+      case 'overallWinRate':
+        return overall.winRate === undefined ? null : number(overall.winRate);
+      case 'overallAvg':
+        return overall.avgScore === undefined ? null : number(overall.avgScore);
+      case 'overallRank': {
+        const value = number(overall.avgRank);
+        return value > 0 ? value : null;
+      }
+      case 'overallPickRate':
+        return overall.pickRate === undefined ? null : number(overall.pickRate);
+      default:
+        return null;
+    }
+  };
+  const tieBreak = (a, b) =>
+    number(b.avgScore) - number(a.avgScore) || number(b.games) - number(a.games);
   const list = (Array.isArray(champions) ? champions : [])
     .filter((item) =>
       showAll ? number(item?.overall?.games) > 0 : number(item?.games) > 0,
     )
     .sort((a, b) => {
-      if (sort === 'games') {
-        return number(b.games) - number(a.games) || number(b.avgScore) - number(a.avgScore);
-      }
-      if (sort === 'winRate') {
-        return (
-          number(b.winRate) - number(a.winRate) ||
-          number(b.games) - number(a.games) ||
-          number(b.avgScore) - number(a.avgScore)
-        );
-      }
-      if (sort === 'best') {
-        return number(b.bestScore) - number(a.bestScore) || number(b.avgScore) - number(a.avgScore);
-      }
-      if (sort === 'proficiency') {
-        return (
-          number(b.proficiency) - number(a.proficiency) ||
-          number(b.avgScore) - number(a.avgScore) ||
-          number(b.games) - number(a.games)
-        );
-      }
-      if (sort === 'overallAvg') {
-        return (
-          number(overallOf(b).avgScore) - number(overallOf(a).avgScore) ||
-          number(b.avgScore) - number(a.avgScore) ||
-          number(b.games) - number(a.games)
-        );
-      }
-      if (sort === 'overallWinRate') {
-        return (
-          number(overallOf(b).winRate) - number(overallOf(a).winRate) ||
-          number(b.winRate) - number(a.winRate) ||
-          number(b.games) - number(a.games)
-        );
-      }
-      if (sort === 'overallRank') {
-        const aRank = number(overallOf(a).avgRank);
-        const bRank = number(overallOf(b).avgRank);
-        return (
-          (aRank > 0 ? aRank : Number.POSITIVE_INFINITY) -
-            (bRank > 0 ? bRank : Number.POSITIVE_INFINITY) ||
-          number(b.avgScore) - number(a.avgScore)
-        );
-      }
-      if (sort === 'overallPickRate') {
-        return (
-          number(overallOf(b).pickRate) - number(overallOf(a).pickRate) ||
-          number(overallOf(b).games) - number(overallOf(a).games) ||
-          number(b.avgScore) - number(a.avgScore)
-        );
-      }
-      return number(b.avgScore) - number(a.avgScore) || number(b.games) - number(a.games);
+      const aValue = metricOf(a, sort);
+      const bValue = metricOf(b, sort);
+      if (aValue === null && bValue === null) return tieBreak(a, b);
+      if (aValue === null) return 1;
+      if (bValue === null) return -1;
+      if (aValue !== bValue) return (aValue - bValue) * sortDir;
+      return tieBreak(a, b);
     });
   const modeLabel =
     CHAMPION_RANKING_MODE_LABELS[mode] ?? CHAMPION_RANKING_MODE_LABELS.all;
-  const sortLabel = CHAMPION_RANKING_SORT_LABELS[sort];
+  const sortLabel = `${CHAMPION_RANKING_SORT_LABELS[sort]} ${
+    sortDir === 1 ? '↑' : '↓'
+  }`;
   const totalGames = list.reduce(
     (sum, item) =>
       sum + (showAll ? number(overallOf(item).games) : number(item.games)),
@@ -5795,18 +5804,20 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
           <small class="champion-rank-overall-line" title="${escapeHtml(
             overallTitle,
           )}">
+            ${
+              hasMine
+                ? `<span class="champion-rank-self" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">我 <b>${myGames}</b> 场 · 熟练度 <b>${myProf}</b></span>`
+                : '<span class="champion-rank-self champion-rank-not-played">我还没玩过</span>'
+            }
             <span>全体 <b>${overallGames}</b> 场</span>
             <span>登场率 <b>${overallPickRate}</b></span>
-            <span>胜率 <b>${overallWin}</b></span>
           </small>
         </span>
-        <span class="champion-rank-mine">
-          ${
-            hasMine
-              ? `<span class="champion-rank-mine-main">${myGames} 场 · <b class="${myWinClass}">${myWin}</b></span>
-                 <small class="champion-rank-prof" title="综合熟练度：场次经验 + 胜率、均分、最高分 × 样本置信度">熟练度 ${myProf}</small>`
-              : '<span class="champion-rank-not-played">还没玩过</span>'
-          }
+        <span class="champion-rank-stat">
+          <b class="champion-rank-rate ${myWinClass}">${myWin}</b>
+          <small class="champion-rank-compare" title="${escapeHtml(
+            overallTitle,
+          )}">/ ${overallWin}</small>
         </span>
         <span class="champion-rank-stat">
           <b class="champion-rank-score" style="color:${
@@ -5864,6 +5875,20 @@ function updateChampionRankingRanges() {
   }
 }
 
+/** 同步表头排序按钮的激活状态和升/降序箭头 */
+function updateChampionRankingSortHead() {
+  if (!els.championRankingHead) return;
+  const dir = state.championRankingSortDir === 'asc' ? 'asc' : 'desc';
+  for (const button of els.championRankingHead.querySelectorAll(
+    '[data-ranking-sort]',
+  )) {
+    const active = button.dataset.rankingSort === state.championRankingSort;
+    button.classList.toggle('active', active);
+    button.classList.toggle('asc', active && dir === 'asc');
+    button.classList.toggle('desc', active && dir === 'desc');
+  }
+}
+
 async function loadChampionRanking() {
   const token = (state.championRankingToken ?? 0) + 1;
   state.championRankingToken = token;
@@ -5910,7 +5935,6 @@ async function loadChampionRanking() {
 
 function openChampionRanking(options = {}) {
   if (!options.keepMode) state.championRankingMode = 'ARAM';
-  if (els.championRankingSort) els.championRankingSort.value = state.championRankingSort;
   if (els.championRankingAll) {
     els.championRankingAll.checked = state.championRankingShowAll;
   }
@@ -5921,6 +5945,7 @@ function openChampionRanking(options = {}) {
   }
   updateChampionRankingTabs();
   updateChampionRankingRanges();
+  updateChampionRankingSortHead();
   els.championRankingModal.classList.remove('hidden');
   void loadChampionRanking();
 }
@@ -6588,10 +6613,20 @@ els.championRankingRanges?.addEventListener('click', (event) => {
   updateChampionRankingRanges();
   void loadChampionRanking();
 });
-els.championRankingSort.addEventListener('change', () => {
-  const sort = els.championRankingSort.value;
-  if (!CHAMPION_RANKING_SORT_LABELS[sort]) return;
-  state.championRankingSort = sort;
+els.championRankingHead?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-ranking-sort]');
+  if (!button) return;
+  const key = button.dataset.rankingSort;
+  if (!CHAMPION_RANKING_SORT_LABELS[key]) return;
+  if (state.championRankingSort === key) {
+    state.championRankingSortDir =
+      state.championRankingSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.championRankingSort = key;
+    state.championRankingSortDir = CHAMPION_RANKING_ASC_SORTS.has(key)
+      ? 'asc'
+      : 'desc';
+  }
   renderChampionRanking(state.championRankingData, state.championRankingMode);
 });
 els.championRankingList.addEventListener('click', (event) => {
