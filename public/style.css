@@ -885,36 +885,6 @@ body::before {
   overflow: visible;
 }
 
-.champion-radar-compare {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 10px;
-}
-
-.champion-radar-metric {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 4px 0;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
-  font-size: 11px;
-}
-
-.champion-radar-metric-label {
-  width: 30px;
-  color: var(--muted);
-}
-
-.champion-radar-metric-self {
-  font-size: 12.5px;
-  color: #5eead4;
-}
-
-.champion-radar-metric-all {
-  font-size: 10.5px;
-  color: #9aa8c7;
-}
-
 .champion-radar-items {
   display: flex;
   flex-direction: column;

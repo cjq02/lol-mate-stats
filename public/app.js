@@ -5679,15 +5679,6 @@ function renderChampionMatchRadar() {
       </div>`;
     } else {
       const series = timeStatsRadarSeries(radar);
-      const metricsHtml = (Array.isArray(radar.metrics) ? radar.metrics : [])
-        .map(
-          (metric) => `<div class="champion-radar-metric">
-            <span class="champion-radar-metric-label">${escapeHtml(metric.label)}</span>
-            <b class="champion-radar-metric-self">${escapeHtml(metric.selfText)}</b>
-            <span class="champion-radar-metric-all">全体 ${escapeHtml(metric.allText)}</span>
-          </div>`,
-        )
-        .join('');
       html = `<div class="champion-radar-card">
         <div class="champion-radar-head">
           <span class="champion-radar-title">${escapeHtml(
@@ -5705,7 +5696,6 @@ function renderChampionMatchRadar() {
           avgLabel: '全体',
           ariaLabel: `${name}对比`,
         })}</div>
-        <div class="champion-radar-compare">${metricsHtml}</div>
         ${championRadarItemsHtml(radar)}
         <div class="champion-radar-note">实线：我 · 虚线：全体；经济 / 承伤 / 伤害 / 治疗为分均</div>
       </div>`;
