@@ -5972,9 +5972,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
   const overallRangeLabel =
     state.championRankingAllRange > 0
       ? state.championRankingAllRangeScope === 'champion'
-        ? `全体近 ${state.championRankingAllRange} 场（每个英雄 ${overallAppearanceRange(
+        ? `全体近 ${overallAppearanceRange(
             state.championRankingAllRange,
-          )} 场，对比全部）`
+          )} 场（按英雄，对比全部）`
         : `全体近 ${state.championRankingAllRange} 场（对比全部）`
       : '全体全部';
   const metaPrefix = `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · ${overallRangeLabel}${
@@ -6207,10 +6207,14 @@ function updateChampionRankingRanges() {
   for (const button of els.championRankingRanges.querySelectorAll(
     '[data-ranking-all-range]',
   )) {
-    button.classList.toggle(
-      'active',
-      Number(button.dataset.rankingAllRange) === state.championRankingAllRange,
-    );
+    const allRange = Number(button.dataset.rankingAllRange) || 0;
+    button.classList.toggle('active', allRange === state.championRankingAllRange);
+    // 按英雄时全体口径按每局 10 人折算，页签文案跟着显示每人的实际窗口
+    const labelValue =
+      state.championRankingAllRangeScope === 'champion' && allRange > 0
+        ? overallAppearanceRange(allRange)
+        : allRange;
+    button.textContent = allRange > 0 ? `近 ${labelValue} 场` : '全部';
   }
   if (els.championRankingRangeScope) {
     els.championRankingRangeScope.value = state.championRankingRangeScope;
@@ -7094,6 +7098,8 @@ els.championRankingAllRangeScope?.addEventListener('change', () => {
   if (!CHAMPION_RANGE_SCOPES.has(value)) return;
   if (value === state.championRankingAllRangeScope) return;
   state.championRankingAllRangeScope = value;
+  // 页签文案要跟着口径重新折算（按英雄时显示 N/10 场）
+  updateChampionRankingRanges();
   void loadChampionRanking();
 });
 els.championRankingHead?.addEventListener('click', (event) => {
