@@ -32,7 +32,7 @@
 
 `npm start` 运行的是 `dist/` 构建产物。改完 `src/` 后必须执行 `npm run build` 再启动；只重启服务不会生效。开发调试用 `npm run dev`，或直接用 `npm run start:build`（自动先构建）。
 
-改完代码后按改动位置决定要不要重启：改 `src/` 要 `npm run build` 并重启正在运行的 `npm start` 进程；只改 `public/`（HTML / CSS / app.js）不需要构建和重启，静态资源按文件 mtime 重新读取，浏览器刷新即可。
+改完代码后按改动位置决定要不要重启：改 `src/` 要 `npm run build`，然后结束正在运行的旧 `npm start` 进程并重新启动（默认端口 51730），确保新进程加载新的 `dist/`；不要只重启而不构建。只改 `public/`（HTML / CSS / app.js）不需要构建和重启，静态资源按文件 mtime 重新读取，浏览器刷新即可。
 
 ## 目录职责
 
