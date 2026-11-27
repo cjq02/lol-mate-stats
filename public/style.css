@@ -498,15 +498,19 @@ body::before {
   line-height: 1;
 }
 
-.champion-ranking-overall-mode .overall-mode-text:first-child {
+.champion-ranking-overall-mode .overall-mode-prefix {
+  line-height: 1;
+}
+
+.champion-ranking-overall-mode .overall-mode-value {
   color: #dbe6ff;
 }
 
-.champion-ranking-overall-mode.is-delta .overall-mode-text:first-child {
+.champion-ranking-overall-mode.is-delta .overall-mode-value {
   color: var(--muted);
 }
 
-.champion-ranking-overall-mode.is-delta .overall-mode-text:last-child {
+.champion-ranking-overall-mode.is-delta .overall-mode-delta {
   color: #dbe6ff;
 }
 
