@@ -1859,6 +1859,162 @@ export async function getChampionModeRecords(
   return result;
 }
 
+/** 选人阶段可选英雄的整体数据窗口：每个英雄最近 N 次出场 */
+export const ARAM_CHAMPION_RECENT_APPEARANCES = 200;
+
+/** 某个英雄近期窗口内的整体表现 + 全部历史基线 */
+export interface ChampionOverallWindowRecord {
+  championId: number;
+  /** 最近 N 次出场窗口内的数据 */
+  recent: {
+    games: number;
+    wins: number;
+    winRate: number;
+    avgScore: number;
+    avgRank: number;
+  };
+  /** 全部历史，用作涨跌幅度基线 */
+  all: {
+    games: number;
+    wins: number;
+    winRate: number;
+    avgScore: number;
+    avgRank: number;
+  };
+}
+
+const championOverallWindowCache = new Map<
+  string,
+  { at: number; record: ChampionOverallWindowRecord | null }
+>();
+
+/**
+ * 选人阶段用：一次查出每个英雄「最近 N 次出场」和「全部历史」的
+ * 胜率、平均分、平均排名，两者的差值就是涨跌幅度。
+ */
+export async function getChampionOverallWindow(
+  championIds: number[],
+  mode: GameModeKey,
+  recentAppearances: number,
+): Promise<Map<number, ChampionOverallWindowRecord>> {
+  const result = new Map<number, ChampionOverallWindowRecord>();
+  const ids = [...new Set(championIds.filter((id) => Number.isFinite(id) && id > 0))];
+  const recent = Math.max(1, Math.trunc(Number(recentAppearances) || 0));
+  const db = await getDb();
+  if (!db || !ids.length) return result;
+
+  const now = Date.now();
+  const missing: number[] = [];
+  for (const id of ids) {
+    const key = `${mode}:${recent}:${id}`;
+    const cached = championOverallWindowCache.get(key);
+    if (cached && now - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
+      if (cached.record) result.set(id, cached.record);
+    } else {
+      missing.push(id);
+    }
+  }
+  if (!missing.length) return result;
+
+  // 先圈定包含目标英雄的对局再算同局排名，避免每条刷新都扫全部参与者
+  const targetPlaceholders = missing.flatMap(() => ['?', '?']).join(',');
+  const idPlaceholders = missing.map(() => '?').join(',');
+  const params: Array<string | number> = [
+    recent,
+    recent,
+    recent,
+    recent,
+    ...missing,
+    ...missing.map((id) => id + 60000),
+    ...missing,
+  ];
+
+  try {
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT r.champion_id,
+              COALESCE(SUM(r.appearance_rank <= ?), 0) AS recent_games,
+              COALESCE(SUM(CASE WHEN r.appearance_rank <= ? AND r.win = 1 THEN 1 ELSE 0 END), 0) AS recent_wins,
+              AVG(CASE WHEN r.appearance_rank <= ? THEN r.score END) AS recent_avg_score,
+              AVG(CASE WHEN r.appearance_rank <= ? THEN r.game_rank END) AS recent_avg_rank,
+              COUNT(*) AS games,
+              COALESCE(SUM(r.win = 1), 0) AS wins,
+              AVG(r.score) AS avg_score,
+              AVG(r.game_rank) AS avg_rank
+       FROM (
+         SELECT g.champion_id, g.score, g.win, g.game_rank,
+                ROW_NUMBER() OVER (
+                  PARTITION BY g.champion_id
+                  ORDER BY g.game_creation DESC, g.game_id DESC
+                ) AS appearance_rank
+         FROM (
+           SELECT ${NORMALIZED_CHAMPION_ID} AS champion_id,
+                  p.game_id, p.win, p.score,
+                  p.\`position\`, m.queue_id, m.game_mode, m.game_creation,
+                  RANK() OVER (PARTITION BY p.game_id ORDER BY p.score DESC) AS game_rank
+           FROM match_participants p
+           JOIN matches m ON m.game_id = p.game_id
+           JOIN (
+             SELECT DISTINCT p2.game_id
+             FROM match_participants p2
+             WHERE p2.score IS NOT NULL
+               AND p2.champion_id IN (${targetPlaceholders})
+           ) tg ON tg.game_id = p.game_id
+           WHERE p.score IS NOT NULL
+             AND m.duration_seconds > 300
+             AND COALESCE(m.game_mode, '') <> 'PRACTICETOOL'
+         ) g
+         WHERE g.champion_id IN (${idPlaceholders})
+           AND ${championModeFilterSql(mode, 'g', 'g')}
+       ) r
+       GROUP BY r.champion_id`,
+      params,
+    );
+    const found = new Set<number>();
+    for (const row of rows) {
+      const championId = Number(row.champion_id);
+      if (!championId) continue;
+      const games = Number(row.games) || 0;
+      const wins = Number(row.wins) || 0;
+      const recentGames = Number(row.recent_games) || 0;
+      const recentWins = Number(row.recent_wins) || 0;
+      const record: ChampionOverallWindowRecord = {
+        championId,
+        recent: {
+          games: recentGames,
+          wins: recentWins,
+          winRate: recentGames > 0 ? recentWins / recentGames : 0,
+          avgScore: Number(row.recent_avg_score) || 0,
+          avgRank: Number(row.recent_avg_rank) || 0,
+        },
+        all: {
+          games,
+          wins,
+          winRate: games > 0 ? wins / games : 0,
+          avgScore: Number(row.avg_score) || 0,
+          avgRank: Number(row.avg_rank) || 0,
+        },
+      };
+      result.set(championId, record);
+      championOverallWindowCache.set(`${mode}:${recent}:${championId}`, {
+        at: now,
+        record,
+      });
+      found.add(championId);
+    }
+    for (const id of missing) {
+      if (!found.has(id)) {
+        championOverallWindowCache.set(`${mode}:${recent}:${id}`, {
+          at: now,
+          record: null,
+        });
+      }
+    }
+  } catch {
+    /* 查询失败时按无整体数据降级，不影响个人数据 */
+  }
+  return result;
+}
+
 export async function getPlayerMatches(
   puuid: string,
   limit: number,

@@ -1220,19 +1220,60 @@ function renderAramChampions(snapshot) {
     return;
   }
 
-  els.aramHint.textContent = `当前英雄 + 替补席 ${options.length} 个 · 点击查看战绩，悬停看场次`;
+  const overallWindow = options.reduce(
+    (max, option) => Math.max(max, Number(option.globalRange) || 0),
+    0,
+  );
+  els.aramHint.textContent = `当前英雄 + 替补席 ${options.length} 个 · 整体取每个英雄${
+    overallWindow > 0 ? `近 ${overallWindow} 次出场` : '全部历史'
+  }，↑↓ 为对比全部历史的涨跌 · 点击查看战绩`;
   const nodes = options.map((option) => {
-    const mine = option.games > 0 ? winRatePct(option.winRate) : '未使用';
-    const overall = option.globalGames > 0 ? winRatePct(option.globalWinRate) : '-';
+    const hasMine = option.games > 0;
+    const hasGlobal = Number(option.globalGames) > 0;
+    const mine = hasMine ? winRatePct(option.winRate) : '未使用';
+    const overall = hasGlobal ? winRatePct(option.globalWinRate) : '-';
+    const overallAvg = hasGlobal ? num(option.globalAvgScore, 1) : '-';
+    const overallRank = hasGlobal ? num(option.globalAvgRank, 1) : '-';
     const avgScore = Number(option.avgScore) || 0;
-    const showScore = option.games > 0 && avgScore > 0;
+    const showScore = hasMine && avgScore > 0;
+    const baseline = option.globalBaseline ?? null;
+    // 增减幅度沿用英雄榜的箭头样式，零变化时不显示
+    const winDelta =
+      baseline && hasGlobal
+        ? championRankDeltaHtml(option.globalWinRate, baseline.winRate, {
+            percent: true,
+            baseText: winRatePct(baseline.winRate),
+          })
+        : '';
+    const avgDelta =
+      baseline && hasGlobal
+        ? championRankDeltaHtml(option.globalAvgScore, baseline.avgScore, {
+            baseText: num(baseline.avgScore, 1),
+          })
+        : '';
+    const rankDelta =
+      baseline && hasGlobal
+        ? championRankDeltaHtml(option.globalAvgRank, baseline.avgRank, {
+            digits: 2,
+            inverse: true,
+            baseText: num(baseline.avgRank, 1),
+          })
+        : '';
+    const windowText =
+      Number(option.globalRange) > 0 ? `近 ${option.globalRange} 次出场` : '全部历史';
+    const baselineText = baseline
+      ? `；全部历史：胜率 ${winRatePct(baseline.winRate)}（${num(
+          baseline.games,
+          0,
+        )} 场）、评分 ${num(baseline.avgScore, 1)}、排名 ${num(baseline.avgRank, 1)}`
+      : '';
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `aram-champion${option.isCurrent ? ' current' : ''}`;
-    button.title = `${option.championName}：本地存档整体 ${overall}${
-      option.globalGames ? `（${option.globalGames} 场）` : ''
-    }；我的 ${mine}${option.games ? `（${option.games} 场）` : ''}${
-      showScore ? `，均分 ${avgScore.toFixed(1)}` : ''
+    button.title = `${option.championName}：整体${windowText} 胜率 ${overall}${
+      hasGlobal ? `（${num(option.globalGames, 0)} 场）` : ''
+    }、评分 ${overallAvg}、排名 ${overallRank}${baselineText}；我的 胜率 ${mine}${
+      hasMine ? `（${option.games} 场）、评分 ${showScore ? num(avgScore, 1) : '-'}` : ''
     }`;
     button.innerHTML = `
       <span class="aram-champ-icon">${champIconHtml(
@@ -1241,20 +1282,22 @@ function renderAramChampions(snapshot) {
         'sm',
       )}</span>
       <span class="aram-champ-main">
-        <span class="aram-champ-stats">
-          <span class="aram-stat"><small>整体</small><b>${overall}</b></span>
-          <span class="aram-stat mine"><small>我的</small><b>${mine}</b></span>
-        </span>
         <span class="aram-champ-name">${escapeHtml(option.championName)}${
           option.isCurrent ? '<em class="aram-current">当前</em>' : ''
         }${option.isPriority ? '<em class="aram-priority">优先</em>' : ''}</span>
-        ${
-          showScore
-            ? `<span class="aram-score" title="我的平均评分"><small>均分</small><b style="color:${ratingColor(
-                avgScore,
-              )}">${avgScore.toFixed(1)}</b></span>`
-            : ''
-        }
+        <span class="aram-champ-row">
+          <small class="aram-row-label">整体</small>
+          <span class="aram-stat"><small>胜率</small><b>${overall}</b>${winDelta}</span>
+          <span class="aram-stat"><small>评分</small><b>${overallAvg}</b>${avgDelta}</span>
+          <span class="aram-stat"><small>排名</small><b>${overallRank}</b>${rankDelta}</span>
+        </span>
+        <span class="aram-champ-row">
+          <small class="aram-row-label">我的</small>
+          <span class="aram-stat mine"><small>胜率</small><b>${mine}</b></span>
+          <span class="aram-stat mine"><small>评分</small><b${
+            showScore ? ` style="color:${ratingColor(avgScore)}"` : ''
+          }>${showScore ? num(avgScore, 1) : '-'}</b></span>
+        </span>
       </span>
     `;
     button.addEventListener('click', () =>

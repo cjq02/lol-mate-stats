@@ -35,6 +35,7 @@ import { analyzeParticipant, computeMatchScores, detectLane, matchBestTags } fro
 import { ReportCollector } from './stats/collector.js';
 import { analyzeGame } from './stats/analyze.js';
 import {
+  ARAM_CHAMPION_RECENT_APPEARANCES,
   DEFAULT_OVERALL_RANGE_SCOPE,
   DEFAULT_PLAYER_RANGE_SCOPE,
   archiveGames,
@@ -42,6 +43,7 @@ import {
   getChampionModeRecords,
   getChampionOverallScores,
   getChampionOverallTotal,
+  getChampionOverallWindow,
   getAllChampionOverallScores,
   getChampionOverallForCards,
   getPlayerChampionScores,
@@ -1943,7 +1945,7 @@ export class LiveSource implements DataSource {
         localMember?.puuid
           ? getChampionModeRecords(ids, 'ARAM', localMember.puuid)
           : Promise.resolve(new Map<number, ChampionModeRecord>()),
-        getChampionModeRecords(ids, 'ARAM'),
+        getChampionOverallWindow(ids, 'ARAM', ARAM_CHAMPION_RECENT_APPEARANCES),
         api.getChampionMap().catch(() => new Map()),
       ]);
 
@@ -1964,8 +1966,20 @@ export class LiveSource implements DataSource {
           wins: personal?.wins ?? 0,
           winRate: personal?.winRate ?? 0,
           avgScore: personal?.avgScore ?? 0,
-          globalGames: global?.games ?? 0,
-          globalWinRate: global?.winRate ?? 0,
+          globalGames: global?.recent.games ?? 0,
+          globalWinRate: global?.recent.winRate ?? 0,
+          globalRange: ARAM_CHAMPION_RECENT_APPEARANCES,
+          globalAvgScore: global?.recent.avgScore ?? 0,
+          globalAvgRank: global?.recent.avgRank ?? 0,
+          globalBaseline:
+            global && global.all.games > 0
+              ? {
+                  games: global.all.games,
+                  winRate: global.all.winRate,
+                  avgScore: global.all.avgScore,
+                  avgRank: global.all.avgRank,
+                }
+              : undefined,
         };
       });
       // 按整体胜率从高到低排，样本少的靠后；没有样本的排最后

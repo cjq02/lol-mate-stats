@@ -1500,6 +1500,15 @@ test('选人阶段 AI 提示词包含替补席、开黑和模式限制', () => {
         avgScore: 62,
         globalGames: 100,
         globalWinRate: 0.52,
+        globalRange: 200,
+        globalAvgScore: 49.4,
+        globalAvgRank: 5.8,
+        globalBaseline: {
+          games: 3890,
+          winRate: 0.48,
+          avgScore: 47.2,
+          avgRank: 6.1,
+        },
       },
       {
         championId: 103,
@@ -1512,6 +1521,9 @@ test('选人阶段 AI 提示词包含替补席、开黑和模式限制', () => {
         avgScore: 0,
         globalGames: 200,
         globalWinRate: 0.55,
+        globalRange: 200,
+        globalAvgScore: 54.3,
+        globalAvgRank: 4.9,
       },
     ],
     localPlayer: {
@@ -1558,6 +1570,9 @@ test('选人阶段 AI 提示词包含替补席、开黑和模式限制', () => {
   assert.ok(text.includes('敌方英雄在选人阶段不可见'), text);
   assert.ok(text.includes('大乱斗可选英雄'), text);
   assert.ok(text.includes('九尾妖狐'), text);
+  assert.ok(text.includes('整体近 200 次出场'), text);
+  assert.ok(text.includes('平均排名 5.8'), text);
+  assert.ok(text.includes('全部历史 48% / 评分 47.2 / 排名 6.1'), text);
   assert.ok(text.includes('替补'), text);
   assert.ok(text.includes('开黑 2 人'), text);
   assert.ok(text.includes('守护天使'), text);

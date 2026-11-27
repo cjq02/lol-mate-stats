@@ -4652,11 +4652,17 @@ button.type-radar-champion-row:focus-visible {
   border: 1px solid rgba(80, 220, 140, 0.24);
 }
 
-.aram-champ-stats {
+.aram-champ-row {
   display: flex;
   align-items: baseline;
   gap: 10px;
   white-space: nowrap;
+}
+
+.aram-row-label {
+  min-width: 24px;
+  font-size: 10.5px;
+  color: var(--muted-2);
 }
 
 .aram-stat {
@@ -4678,22 +4684,21 @@ button.type-radar-champion-row:focus-visible {
   color: #e2ebff;
 }
 
+.aram-champ-row .aram-stat small {
+  font-size: 10px;
+}
+
+.aram-champ-row .aram-stat b {
+  font-size: 13.5px;
+}
+
+/* 差值沿用英雄榜样式，但面板空间够用，不套用窄屏隐藏规则 */
+.aram-champ-row .champion-rank-delta {
+  display: inline;
+}
+
 .aram-stat.mine b {
   color: #5eead4;
-}
-
-.aram-score {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.aram-score b {
-  font-size: 13px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
 }
 
 .board {

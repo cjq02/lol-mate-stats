@@ -727,11 +727,21 @@ export function buildChampSelectAnalysisMessages(
       const roleTags = [champion.isCurrent ? '当前' : '替补', champion.isPriority ? '优先' : '']
         .filter(Boolean)
         .join('、');
+      const baseline = champion.globalBaseline;
+      const trend = baseline
+        ? `，全部历史 ${pct(baseline.winRate)} / 评分 ${fix(baseline.avgScore, 1)} / 排名 ${fix(
+            baseline.avgRank,
+            1,
+          )}`
+        : '';
       return `- ${champion.championName}（${roleTags}）：我的 ${fix(champion.games)} 场 ${pct(
         champion.winRate,
-      )}，均分 ${fix(champion.avgScore, 1)}；本地存档 ${fix(champion.globalGames)} 场 ${pct(
-        champion.globalWinRate,
-      )}`;
+      )}，均分 ${fix(champion.avgScore, 1)}；${
+        champion.globalRange ? `整体近 ${champion.globalRange} 次出场` : '本地存档'
+      } ${fix(champion.globalGames)} 场 胜率 ${pct(champion.globalWinRate)}、评分 ${fix(
+        champion.globalAvgScore,
+        1,
+      )}、平均排名 ${fix(champion.globalAvgRank, 1)}${trend}`;
     })
     .join('\n');
 

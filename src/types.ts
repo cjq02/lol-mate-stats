@@ -46,6 +46,19 @@ export interface AramChampionOption {
   /** 本地存档里所有玩家在该英雄上的整体数据 */
   globalGames: number;
   globalWinRate: number;
+  /** 整体数据按每个英雄最近 N 次出场统计，N 即这个窗口 */
+  globalRange?: number;
+  /** 整体平均评分 */
+  globalAvgScore: number;
+  /** 整体平均排名（同局有评分的玩家一起算） */
+  globalAvgRank: number;
+  /** 全部历史的整体数据，用来显示增减幅度 */
+  globalBaseline?: {
+    games: number;
+    winRate: number;
+    avgScore: number;
+    avgRank: number;
+  };
 }
 
 export interface LcuConnection {
