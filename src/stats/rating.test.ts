@@ -30,6 +30,7 @@ import {
   CHAMPION_RANGE_SCOPES,
   DEFAULT_OVERALL_RANGE_SCOPE,
   DEFAULT_PLAYER_RANGE_SCOPE,
+  overallAppearanceRange,
   parseChampionRangeScope,
 } from './archive.js';
 import { championRole, championRoleProfile } from './champion-roles.js';
@@ -4179,6 +4180,15 @@ test('英雄榜场次口径只接受 champion / match，非法值回落到默认
   assert.equal(parseChampionRangeScope('all', DEFAULT_PLAYER_RANGE_SCOPE), 'champion');
   assert.equal(parseChampionRangeScope('', DEFAULT_OVERALL_RANGE_SCOPE), 'match');
   assert.equal(parseChampionRangeScope(null, DEFAULT_PLAYER_RANGE_SCOPE), 'champion');
+});
+
+test('全体按英雄时每个英雄的出场窗口按一局 10 人折算', () => {
+  assert.equal(overallAppearanceRange(1000), 100, '近 1000 场 → 每个英雄 100 次出场');
+  assert.equal(overallAppearanceRange(2000), 200);
+  assert.equal(overallAppearanceRange(10), 1);
+  assert.equal(overallAppearanceRange(5), 1, '不足 10 场时至少保留 1 次出场');
+  assert.equal(overallAppearanceRange(0), undefined, '全部场次不截取');
+  assert.equal(overallAppearanceRange(undefined), undefined);
 });
 
 console.log(`\n${passed} 项测试全部通过`);

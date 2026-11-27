@@ -671,6 +671,20 @@ export type ChampionRangeScope = (typeof CHAMPION_RANGE_SCOPES)[number];
 export const DEFAULT_PLAYER_RANGE_SCOPE: ChampionRangeScope = 'champion';
 export const DEFAULT_OVERALL_RANGE_SCOPE: ChampionRangeScope = 'match';
 
+/**
+ * 全体「近 X 场 + 按英雄」时，每个英雄的窗口按一局 10 人折算：
+ * 选「近 1000 场」时每个英雄只取最近 100 次出场，避免样本量被放大 10 倍。
+ */
+const OVERALL_APPEARANCE_DIVISOR = 10;
+
+/** 全体按英雄截取时，单个英雄实际使用的出场窗口 */
+export function overallAppearanceRange(
+  range: number | undefined,
+): number | undefined {
+  if (!range || range <= 0) return undefined;
+  return Math.max(1, Math.round(range / OVERALL_APPEARANCE_DIVISOR));
+}
+
 /** 解析前端传来的场次口径，非法值回落到默认口径 */
 export function parseChampionRangeScope(
   raw: string | null | undefined,
@@ -1261,7 +1275,7 @@ export async function getChampionOverallScores(
   const appearance =
     rangeScope === 'match'
       ? { rankColumn: '', condition: '', params: [] }
-      : championAppearanceWindow(range);
+      : championAppearanceWindow(overallAppearanceRange(range));
   const params: Array<string | number> = [
     ...matchWindow.params,
     ...missing,
@@ -1387,7 +1401,7 @@ export async function getChampionOverallTotal(
   const appearance =
     rangeScope === 'match'
       ? { rankColumn: '', condition: '', params: [] }
-      : championAppearanceWindow(range, 'MAX(m.game_creation)');
+      : championAppearanceWindow(overallAppearanceRange(range), 'MAX(m.game_creation)');
   try {
     if (rangeScope === 'champion') {
       // 按英雄口径下登场率的分母是对局数：
@@ -1468,7 +1482,7 @@ export async function getAllChampionOverallScores(
   const appearance =
     rangeScope === 'match'
       ? { rankColumn: '', condition: '', params: [] }
-      : championAppearanceWindow(range);
+      : championAppearanceWindow(overallAppearanceRange(range));
   if (appearance.condition) conditions.push(appearance.condition);
   const params: Array<string | number> = [...matchWindow.params, ...appearance.params];
 

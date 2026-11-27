@@ -269,6 +269,13 @@ const CHAMPION_RANGE_SCOPE_LABELS = {
 
 const CHAMPION_RANGE_SCOPES = new Set(Object.keys(CHAMPION_RANGE_SCOPE_LABELS));
 
+/** 全体「近 X 场 + 按英雄」时每个英雄的窗口按一局 10 人折算，和后端保持一致 */
+const OVERALL_APPEARANCE_DIVISOR = 10;
+
+function overallAppearanceRange(range) {
+  return range > 0 ? Math.max(1, Math.round(range / OVERALL_APPEARANCE_DIVISOR)) : 0;
+}
+
 const TIME_STATS_DIMENSION_LABELS = {
   day: '按天',
   week: '按周',
@@ -5964,9 +5971,11 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       : '我全部场次';
   const overallRangeLabel =
     state.championRankingAllRange > 0
-      ? `${
-          state.championRankingAllRangeScope === 'champion' ? '全体每个英雄' : '全体'
-        }近 ${state.championRankingAllRange} 场（对比全部）`
+      ? state.championRankingAllRangeScope === 'champion'
+        ? `全体近 ${state.championRankingAllRange} 场（每个英雄 ${overallAppearanceRange(
+            state.championRankingAllRange,
+          )} 场，对比全部）`
+        : `全体近 ${state.championRankingAllRange} 场（对比全部）`
       : '全体全部';
   const metaPrefix = `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · ${overallRangeLabel}${
     typeFilter === 'all' ? '' : ` · 类型：${typeLabel}`
@@ -6021,7 +6030,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const overallPickTitle =
         state.championRankingAllRange > 0
           ? state.championRankingAllRangeScope === 'champion'
-            ? `每个英雄各取最近 ${state.championRankingAllRange} 次出场时的登场率`
+            ? `每个英雄各取最近 ${overallAppearanceRange(
+                state.championRankingAllRange,
+              )} 次出场时的登场率`
             : `最近 ${state.championRankingAllRange} 场对局中的出场占比`
           : '全部对局中的出场占比';
       const baseline = overall?.baseline ?? null;
