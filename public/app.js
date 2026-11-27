@@ -270,14 +270,6 @@ const CHAMPION_TYPE_FILTER_LABELS = {
   'type-default': '其他',
 };
 
-/** 英雄榜场次范围的统计口径：按英雄各取 N 场，或按最近 N 场对局统一截取 */
-const CHAMPION_RANGE_SCOPE_LABELS = {
-  champion: '按英雄',
-  match: '按场次',
-};
-
-const CHAMPION_RANGE_SCOPES = new Set(Object.keys(CHAMPION_RANGE_SCOPE_LABELS));
-
 /** 全体「近 X 场 + 按英雄」时每个英雄的窗口按一局 10 人折算，和后端保持一致 */
 const OVERALL_APPEARANCE_DIVISOR = 10;
 
@@ -6336,10 +6328,18 @@ function updateChampionRankingRanges() {
     button.textContent = allRange > 0 ? `近 ${labelValue} 场` : '全部';
   }
   if (els.championRankingRangeScope) {
-    els.championRankingRangeScope.value = state.championRankingRangeScope;
+    const isMatch = state.championRankingRangeScope === 'match';
+    els.championRankingRangeScope.checked = isMatch;
+    els.championRankingRangeScope
+      .closest('.range-scope-switch')
+      ?.classList.toggle('is-match', isMatch);
   }
   if (els.championRankingAllRangeScope) {
-    els.championRankingAllRangeScope.value = state.championRankingAllRangeScope;
+    const isMatch = state.championRankingAllRangeScope === 'match';
+    els.championRankingAllRangeScope.checked = isMatch;
+    els.championRankingAllRangeScope
+      .closest('.range-scope-switch')
+      ?.classList.toggle('is-match', isMatch);
   }
   if (els.championRankingOverallDelta) {
     // 「全体」选全部时没有历史基线，幅度不可用
@@ -7218,17 +7218,21 @@ els.championRankingRanges?.addEventListener('click', (event) => {
   void loadChampionRanking();
 });
 els.championRankingRangeScope?.addEventListener('change', () => {
-  const value = els.championRankingRangeScope.value;
-  if (!CHAMPION_RANGE_SCOPES.has(value)) return;
+  const value = els.championRankingRangeScope.checked ? 'match' : 'champion';
   if (value === state.championRankingRangeScope) return;
   state.championRankingRangeScope = value;
+  els.championRankingRangeScope
+    .closest('.range-scope-switch')
+    ?.classList.toggle('is-match', value === 'match');
   void loadChampionRanking();
 });
 els.championRankingAllRangeScope?.addEventListener('change', () => {
-  const value = els.championRankingAllRangeScope.value;
-  if (!CHAMPION_RANGE_SCOPES.has(value)) return;
+  const value = els.championRankingAllRangeScope.checked ? 'match' : 'champion';
   if (value === state.championRankingAllRangeScope) return;
   state.championRankingAllRangeScope = value;
+  els.championRankingAllRangeScope
+    .closest('.range-scope-switch')
+    ?.classList.toggle('is-match', value === 'match');
   // 页签文案要跟着口径重新折算（按英雄时显示 N/10 场）
   updateChampionRankingRanges();
   void loadChampionRanking();

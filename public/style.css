@@ -442,34 +442,44 @@ body::before {
   padding-left: 16px;
 }
 
-/* 场次口径下拉：沿用页签的圆角样式，高度和页签对齐，不额外撑高这一行 */
-.champion-ranking-card .range-tabs .range-scope-select {
+/* 场次口径开关：两个选项始终可见，当前项高亮，高度和页签对齐 */
+.champion-ranking-card .range-tabs .range-scope-switch {
   height: 27px;
-  margin: 0 0 0 2px;
-  padding: 0 20px 0 8px;
+  margin: 0 0 0 6px;
+  padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background-color: rgba(255, 255, 255, 0.03);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b9ac0' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 7px center;
-  background-size: 8px;
-  appearance: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  line-height: 1;
-  outline: none;
+  background: rgba(255, 255, 255, 0.03);
+  gap: 5px;
   align-self: center;
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.champion-ranking-card .range-tabs .range-scope-select:hover,
-.champion-ranking-card .range-tabs .range-scope-select:focus-visible {
+.champion-ranking-card .range-tabs .range-scope-switch:hover,
+.champion-ranking-card .range-tabs .range-scope-switch:focus-within {
   border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.range-scope-switch .scope-option {
+  line-height: 1;
+  transition: color 0.15s ease;
+}
+
+.range-scope-switch .scope-option-champion {
   color: #dbe6ff;
-  background-color: rgba(255, 255, 255, 0.07);
+}
+
+.range-scope-switch .scope-option-match {
+  color: var(--muted);
+}
+
+.range-scope-switch.is-match .scope-option-champion {
+  color: var(--muted);
+}
+
+.range-scope-switch.is-match .scope-option-match {
+  color: #dbe6ff;
 }
 
 .champion-ranking-card .champion-ranking-scope {

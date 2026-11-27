@@ -250,15 +250,19 @@
             <button class="tab" type="button" data-ranking-range="100">近 100 场</button>
             <button class="tab" type="button" data-ranking-range="200">近 200 场</button>
             <button class="tab active" type="button" data-ranking-range="0">全部</button>
-            <select
-              id="champion-ranking-range-scope"
-              class="champion-ranking-sort range-scope-select"
-              aria-label="我的场次截取口径"
+            <label
+              class="champion-ranking-scope range-scope-switch"
               title="按英雄：每个英雄各取最近 N 次出场；按场次：只统计我最近 N 场对局"
             >
-              <option value="champion">按英雄</option>
-              <option value="match">按场次</option>
-            </select>
+              <span class="scope-option scope-option-champion">按英雄</span>
+              <input
+                id="champion-ranking-range-scope"
+                type="checkbox"
+                aria-label="我的场次截取口径"
+              />
+              <span class="scope-slider" aria-hidden="true"></span>
+              <span class="scope-option scope-option-match">按场次</span>
+            </label>
             <span class="range-tabs-all">
               <span class="range-tabs-label">全体</span>
               <button class="tab" type="button" data-ranking-all-range="1000">近 1000 场</button>
@@ -266,15 +270,19 @@
               <button class="tab" type="button" data-ranking-all-range="5000">近 5000 场</button>
               <button class="tab active" type="button" data-ranking-all-range="10000">近 10000 场</button>
               <button class="tab" type="button" data-ranking-all-range="0">全部</button>
-              <select
-                id="champion-ranking-all-range-scope"
-                class="champion-ranking-sort range-scope-select"
-                aria-label="全体场次截取口径"
+              <label
+                class="champion-ranking-scope range-scope-switch"
                 title="按场次：所有玩家最近 N 场对局；按英雄：每个英雄各取最近 N/10 次出场（一局 10 人折算）"
               >
-                <option value="champion">按英雄</option>
-                <option value="match" selected>按场次</option>
-              </select>
+                <span class="scope-option scope-option-champion">按英雄</span>
+                <input
+                  id="champion-ranking-all-range-scope"
+                  type="checkbox"
+                  aria-label="全体场次截取口径"
+                />
+                <span class="scope-slider" aria-hidden="true"></span>
+                <span class="scope-option scope-option-match">按场次</span>
+              </label>
             </span>
           </div>
           <div id="champion-ranking-head" class="champion-rank-head">
