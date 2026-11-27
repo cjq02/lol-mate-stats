@@ -1541,7 +1541,7 @@ export class LiveSource implements DataSource {
       const cacheExpired = Date.now() - this.lastCollectAt > this.options.ttlMs;
 
       if (membersKey === this.lastMembersKey && !cacheExpired) {
-        this.updateSessionChampions(session);
+        await this.updateSessionChampions(session, this.snapshot.gameMode);
         void this.refreshAramChampions(api, session);
         return;
       }
@@ -2001,12 +2001,16 @@ export class LiveSource implements DataSource {
     }
   }
 
-  private updateSessionChampions(session: ChampSelectSession): void {
+  private async updateSessionChampions(
+    session: ChampSelectSession,
+    mode?: GameModeKey,
+  ): Promise<void> {
     if (!this.snapshot.players.length) return;
     const bySummoner = new Map<number, ChampSelectMember>(
       session.myTeam.map((member) => [member.summonerId, member]),
     );
     let changed = false;
+    let championChanged = false;
     const collector = this.collectors.get(this.options.recent);
     const players = this.snapshot.players.map((player) => {
       const member = bySummoner.get(player.summonerId);
@@ -2014,15 +2018,24 @@ export class LiveSource implements DataSource {
       const championId = member.championId || member.championPickIntent || 0;
       if (player.championId !== (championId || undefined)) {
         changed = true;
+        championChanged = true;
         return {
           ...player,
           championId: championId || undefined,
           championName: collector?.championName(championId) ?? player.championName,
+          // 换英雄后旧英雄的熟练度和整体数据不再适用，下面重新补
+          championStats: undefined,
+          championOverall: undefined,
         };
       }
       return player;
     });
-    if (changed) this.patch({ players, localPlayer: this.localPlayerFrom(session, players) });
+    if (!changed) return;
+    if (championChanged) {
+      // 选人阶段刚锁英雄时报告早已读完，只补当前英雄相关的数据
+      await collector?.attachChampionInsights(players, mode);
+    }
+    this.patch({ players, localPlayer: this.localPlayerFrom(session, players) });
   }
 
   private localPlayerFrom(

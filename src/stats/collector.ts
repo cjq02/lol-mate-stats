@@ -1107,24 +1107,6 @@ export class ReportCollector {
       }
     }
 
-    const usageEntries = targets
-      .filter((report) => report.championId)
-      .map((report) => ({
-        puuid: report.puuid as string,
-        championId: report.championId as number,
-      }));
-    const missingUsages = usageEntries.filter((entry) => {
-      const cached = this.championUsageCache.get(`${entry.puuid}:${entry.championId}`);
-      return !cached || now - cached.at > TTL;
-    });
-    if (missingUsages.length) {
-      const usages = await getPlayerChampionUsages(missingUsages);
-      for (const entry of missingUsages) {
-        const key = `${entry.puuid}:${entry.championId}`;
-        this.championUsageCache.set(key, { at: now, usage: usages.get(key) });
-      }
-    }
-
     // 旧报告缓存里的每局名次可能只有最新一场，打开卡片时按存档补算，
     // 避免平均排名样本只有 1 场（战绩列表里明明有很多场）。
     const rankTargets = targets.filter((report) => {
@@ -1170,10 +1152,40 @@ export class ReportCollector {
           this.baselineCache.get(report.puuid as string)?.sample,
         );
       }
-      if (report.championId) {
-        report.championStats = this.championUsageCache.get(
-          `${report.puuid}:${report.championId}`,
-        )?.usage;
+    }
+
+    await this.attachChampionInsights(targets, mode);
+  }
+
+  /**
+   * 补上当前英雄的个人熟练度和全体强度。
+   * 选人阶段锁定/更换英雄后只需重跑这一段，不必重新拉取队友战绩。
+   */
+  async attachChampionInsights(
+    reports: PlayerReport[],
+    mode?: GameModeKey,
+  ): Promise<void> {
+    const targets = reports.filter((report) => report.puuid && !report.isBot);
+    if (!targets.length) return;
+
+    const now = Date.now();
+    const TTL = 5 * 60_000;
+
+    const usageEntries = targets
+      .filter((report) => report.championId)
+      .map((report) => ({
+        puuid: report.puuid as string,
+        championId: report.championId as number,
+      }));
+    const missingUsages = usageEntries.filter((entry) => {
+      const cached = this.championUsageCache.get(`${entry.puuid}:${entry.championId}`);
+      return !cached || now - cached.at > TTL;
+    });
+    if (missingUsages.length) {
+      const usages = await getPlayerChampionUsages(missingUsages);
+      for (const entry of missingUsages) {
+        const key = `${entry.puuid}:${entry.championId}`;
+        this.championUsageCache.set(key, { at: now, usage: usages.get(key) });
       }
     }
 
@@ -1185,12 +1197,17 @@ export class ReportCollector {
           .filter((championId) => championId > 0),
       ),
     ];
-    if (mode && overallIds.length) {
-      const overall = await getChampionOverallForCards(overallIds, mode);
-      for (const report of targets) {
-        const championId = Number(report.championId) || 0;
-        report.championOverall = championId ? overall.get(championId) : undefined;
-      }
+    const overall =
+      mode && overallIds.length
+        ? await getChampionOverallForCards(overallIds, mode)
+        : new Map();
+
+    for (const report of targets) {
+      const championId = Number(report.championId) || 0;
+      report.championStats = championId
+        ? this.championUsageCache.get(`${report.puuid}:${championId}`)?.usage
+        : undefined;
+      report.championOverall = championId ? overall.get(championId) : undefined;
     }
   }
 
