@@ -72,7 +72,7 @@ const els = {
   championRankingModal: document.getElementById('champion-ranking-modal'),
   championRankingAll: document.getElementById('champion-ranking-all'),
   championRankingType: document.getElementById('champion-ranking-type'),
-  championRankingOverallSort: document.getElementById('champion-ranking-overall-sort'),
+  championRankingOverallDelta: document.getElementById('champion-ranking-overall-delta'),
   championRankingPatch: document.getElementById('champion-ranking-patch'),
   championRankingList: document.getElementById('champion-ranking-list'),
   championRankingTabs: document.getElementById('champion-ranking-tabs'),
@@ -230,12 +230,6 @@ const CHAMPION_RANKING_SORT_LABELS = {
 
 /** 排名和最低分默认从小到大（名次越低越好、最低分越低越差）；其余默认从大到小 */
 const CHAMPION_RANKING_ASC_SORTS = new Set(['rank', 'overallRank', 'worst']);
-
-/** 全体指标的排序口径：按当前数值，或按与全部历史的涨跌幅度 */
-const CHAMPION_OVERALL_SORT_MODES = {
-  value: '数值',
-  delta: '幅度',
-};
 
 /** 支持「涨跌幅度」排序的全体指标（全体场次没有历史基线） */
 const CHAMPION_OVERALL_DELTA_SORTS = new Set([
@@ -395,8 +389,8 @@ const state = {
   championRankingPatch: 'all',
   /** 英雄榜的英雄类型过滤：all / type-tank / type-mage 等 */
   championRankingType: 'all',
-  /** 全体指标的排序口径：value = 当前数值，delta = 与全部历史的涨跌幅度 */
-  championRankingOverallSort: 'value',
+  /** 全体指标是否按与全部历史的涨跌幅度排序（false = 按当前数值） */
+  championRankingOverallDelta: false,
   /** 英雄榜里展开的单个英雄六角星 */
   championRadarId: 0,
   championRadarName: '',
@@ -5878,12 +5872,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     ? state.championRankingSort
     : 'avg';
   const sortDir = state.championRankingSortDir === 'asc' ? 1 : -1;
-  const overallSortMode = CHAMPION_OVERALL_SORT_MODES[state.championRankingOverallSort]
-    ? state.championRankingOverallSort
-    : 'value';
   // 幅度排序只在有全部历史基线、且该指标能对比时生效
   const deltaActive =
-    overallSortMode === 'delta' &&
+    state.championRankingOverallDelta &&
     CHAMPION_OVERALL_DELTA_SORTS.has(sort) &&
     state.championRankingAllRange > 0 &&
     !(sort === 'overallPickRate' && state.championRankingAllRangeScope === 'champion');
@@ -6270,14 +6261,17 @@ function updateChampionRankingRanges() {
   if (els.championRankingAllRangeScope) {
     els.championRankingAllRangeScope.value = state.championRankingAllRangeScope;
   }
-  if (els.championRankingOverallSort) {
+  if (els.championRankingOverallDelta) {
     // 「全体」选全部时没有历史基线，幅度不可用
     const canCompare = state.championRankingAllRange > 0;
-    if (!canCompare && state.championRankingOverallSort === 'delta') {
-      state.championRankingOverallSort = 'value';
+    if (!canCompare && state.championRankingOverallDelta) {
+      state.championRankingOverallDelta = false;
     }
-    els.championRankingOverallSort.disabled = !canCompare;
-    els.championRankingOverallSort.value = state.championRankingOverallSort;
+    els.championRankingOverallDelta.checked = state.championRankingOverallDelta;
+    els.championRankingOverallDelta.disabled = !canCompare;
+    const mode = els.championRankingOverallDelta.closest('.champion-ranking-overall-mode');
+    mode?.classList.toggle('is-delta', state.championRankingOverallDelta);
+    mode?.classList.toggle('is-disabled', !canCompare);
   }
 }
 
@@ -7159,9 +7153,11 @@ els.championRankingAllRangeScope?.addEventListener('change', () => {
   updateChampionRankingRanges();
   void loadChampionRanking();
 });
-els.championRankingOverallSort?.addEventListener('change', () => {
-  const value = els.championRankingOverallSort.value;
-  state.championRankingOverallSort = CHAMPION_OVERALL_SORT_MODES[value] ? value : 'value';
+els.championRankingOverallDelta?.addEventListener('change', () => {
+  state.championRankingOverallDelta = Boolean(els.championRankingOverallDelta.checked);
+  els.championRankingOverallDelta
+    .closest('.champion-ranking-overall-mode')
+    ?.classList.toggle('is-delta', state.championRankingOverallDelta);
   if (state.championRankingData.length) {
     renderChampionRanking(state.championRankingData, state.championRankingMode);
   }

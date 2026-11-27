@@ -226,15 +226,15 @@
               <option value="nerf">仅削弱</option>
               <option value="changed">有改动</option>
             </select>
-            <select
-              id="champion-ranking-overall-sort"
-              class="champion-ranking-sort champion-ranking-overall-sort"
-              aria-label="全体指标排序口径"
-              title="全体列按当前数值排序，或按与全部历史的涨跌幅度排序（需要在「全体」选具体场次范围）"
+            <label
+              class="champion-ranking-scope champion-ranking-overall-mode"
+              title="全体列按与全部历史的涨跌幅度排序（需要在「全体」选具体场次范围）"
             >
-              <option value="value">全体排序：数值</option>
-              <option value="delta">全体排序：幅度</option>
-            </select>
+              <span class="overall-mode-text">数值</span>
+              <input id="champion-ranking-overall-delta" type="checkbox" />
+              <span class="scope-slider" aria-hidden="true"></span>
+              <span class="overall-mode-text">幅度</span>
+            </label>
           </div>
           <div
             id="champion-ranking-ranges"

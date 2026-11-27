@@ -482,14 +482,35 @@ body::before {
   background: rgba(255, 255, 255, 0.03);
 }
 
-/* 类型 / 版本 / 全体排序筛选和「所有英雄」并排放在右侧 */
+/* 类型 / 版本筛选和「所有英雄」并排放在右侧 */
 .champion-ranking-card .champion-ranking-patch,
-.champion-ranking-card .champion-ranking-type,
-.champion-ranking-card .champion-ranking-overall-sort {
+.champion-ranking-card .champion-ranking-type {
   margin: 0 0 6px 8px;
 }
 
-.champion-ranking-card .champion-ranking-overall-sort:disabled {
+/* 全体排序口径开关：左边数值、右边幅度 */
+.champion-ranking-card .champion-ranking-overall-mode {
+  margin-left: 8px;
+  gap: 5px;
+}
+
+.champion-ranking-overall-mode .overall-mode-text {
+  line-height: 1;
+}
+
+.champion-ranking-overall-mode .overall-mode-text:first-child {
+  color: #dbe6ff;
+}
+
+.champion-ranking-overall-mode.is-delta .overall-mode-text:first-child {
+  color: var(--muted);
+}
+
+.champion-ranking-overall-mode.is-delta .overall-mode-text:last-child {
+  color: #dbe6ff;
+}
+
+.champion-ranking-overall-mode.is-disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
