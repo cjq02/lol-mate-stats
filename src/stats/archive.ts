@@ -1352,26 +1352,39 @@ export async function getChampionOverallScores(
   return result;
 }
 
-/** 卡片上的英雄全体数据固定取最近 1000 场对局，和英雄排名默认口径一致 */
-export const CHAMPION_CARD_SAMPLE_LIMIT = 1000;
+/**
+ * 英雄整体数据的展示窗口：每个英雄最近 200 次出场。
+ * 选人阶段的可选英雄面板和玩家卡片共用这个口径，避免远古对局稀释当前强度。
+ */
+export const CHAMPION_RECENT_APPEARANCES = 200;
 
-/** 批量取卡片要显示的英雄全体表现：胜率、平均分、平均排名 */
+/** 卡片上的英雄全体数据：每个英雄最近 N 次出场，附全部历史基线 */
 export async function getChampionOverallForCards(
   championIds: number[],
   mode?: GameModeKey,
 ): Promise<Map<number, ChampionOverallUsage>> {
   const result = new Map<number, ChampionOverallUsage>();
-  const records = await getChampionOverallScores(
+  const records = await getChampionOverallWindow(
     championIds,
     mode,
-    CHAMPION_CARD_SAMPLE_LIMIT,
+    CHAMPION_RECENT_APPEARANCES,
   );
   for (const [championId, record] of records) {
     result.set(championId, {
-      games: record.games,
-      winRate: record.winRate,
-      avgScore: record.avgScore,
-      avgRank: record.avgRank,
+      games: record.recent.games,
+      winRate: record.recent.winRate,
+      avgScore: record.recent.avgScore,
+      avgRank: record.recent.avgRank,
+      range: CHAMPION_RECENT_APPEARANCES,
+      baseline:
+        record.all.games > 0
+          ? {
+              games: record.all.games,
+              winRate: record.all.winRate,
+              avgScore: record.all.avgScore,
+              avgRank: record.all.avgRank,
+            }
+          : undefined,
     });
   }
   return result;
@@ -1859,9 +1872,6 @@ export async function getChampionModeRecords(
   return result;
 }
 
-/** 选人阶段可选英雄的整体数据窗口：每个英雄最近 N 次出场 */
-export const ARAM_CHAMPION_RECENT_APPEARANCES = 200;
-
 /** 某个英雄近期窗口内的整体表现 + 全部历史基线 */
 export interface ChampionOverallWindowRecord {
   championId: number;
@@ -1889,12 +1899,13 @@ const championOverallWindowCache = new Map<
 >();
 
 /**
- * 选人阶段用：一次查出每个英雄「最近 N 次出场」和「全部历史」的
+ * 一次查出每个英雄「最近 N 次出场」和「全部历史」的
  * 胜率、平均分、平均排名，两者的差值就是涨跌幅度。
+ * 不传 mode 时统计所有模式。
  */
 export async function getChampionOverallWindow(
   championIds: number[],
-  mode: GameModeKey,
+  mode: GameModeKey | undefined,
   recentAppearances: number,
 ): Promise<Map<number, ChampionOverallWindowRecord>> {
   const result = new Map<number, ChampionOverallWindowRecord>();
@@ -1902,11 +1913,12 @@ export async function getChampionOverallWindow(
   const recent = Math.max(1, Math.trunc(Number(recentAppearances) || 0));
   const db = await getDb();
   if (!db || !ids.length) return result;
+  const cachePrefix = `${mode ?? 'ALL'}:${recent}`;
 
   const now = Date.now();
   const missing: number[] = [];
   for (const id of ids) {
-    const key = `${mode}:${recent}:${id}`;
+    const key = `${cachePrefix}:${id}`;
     const cached = championOverallWindowCache.get(key);
     if (cached && now - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
       if (cached.record) result.set(id, cached.record);
@@ -1919,6 +1931,7 @@ export async function getChampionOverallWindow(
   // 先圈定包含目标英雄的对局再算同局排名，避免每条刷新都扫全部参与者
   const targetPlaceholders = missing.flatMap(() => ['?', '?']).join(',');
   const idPlaceholders = missing.map(() => '?').join(',');
+  const modeFilter = mode ? championModeFilterSql(mode, 'g', 'g') : undefined;
   const params: Array<string | number> = [
     recent,
     recent,
@@ -1963,8 +1976,7 @@ export async function getChampionOverallWindow(
              AND m.duration_seconds > 300
              AND COALESCE(m.game_mode, '') <> 'PRACTICETOOL'
          ) g
-         WHERE g.champion_id IN (${idPlaceholders})
-           AND ${championModeFilterSql(mode, 'g', 'g')}
+         WHERE g.champion_id IN (${idPlaceholders})${modeFilter ? `\n           AND ${modeFilter}` : ''}
        ) r
        GROUP BY r.champion_id`,
       params,
@@ -1995,7 +2007,7 @@ export async function getChampionOverallWindow(
         },
       };
       result.set(championId, record);
-      championOverallWindowCache.set(`${mode}:${recent}:${championId}`, {
+      championOverallWindowCache.set(`${cachePrefix}:${championId}`, {
         at: now,
         record,
       });
@@ -2003,7 +2015,7 @@ export async function getChampionOverallWindow(
     }
     for (const id of missing) {
       if (!found.has(id)) {
-        championOverallWindowCache.set(`${mode}:${recent}:${id}`, {
+        championOverallWindowCache.set(`${cachePrefix}:${id}`, {
           at: now,
           record: null,
         });

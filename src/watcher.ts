@@ -35,7 +35,7 @@ import { analyzeParticipant, computeMatchScores, detectLane, matchBestTags } fro
 import { ReportCollector } from './stats/collector.js';
 import { analyzeGame } from './stats/analyze.js';
 import {
-  ARAM_CHAMPION_RECENT_APPEARANCES,
+  CHAMPION_RECENT_APPEARANCES,
   DEFAULT_OVERALL_RANGE_SCOPE,
   DEFAULT_PLAYER_RANGE_SCOPE,
   archiveGames,
@@ -1945,7 +1945,7 @@ export class LiveSource implements DataSource {
         localMember?.puuid
           ? getChampionModeRecords(ids, 'ARAM', localMember.puuid)
           : Promise.resolve(new Map<number, ChampionModeRecord>()),
-        getChampionOverallWindow(ids, 'ARAM', ARAM_CHAMPION_RECENT_APPEARANCES),
+        getChampionOverallWindow(ids, 'ARAM', CHAMPION_RECENT_APPEARANCES),
         api.getChampionMap().catch(() => new Map()),
       ]);
 
@@ -1968,7 +1968,7 @@ export class LiveSource implements DataSource {
           avgScore: personal?.avgScore ?? 0,
           globalGames: global?.recent.games ?? 0,
           globalWinRate: global?.recent.winRate ?? 0,
-          globalRange: ARAM_CHAMPION_RECENT_APPEARANCES,
+          globalRange: CHAMPION_RECENT_APPEARANCES,
           globalAvgScore: global?.recent.avgScore ?? 0,
           globalAvgRank: global?.recent.avgRank ?? 0,
           globalBaseline:

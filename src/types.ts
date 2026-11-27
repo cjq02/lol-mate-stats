@@ -336,6 +336,15 @@ export interface ChampionOverallUsage {
   avgScore: number;
   /** 该英雄的单场排名均值（双方有评分的玩家一起排） */
   avgRank: number;
+  /** 统计窗口：每个英雄最近 N 次出场 */
+  range?: number;
+  /** 全部历史数据，用来显示增减幅度 */
+  baseline?: {
+    games: number;
+    winRate: number;
+    avgScore: number;
+    avgRank: number;
+  };
 }
 
 export interface RecentSummary {

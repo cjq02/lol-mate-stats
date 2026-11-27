@@ -5345,6 +5345,11 @@ button.type-radar-champion-row:focus-visible {
   font-weight: 750;
 }
 
+/* 卡片整体数据同样保留涨跌幅，不套用英雄榜窄屏隐藏规则 */
+.champ-overall .champion-rank-delta {
+  display: inline;
+}
+
 .risk-pill {
   font-size: 10px;
   font-weight: 650;

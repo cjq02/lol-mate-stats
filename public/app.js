@@ -1682,23 +1682,60 @@ function buildCard(player, isLocal, options = {}) {
       : '';
 
   // 选人阶段 / 对局阶段 / 对局详情：这个英雄在全体玩家里的强度，放在英雄信息下面
-  const championOverallBlock =
-    (thisGame || options.liveView || options.champSelectView) &&
-    championOverall &&
-    Number(championOverall.games) > 0
-      ? `<div class="champ-overall" title="${escapeHtml(
-          `当前模式全体玩家在该英雄上的最近 ${Number(championOverall.games)} 次出场`,
-        )}">
+  const championOverallBlock = (() => {
+    if (!(thisGame || options.liveView || options.champSelectView)) return '';
+    if (!championOverall || !(Number(championOverall.games) > 0)) return '';
+    const baseOverall = championOverall.baseline ?? null;
+    const winDelta = championRankDeltaHtml(
+      championOverall.winRate,
+      baseOverall?.winRate,
+      {
+        percent: true,
+        baseText: baseOverall ? winRatePct(baseOverall.winRate) : '',
+      },
+    );
+    const scoreDelta = championRankDeltaHtml(
+      championOverall.avgScore,
+      baseOverall?.avgScore,
+      {
+        baseText: baseOverall ? num(baseOverall.avgScore, 1) : '',
+      },
+    );
+    const rankDelta = championRankDeltaHtml(
+      championOverall.avgRank,
+      baseOverall?.avgRank,
+      {
+        digits: 2,
+        inverse: true,
+        baseText: baseOverall ? num(baseOverall.avgRank, 1) : '',
+      },
+    );
+    const windowText =
+      Number(championOverall.range) > 0
+        ? `每个英雄最近 ${Number(championOverall.range)} 次出场`
+        : `最近 ${Number(championOverall.games)} 次出场`;
+    const baselineText = baseOverall
+      ? `；全部历史：胜率 ${winRatePct(baseOverall.winRate)}（${num(
+          baseOverall.games,
+          0,
+        )} 场）、均分 ${num(baseOverall.avgScore, 1)}、平均排名 ${num(
+          baseOverall.avgRank,
+          1,
+        )}`
+      : '';
+    return `<div class="champ-overall" title="${escapeHtml(
+      `当前模式全体玩家在该英雄上的${windowText}${baselineText}`,
+    )}">
           <span class="champ-overall-label">该英雄全体</span>
-          <span>胜率 <b>${winRatePct(championOverall.winRate)}</b></span>
-          <span>均分 <b>${num(championOverall.avgScore, 1)}</b></span>
+          <span>胜率 <b>${winRatePct(championOverall.winRate)}</b>${winDelta}</span>
+          <span>均分 <b>${num(championOverall.avgScore, 1)}</b>${scoreDelta}</span>
           <span>平均排名 <b>${
             Number(championOverall.avgRank) > 0
               ? `#${num(championOverall.avgRank, 1)}`
               : '-'
-          }</b></span>
-        </div>`
-      : '';
+          }</b>${rankDelta}</span>
+        </div>`;
+  })();
 
   const detail = games.length && !thisGame
     ? `<button class="btn matches-btn" type="button" data-action="matches">查看最近 ${games.length} 场战绩</button>`
