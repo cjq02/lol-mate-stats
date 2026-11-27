@@ -72,6 +72,7 @@ const els = {
   championRankingModal: document.getElementById('champion-ranking-modal'),
   championRankingAll: document.getElementById('champion-ranking-all'),
   championRankingType: document.getElementById('champion-ranking-type'),
+  championRankingOverallSort: document.getElementById('champion-ranking-overall-sort'),
   championRankingPatch: document.getElementById('champion-ranking-patch'),
   championRankingList: document.getElementById('champion-ranking-list'),
   championRankingTabs: document.getElementById('champion-ranking-tabs'),
@@ -230,6 +231,20 @@ const CHAMPION_RANKING_SORT_LABELS = {
 /** 排名和最低分默认从小到大（名次越低越好、最低分越低越差）；其余默认从大到小 */
 const CHAMPION_RANKING_ASC_SORTS = new Set(['rank', 'overallRank', 'worst']);
 
+/** 全体指标的排序口径：按当前数值，或按与全部历史的涨跌幅度 */
+const CHAMPION_OVERALL_SORT_MODES = {
+  value: '数值',
+  delta: '幅度',
+};
+
+/** 支持「涨跌幅度」排序的全体指标（全体场次没有历史基线） */
+const CHAMPION_OVERALL_DELTA_SORTS = new Set([
+  'overallWinRate',
+  'overallAvg',
+  'overallRank',
+  'overallPickRate',
+]);
+
 /** 版本公告里英雄改动的方向标签 */
 const CHAMPION_PATCH_DIRECTION_LABELS = {
   buff: '加强',
@@ -380,6 +395,8 @@ const state = {
   championRankingPatch: 'all',
   /** 英雄榜的英雄类型过滤：all / type-tank / type-mage 等 */
   championRankingType: 'all',
+  /** 全体指标的排序口径：value = 当前数值，delta = 与全部历史的涨跌幅度 */
+  championRankingOverallSort: 'value',
   /** 英雄榜里展开的单个英雄六角星 */
   championRadarId: 0,
   championRadarName: '',
@@ -5861,6 +5878,15 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     ? state.championRankingSort
     : 'avg';
   const sortDir = state.championRankingSortDir === 'asc' ? 1 : -1;
+  const overallSortMode = CHAMPION_OVERALL_SORT_MODES[state.championRankingOverallSort]
+    ? state.championRankingOverallSort
+    : 'value';
+  // 幅度排序只在有全部历史基线、且该指标能对比时生效
+  const deltaActive =
+    overallSortMode === 'delta' &&
+    CHAMPION_OVERALL_DELTA_SORTS.has(sort) &&
+    state.championRankingAllRange > 0 &&
+    !(sort === 'overallPickRate' && state.championRankingAllRangeScope === 'champion');
   const number = (value) => Number(value) || 0;
   const overallOf = (item) => item?.overall ?? {};
   const showAll = state.championRankingShowAll;
@@ -5872,8 +5898,30 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     (sum, item) => sum + (Number(item?.games) || 0),
     0,
   );
+  /** 全体指标相对全部历史的涨跌，没有基线时返回 null */
+  const overallDeltaOf = (item, key) => {
+    const overall = overallOf(item);
+    const baseline = overall?.baseline;
+    if (!baseline) return null;
+    switch (key) {
+      case 'overallWinRate':
+        return number(overall.winRate) - number(baseline.winRate);
+      case 'overallAvg':
+        return number(overall.avgScore) - number(baseline.avgScore);
+      case 'overallRank':
+        return number(overall.avgRank) - number(baseline.avgRank);
+      case 'overallPickRate':
+        return number(overall.pickRate) - number(baseline.pickRate);
+      default:
+        return null;
+    }
+  };
   /** 取排序指标；null 表示没有样本，始终沉底 */
   const metricOf = (item, key) => {
+    if (deltaActive) {
+      const delta = overallDeltaOf(item, key);
+      if (delta !== null) return delta;
+    }
     const overall = overallOf(item);
     const hasMine = number(item.games) > 0;
     switch (key) {
@@ -5954,9 +6002,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
     'has-rank-deltas',
     list.some((item) => Boolean(item?.baseline || item?.overall?.baseline)),
   );
-  const sortLabel = `${CHAMPION_RANKING_SORT_LABELS[sort]} ${
-    sortDir === 1 ? '↑' : '↓'
-  }`;
+  const sortLabel = `${CHAMPION_RANKING_SORT_LABELS[sort]}${
+    deltaActive ? '幅度' : ''
+  } ${sortDir === 1 ? '↑' : '↓'}`;
   const totalGames = list.reduce(
     (sum, item) =>
       sum + (showAll ? number(overallOf(item).games) : number(item.games)),
@@ -6221,6 +6269,15 @@ function updateChampionRankingRanges() {
   }
   if (els.championRankingAllRangeScope) {
     els.championRankingAllRangeScope.value = state.championRankingAllRangeScope;
+  }
+  if (els.championRankingOverallSort) {
+    // 「全体」选全部时没有历史基线，幅度不可用
+    const canCompare = state.championRankingAllRange > 0;
+    if (!canCompare && state.championRankingOverallSort === 'delta') {
+      state.championRankingOverallSort = 'value';
+    }
+    els.championRankingOverallSort.disabled = !canCompare;
+    els.championRankingOverallSort.value = state.championRankingOverallSort;
   }
 }
 
@@ -7101,6 +7158,13 @@ els.championRankingAllRangeScope?.addEventListener('change', () => {
   // 页签文案要跟着口径重新折算（按英雄时显示 N/10 场）
   updateChampionRankingRanges();
   void loadChampionRanking();
+});
+els.championRankingOverallSort?.addEventListener('change', () => {
+  const value = els.championRankingOverallSort.value;
+  state.championRankingOverallSort = CHAMPION_OVERALL_SORT_MODES[value] ? value : 'value';
+  if (state.championRankingData.length) {
+    renderChampionRanking(state.championRankingData, state.championRankingMode);
+  }
 });
 els.championRankingHead?.addEventListener('click', (event) => {
   const button = event.target.closest('[data-ranking-sort]');
