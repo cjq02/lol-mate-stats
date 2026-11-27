@@ -413,7 +413,9 @@ body::before {
 
 /* 英雄榜复用战绩列表的范围页签，内边距对齐弹窗卡片 */
 .champion-ranking-card .range-tabs {
-  gap: 4px;
+  /* 「我」和「全体」两组分居左右，窄屏时整组换行 */
+  justify-content: space-between;
+  gap: 8px 16px;
   padding: 7px 16px 8px;
   background: rgba(255, 255, 255, 0.012);
 }
@@ -436,9 +438,17 @@ body::before {
   background: rgba(94, 234, 212, 0.12);
 }
 
+.champion-ranking-card .range-tabs .range-tabs-mine,
 .champion-ranking-card .range-tabs .range-tabs-all {
-  /* 「我」和「全体」两组之间留出空隙，避免口径下拉和分组标题黏在一起 */
-  margin-left: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.champion-ranking-card .range-tabs .range-tabs-all {
+  /* 分组间距交给 space-between，窄屏换行时仍保留标签之间的留白 */
+  margin-left: 0;
   padding-left: 16px;
 }
 
