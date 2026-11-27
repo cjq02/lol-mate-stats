@@ -25,6 +25,11 @@ import {
   saveLiveAiAnalysis,
 } from './stats/store.js';
 import { getChampionPatchDigest } from './stats/patch-notes.js';
+import {
+  DEFAULT_OVERALL_RANGE_SCOPE,
+  DEFAULT_PLAYER_RANGE_SCOPE,
+  parseChampionRangeScope,
+} from './stats/archive.js';
 import { logTag, mapLimit } from './util.js';
 
 const execFileAsync = promisify(execFile);
@@ -681,6 +686,14 @@ async function handleRequest(
       Number.isFinite(rawAllRange) && rawAllRange > 0
         ? Math.min(10000, Math.trunc(rawAllRange))
         : undefined;
+    const rangeScope = parseChampionRangeScope(
+      url.searchParams.get('rangeScope'),
+      DEFAULT_PLAYER_RANGE_SCOPE,
+    );
+    const allRangeScope = parseChampionRangeScope(
+      url.searchParams.get('allRangeScope'),
+      DEFAULT_OVERALL_RANGE_SCOPE,
+    );
     try {
       const data = await source.getArchivedChampionScores(
         puuid,
@@ -689,6 +702,8 @@ async function handleRequest(
         showAll,
         range,
         allRange,
+        rangeScope,
+        allRangeScope,
       );
       sendJson(res, 200, { ok: true, ...data });
     } catch (error) {

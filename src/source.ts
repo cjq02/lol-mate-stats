@@ -12,6 +12,7 @@ import type {
 import type {
   ArchivedMatch,
   ChampionRadarOptions,
+  ChampionRangeScope,
   ChampionScoreSummary,
   PlayerMatchFilter,
   PlayerWinRecord,
@@ -64,6 +65,8 @@ export interface DataSource {
     showAll?: boolean,
     range?: number,
     allRange?: number,
+    rangeScope?: ChampionRangeScope,
+    allRangeScope?: ChampionRangeScope,
   ): Promise<{ puuid: string; champions: ChampionScoreSummary[]; totalGames: number }>;
   /** 长期存档：某个玩家（默认自己）在指定模式/队列组或指定英雄的总胜负 */
   getArchivedWinRecord?(

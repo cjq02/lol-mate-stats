@@ -35,6 +35,8 @@ import { analyzeParticipant, computeMatchScores, detectLane, matchBestTags } fro
 import { ReportCollector } from './stats/collector.js';
 import { analyzeGame } from './stats/analyze.js';
 import {
+  DEFAULT_OVERALL_RANGE_SCOPE,
+  DEFAULT_PLAYER_RANGE_SCOPE,
   archiveGames,
   countPlayerMatches,
   getChampionModeRecords,
@@ -56,6 +58,7 @@ import {
   type ArchivedMatch,
   type ChampionModeRecord,
   type ChampionRadarOptions,
+  type ChampionRangeScope,
   type PlayerMatchFilter,
 } from './stats/archive.js';
 import { currentQueueGroup, modeFromQueue, queueGroupName, queueName } from './stats/constants.js';
@@ -1194,6 +1197,8 @@ export class LiveSource implements DataSource {
     showAll = false,
     range?: number,
     allRange?: number,
+    rangeScope: ChampionRangeScope = DEFAULT_PLAYER_RANGE_SCOPE,
+    allRangeScope: ChampionRangeScope = DEFAULT_OVERALL_RANGE_SCOPE,
   ): Promise<{
     puuid: string;
     champions: Awaited<ReturnType<typeof getPlayerChampionScores>>;
@@ -1202,14 +1207,14 @@ export class LiveSource implements DataSource {
     const id = await this.resolveArchivePuuid(puuid);
     if (!id) return { puuid: '', champions: [], totalGames: 0 };
     if (!showAll) {
-      const mine = await getPlayerChampionScores(id, minGames, mode, range);
+      const mine = await getPlayerChampionScores(id, minGames, mode, range, rangeScope);
       const ids = mine.map((champion) => champion.championId);
       const [overall, totalGames, overallBase, overallBaseTotal, allTime] =
         await Promise.all([
-          getChampionOverallScores(ids, mode, allRange),
-          getChampionOverallTotal(mode, allRange),
-          allRange ? getChampionOverallScores(ids, mode, 0) : Promise.resolve(null),
-          allRange ? getChampionOverallTotal(mode, 0) : Promise.resolve(0),
+          getChampionOverallScores(ids, mode, allRange, allRangeScope),
+          getChampionOverallTotal(mode, allRange, allRangeScope),
+          allRange ? getChampionOverallScores(ids, mode, 0, allRangeScope) : Promise.resolve(null),
+          allRange ? getChampionOverallTotal(mode, 0, allRangeScope) : Promise.resolve(0),
           range ? getPlayerChampionScores(id, minGames, mode, 0) : Promise.resolve(null),
         ]);
       const allTimeById = new Map(
@@ -1243,9 +1248,9 @@ export class LiveSource implements DataSource {
     }
 
     const [mine, overall, overallBase, allTime] = await Promise.all([
-      getPlayerChampionScores(id, minGames, mode, range),
-      getAllChampionOverallScores(mode, allRange),
-      allRange ? getAllChampionOverallScores(mode, 0) : Promise.resolve(null),
+      getPlayerChampionScores(id, minGames, mode, range, rangeScope),
+      getAllChampionOverallScores(mode, allRange, allRangeScope),
+      allRange ? getAllChampionOverallScores(mode, 0, allRangeScope) : Promise.resolve(null),
       range ? getPlayerChampionScores(id, minGames, mode, 0) : Promise.resolve(null),
     ]);
     const overallBaseById = new Map(

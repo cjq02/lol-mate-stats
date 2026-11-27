@@ -76,6 +76,8 @@ const els = {
   championRankingList: document.getElementById('champion-ranking-list'),
   championRankingTabs: document.getElementById('champion-ranking-tabs'),
   championRankingRanges: document.getElementById('champion-ranking-ranges'),
+  championRankingRangeScope: document.getElementById('champion-ranking-range-scope'),
+  championRankingAllRangeScope: document.getElementById('champion-ranking-all-range-scope'),
   championRankingHead: document.getElementById('champion-ranking-head'),
   championRankingMeta: document.getElementById('champion-ranking-meta'),
   championRankingClose: document.getElementById('champion-ranking-close'),
@@ -259,6 +261,14 @@ const CHAMPION_TYPE_FILTER_LABELS = {
   'type-default': '其他',
 };
 
+/** 英雄榜场次范围的统计口径：按英雄各取 N 场，或按最近 N 场对局统一截取 */
+const CHAMPION_RANGE_SCOPE_LABELS = {
+  champion: '按英雄',
+  match: '按场次',
+};
+
+const CHAMPION_RANGE_SCOPES = new Set(Object.keys(CHAMPION_RANGE_SCOPE_LABELS));
+
 const TIME_STATS_DIMENSION_LABELS = {
   day: '按天',
   week: '按周',
@@ -349,8 +359,12 @@ const state = {
   championRankingShowAll: false,
   /** 英雄榜我的样本：只统计最近 N 场，0 = 全部 */
   championRankingRange: 0,
+  /** 我的样本按英雄截取 / 按最近对局截取 */
+  championRankingRangeScope: 'champion',
   /** 英雄榜全体样本：默认最近 10000 场，0 = 全部 */
   championRankingAllRange: 10000,
+  /** 全体样本按对局截取 / 按英雄截取 */
+  championRankingAllRangeScope: 'match',
   championRankingTotalGames: 0,
   /** 当前版本官方公告里的英雄加强/削弱，null 表示还没加载过 */
   championPatches: null,
@@ -5944,11 +5958,15 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
 
   const myRangeLabel =
     state.championRankingRange > 0
-      ? `每个英雄近 ${state.championRankingRange} 场（对比全部）`
+      ? `${
+          state.championRankingRangeScope === 'match' ? '我' : '每个英雄'
+        }近 ${state.championRankingRange} 场（对比全部）`
       : '我全部场次';
   const overallRangeLabel =
     state.championRankingAllRange > 0
-      ? `全体近 ${state.championRankingAllRange} 场（对比全部）`
+      ? `${
+          state.championRankingAllRangeScope === 'champion' ? '全体每个英雄' : '全体'
+        }近 ${state.championRankingAllRange} 场（对比全部）`
       : '全体全部';
   const metaPrefix = `${showAll ? '所有英雄' : '我的英雄'} · ${modeLabel} · ${myRangeLabel} · ${overallRangeLabel}${
     typeFilter === 'all' ? '' : ` · 类型：${typeLabel}`
@@ -6002,7 +6020,9 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
       const overallPickRate = overall ? pct(overall.pickRate, 2) : '-';
       const overallPickTitle =
         state.championRankingAllRange > 0
-          ? `最近 ${state.championRankingAllRange} 场对局中的出场占比`
+          ? state.championRankingAllRangeScope === 'champion'
+            ? `每个英雄各取最近 ${state.championRankingAllRange} 次出场时的登场率`
+            : `最近 ${state.championRankingAllRange} 场对局中的出场占比`
           : '全部对局中的出场占比';
       const baseline = overall?.baseline ?? null;
       const winDelta = baseline
@@ -6011,12 +6031,13 @@ function renderChampionRanking(champions, mode = state.championRankingMode) {
             baseText: winRatePct(baseline.winRate),
           })
         : '';
-      const pickDelta = baseline
-        ? championRankDeltaHtml(overall.pickRate, baseline.pickRate, {
-            percent: true,
-            baseText: pct(baseline.pickRate, 2),
-          })
-        : '';
+      const pickDelta =
+        baseline && state.championRankingAllRangeScope !== 'champion'
+          ? championRankDeltaHtml(overall.pickRate, baseline.pickRate, {
+              percent: true,
+              baseText: pct(baseline.pickRate, 2),
+            })
+          : '';
       const avgDelta = baseline
         ? championRankDeltaHtml(overall.avgScore, baseline.avgScore, {
             baseText: num(baseline.avgScore, 1),
@@ -6180,6 +6201,12 @@ function updateChampionRankingRanges() {
       Number(button.dataset.rankingAllRange) === state.championRankingAllRange,
     );
   }
+  if (els.championRankingRangeScope) {
+    els.championRankingRangeScope.value = state.championRankingRangeScope;
+  }
+  if (els.championRankingAllRangeScope) {
+    els.championRankingAllRangeScope.value = state.championRankingAllRangeScope;
+  }
 }
 
 /** 同步表头排序按钮的激活状态和升/降序箭头 */
@@ -6239,9 +6266,11 @@ async function loadChampionRanking() {
     if (state.championRankingShowAll) params.set('all', '1');
     if (state.championRankingRange > 0) {
       params.set('range', String(state.championRankingRange));
+      params.set('rangeScope', state.championRankingRangeScope);
     }
     if (state.championRankingAllRange > 0) {
       params.set('allRange', String(state.championRankingAllRange));
+      params.set('allRangeScope', state.championRankingAllRangeScope);
     }
     const query = params.toString();
     const response = await fetch(
@@ -7040,6 +7069,20 @@ els.championRankingRanges?.addEventListener('click', (event) => {
   if (allRange === state.championRankingAllRange) return;
   state.championRankingAllRange = allRange;
   updateChampionRankingRanges();
+  void loadChampionRanking();
+});
+els.championRankingRangeScope?.addEventListener('change', () => {
+  const value = els.championRankingRangeScope.value;
+  if (!CHAMPION_RANGE_SCOPES.has(value)) return;
+  if (value === state.championRankingRangeScope) return;
+  state.championRankingRangeScope = value;
+  void loadChampionRanking();
+});
+els.championRankingAllRangeScope?.addEventListener('change', () => {
+  const value = els.championRankingAllRangeScope.value;
+  if (!CHAMPION_RANGE_SCOPES.has(value)) return;
+  if (value === state.championRankingAllRangeScope) return;
+  state.championRankingAllRangeScope = value;
   void loadChampionRanking();
 });
 els.championRankingHead?.addEventListener('click', (event) => {

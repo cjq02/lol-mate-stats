@@ -663,20 +663,72 @@ const CHAMPION_MODE_FILTERS: Record<GameModeKey, string> = {
   SR: championModeFilterSql('SR'),
 };
 
-/** 每个英雄只保留最近 N 次出场；range 为空或 0 时不限制 */
-function championAppearanceWindow(range: number | undefined): {
+/** 场次范围的统计口径：按英雄各自最近 N 场，或按最近 N 场对局统一截取 */
+export const CHAMPION_RANGE_SCOPES = ['champion', 'match'] as const;
+export type ChampionRangeScope = (typeof CHAMPION_RANGE_SCOPES)[number];
+
+/** 我的场次默认按英雄截取，全体默认按对局截取，和旧行为一致 */
+export const DEFAULT_PLAYER_RANGE_SCOPE: ChampionRangeScope = 'champion';
+export const DEFAULT_OVERALL_RANGE_SCOPE: ChampionRangeScope = 'match';
+
+/** 解析前端传来的场次口径，非法值回落到默认口径 */
+export function parseChampionRangeScope(
+  raw: string | null | undefined,
+  fallback: ChampionRangeScope,
+): ChampionRangeScope {
+  return CHAMPION_RANGE_SCOPES.includes(raw as ChampionRangeScope)
+    ? (raw as ChampionRangeScope)
+    : fallback;
+}
+
+/**
+ * 每个英雄只保留最近 N 次出场；range 为空或 0 时不限制。
+ * creationExpr 是排序用的对局时间表达式：分组查询传 MAX(m.game_creation)，
+ * 未分组的明细查询直接用 m.game_creation。
+ */
+function championAppearanceWindow(
+  range: number | undefined,
+  creationExpr = 'm.game_creation',
+): {
   rankColumn: string;
-  filter: string;
+  condition: string;
   params: number[];
 } {
-  if (!range || range <= 0) return { rankColumn: '', filter: '', params: [] };
+  if (!range || range <= 0) return { rankColumn: '', condition: '', params: [] };
   return {
     rankColumn: `ROW_NUMBER() OVER (
               PARTITION BY CASE WHEN p.champion_id >= 60000 THEN p.champion_id - 60000 ELSE p.champion_id END
-              ORDER BY MAX(m.game_creation) DESC, p.game_id DESC
+              ORDER BY ${creationExpr} DESC, p.game_id DESC
             ) AS appearance_rank`,
-    filter: 'WHERE r.appearance_rank <= ?',
+    condition: 'r.appearance_rank <= ?',
     params: [Math.trunc(range)],
+  };
+}
+
+/** 我的「近 X 场」按我最近 X 场对局截取，而不是每个英雄各算 X 场 */
+function playerMatchWindow(
+  puuid: string,
+  mode: GameModeKey | undefined,
+  range: number | undefined,
+): { join: string; params: Array<string | number> } {
+  if (!range || range <= 0) return { join: '', params: [] };
+  const conditions = [
+    'wp.puuid = ?',
+    'w.duration_seconds > 300',
+    "COALESCE(w.game_mode, '') <> 'PRACTICETOOL'",
+  ];
+  if (mode) conditions.push(championModeFilterSql(mode, 'w', 'wp'));
+  return {
+    join: `JOIN (
+            SELECT w.game_id
+            FROM matches w
+            JOIN match_participants wp ON wp.game_id = w.game_id
+            WHERE ${conditions.join(' AND ')}
+            GROUP BY w.game_id, w.game_creation
+            ORDER BY w.game_creation DESC, w.game_id DESC
+            LIMIT ?
+          ) wnd ON wnd.game_id = m.game_id`,
+    params: [puuid, Math.trunc(range)],
   };
 }
 
@@ -1181,6 +1233,7 @@ export async function getChampionOverallScores(
   championIds: number[],
   mode?: GameModeKey,
   range?: number,
+  rangeScope: ChampionRangeScope = DEFAULT_OVERALL_RANGE_SCOPE,
 ): Promise<Map<number, ChampionOverallRecord>> {
   const result = new Map<number, ChampionOverallRecord>();
   const ids = [
@@ -1192,7 +1245,7 @@ export async function getChampionOverallScores(
   const now = Date.now();
   const missing: number[] = [];
   for (const id of ids) {
-    const key = `${mode ?? 'ALL'}:${range ?? 0}:${id}`;
+    const key = `${mode ?? 'ALL'}:${range ?? 0}:${rangeScope}:${id}`;
     const cached = championOverallPartCache.get(key);
     if (cached && now - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
       if (cached.record) result.set(id, cached.record);
@@ -1203,17 +1256,24 @@ export async function getChampionOverallScores(
   if (!missing.length) return result;
 
   const placeholders = missing.flatMap(() => ['?', '?']).join(',');
-  const window = championMatchWindow(mode, range);
+  const matchWindow =
+    rangeScope === 'match' ? championMatchWindow(mode, range) : { join: '', params: [] };
+  const appearance =
+    rangeScope === 'match'
+      ? { rankColumn: '', condition: '', params: [] }
+      : championAppearanceWindow(range);
   const params: Array<string | number> = [
-    ...window.params,
+    ...matchWindow.params,
     ...missing,
     ...missing.map((id) => id + 60000),
+    ...appearance.params,
   ];
   // 排名先在「同局所有有评分的参与者」里用窗口函数算好，再筛英雄 / 玩家，
   // 与原来的自连接计数等价，但不用为每个参与者再扫一遍同局 10 人。
   const conditions = [`r.champion_id IN (${placeholders})`, 'r.puuid IS NOT NULL'];
   const modeFilter = mode ? championModeFilterSql(mode, 'r', 'r') : undefined;
   if (modeFilter) conditions.push(modeFilter);
+  if (appearance.condition) conditions.push(appearance.condition);
 
   try {
     const [rows] = await db.query<RowDataPacket[]>(
@@ -1226,10 +1286,12 @@ export async function getChampionOverallScores(
        FROM (
          SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win, p.puuid,
                 p.\`position\`, m.queue_id, m.game_mode,
-                RANK() OVER (PARTITION BY p.game_id ORDER BY p.score DESC) AS game_rank
+                RANK() OVER (PARTITION BY p.game_id ORDER BY p.score DESC) AS game_rank${
+                  appearance.rankColumn ? `,\n                ${appearance.rankColumn}` : ''
+                }
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
-         ${window.join}
+         ${matchWindow.join}
          WHERE p.score IS NOT NULL
            AND m.duration_seconds > 300
            AND COALESCE(m.game_mode, '') <> 'PRACTICETOOL'
@@ -1256,15 +1318,15 @@ export async function getChampionOverallScores(
         pickRate: 0,
       };
       result.set(championId, record);
-      championOverallPartCache.set(`${mode ?? 'ALL'}:${range ?? 0}:${championId}`, {
-        at: now,
-        record,
-      });
+      championOverallPartCache.set(
+        `${mode ?? 'ALL'}:${range ?? 0}:${rangeScope}:${championId}`,
+        { at: now, record },
+      );
       found.add(championId);
     }
     for (const id of missing) {
       if (!found.has(id)) {
-        championOverallPartCache.set(`${mode ?? 'ALL'}:${range ?? 0}:${id}`, {
+        championOverallPartCache.set(`${mode ?? 'ALL'}:${range ?? 0}:${rangeScope}:${id}`, {
           at: now,
           record: null,
         });
@@ -1301,14 +1363,15 @@ export async function getChampionOverallForCards(
   return result;
 }
 
-/** 当前模式下所有玩家的总出场数，用作登场率分母；range > 0 时只算最近 N 场对局 */
+/** 当前模式的登场率分母；按场次截取时是出场总数，按英雄截取时是对局数 */
 export async function getChampionOverallTotal(
   mode?: GameModeKey,
   range?: number,
+  rangeScope: ChampionRangeScope = DEFAULT_OVERALL_RANGE_SCOPE,
 ): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const key = `${mode ?? 'ALL'}:${range ?? 0}`;
+  const key = `${mode ?? 'ALL'}:${range ?? 0}:${rangeScope}`;
   const cached = championOverallTotalCache.get(key);
   if (cached && Date.now() - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
     return cached.total;
@@ -1321,8 +1384,41 @@ export async function getChampionOverallTotal(
   ];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
-  const window = championMatchWindow(mode, range);
+  const appearance =
+    rangeScope === 'match'
+      ? { rankColumn: '', condition: '', params: [] }
+      : championAppearanceWindow(range, 'MAX(m.game_creation)');
   try {
+    if (rangeScope === 'champion') {
+      // 按英雄口径下登场率的分母是对局数：
+      // 选了范围时用各英雄窗口的并集，选全部时就是全部对局。
+      const [rows] = appearance.condition
+        ? await db.query<RowDataPacket[]>(
+            `SELECT COUNT(DISTINCT r.game_id) AS total
+             FROM (
+               SELECT p.game_id, p.champion_id, p.puuid, p.score, p.win,
+                      p.\`position\`, m.queue_id, m.game_mode,
+                      ${appearance.rankColumn}
+               FROM match_participants p
+               JOIN matches m ON m.game_id = p.game_id
+               WHERE ${conditions.join(' AND ')}
+               GROUP BY p.game_id, p.champion_id, p.puuid, p.score, p.win,
+                        p.\`position\`, m.queue_id, m.game_mode
+             ) r
+             WHERE ${appearance.condition}`,
+            appearance.params,
+          )
+        : await db.query<RowDataPacket[]>(
+            `SELECT COUNT(DISTINCT p.game_id) AS total
+             FROM match_participants p
+             JOIN matches m ON m.game_id = p.game_id
+             WHERE ${conditions.join(' AND ')}`,
+          );
+      const total = Number(rows[0]?.total) || 0;
+      championOverallTotalCache.set(key, { at: Date.now(), total });
+      return total;
+    }
+    const window = championMatchWindow(mode, range);
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT COUNT(*) AS total
        FROM match_participants p
@@ -1352,10 +1448,11 @@ const championOverallAllCache = new Map<
 export async function getAllChampionOverallScores(
   mode?: GameModeKey,
   range?: number,
+  rangeScope: ChampionRangeScope = DEFAULT_OVERALL_RANGE_SCOPE,
 ): Promise<{ totalGames: number; champions: ChampionOverallRecord[] }> {
   const db = await getDb();
   if (!db) return { totalGames: 0, champions: [] };
-  const cacheKey = `${mode ?? 'ALL'}:${range ?? 0}`;
+  const cacheKey = `${mode ?? 'ALL'}:${range ?? 0}:${rangeScope}`;
   const cached = championOverallAllCache.get(cacheKey);
   if (cached && Date.now() - cached.at < CHAMPION_OVERALL_CACHE_TTL_MS) {
     return { totalGames: cached.totalGames, champions: cached.champions };
@@ -1366,8 +1463,14 @@ export async function getAllChampionOverallScores(
   const conditions = ['r.puuid IS NOT NULL'];
   const modeFilter = mode ? championModeFilterSql(mode, 'r', 'r') : undefined;
   if (modeFilter) conditions.push(modeFilter);
-  const window = championMatchWindow(mode, range);
-  const params: Array<string | number> = [...window.params];
+  const matchWindow =
+    rangeScope === 'match' ? championMatchWindow(mode, range) : { join: '', params: [] };
+  const appearance =
+    rangeScope === 'match'
+      ? { rankColumn: '', condition: '', params: [] }
+      : championAppearanceWindow(range);
+  if (appearance.condition) conditions.push(appearance.condition);
+  const params: Array<string | number> = [...matchWindow.params, ...appearance.params];
 
   try {
     const [rows] = await db.query<RowDataPacket[]>(
@@ -1380,10 +1483,12 @@ export async function getAllChampionOverallScores(
        FROM (
          SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win, p.puuid,
                 p.\`position\`, m.queue_id, m.game_mode,
-                RANK() OVER (PARTITION BY p.game_id ORDER BY p.score DESC) AS game_rank
+                RANK() OVER (PARTITION BY p.game_id ORDER BY p.score DESC) AS game_rank${
+                  appearance.rankColumn ? `,\n                ${appearance.rankColumn}` : ''
+                }
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
-         ${window.join}
+         ${matchWindow.join}
          WHERE p.score IS NOT NULL
            AND m.duration_seconds > 300
            AND COALESCE(m.game_mode, '') <> 'PRACTICETOOL'
@@ -1392,7 +1497,11 @@ export async function getAllChampionOverallScores(
        GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END`,
       params,
     );
-    const totalGames = rows.reduce((sum, row) => sum + (Number(row.games) || 0), 0);
+    // 按英雄截取时登场率分母是对局数，按场次截取时是出场总数
+    const totalGames =
+      rangeScope === 'match'
+        ? rows.reduce((sum, row) => sum + (Number(row.games) || 0), 0)
+        : await getChampionOverallTotal(mode, range, rangeScope);
     const champions = rows
       .map((row) => {
         const championId = Number(row.champion_id);
@@ -1468,13 +1577,15 @@ export interface ChampionScoreSummary {
  * 某个玩家各英雄的平均单场评分（来自长期存档）。
  * 重开/训练模式不计入，只统计有评分的场次，按平均分从高到低排序。
  * 特殊模式的英雄 ID（如 60067）会归一化到基础英雄 ID（67）。
- * range > 0 时每个英雄只取最近 N 次出场。
+ * range > 0 时按 rangeScope 截取：默认每个英雄只取最近 N 次出场，
+ * 传 match 则改按我最近 N 场对局。
  */
 export async function getPlayerChampionScores(
   puuid: string,
   minGames = 1,
   mode?: GameModeKey,
   range?: number,
+  rangeScope: ChampionRangeScope = DEFAULT_PLAYER_RANGE_SCOPE,
 ): Promise<ChampionScoreSummary[]> {
   const db = await getDb();
   if (!db || !puuid) return [];
@@ -1487,8 +1598,19 @@ export async function getPlayerChampionScores(
   ];
   const modeFilter = mode ? CHAMPION_MODE_FILTERS[mode] : undefined;
   if (modeFilter) conditions.push(modeFilter);
-  const window = championAppearanceWindow(range);
-  const params: Array<string | number> = [puuid, ...window.params];
+  const matchWindow =
+    rangeScope === 'match'
+      ? playerMatchWindow(puuid, mode, range)
+      : { join: '', params: [] };
+  const appearance =
+    rangeScope === 'match'
+      ? { rankColumn: '', condition: '', params: [] }
+      : championAppearanceWindow(range, 'MAX(m.game_creation)');
+  const params: Array<string | number> = [
+    ...matchWindow.params,
+    puuid,
+    ...appearance.params,
+  ];
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END AS champion_id,
@@ -1502,16 +1624,17 @@ export async function getPlayerChampionScores(
        FROM (
          SELECT p.game_id, p.champion_id, p.champion_name, p.score, p.win,
                 1 + COUNT(q.game_id) AS game_rank${
-                  window.rankColumn ? `,\n                ${window.rankColumn}` : ''
+                  appearance.rankColumn ? `,\n                ${appearance.rankColumn}` : ''
                 }
          FROM match_participants p
          JOIN matches m ON m.game_id = p.game_id
+         ${matchWindow.join}
          LEFT JOIN match_participants q
            ON q.game_id = p.game_id AND q.score IS NOT NULL AND q.score > p.score
          WHERE ${conditions.join(' AND ')}
          GROUP BY p.game_id, p.champion_id, p.champion_name, p.score, p.win
        ) r
-       ${window.filter}
+       ${appearance.condition ? `WHERE ${appearance.condition}` : ''}
        GROUP BY CASE WHEN r.champion_id >= 60000 THEN r.champion_id - 60000 ELSE r.champion_id END
        HAVING games >= ?
        ORDER BY avg_score DESC, games DESC`,

@@ -26,6 +26,12 @@ import {
   type TypeRadarSample,
 } from './time-stats.js';
 import { championProficiency } from './proficiency.js';
+import {
+  CHAMPION_RANGE_SCOPES,
+  DEFAULT_OVERALL_RANGE_SCOPE,
+  DEFAULT_PLAYER_RANGE_SCOPE,
+  parseChampionRangeScope,
+} from './archive.js';
 import { championRole, championRoleProfile } from './champion-roles.js';
 import { classifyPatchDirection, championSectionHtml, parseChampionPatchSection, translatePatchLabel } from './patch-notes.js';
 import { premadeSizesByPuuid, premadeSizesFromGames } from './premade.js';
@@ -4162,6 +4168,17 @@ test('改动字段名优先用中文译名，未收录的保留英文', () => {
   assert.equal(translatePatchLabel('Bonus Attack Damage Ratio'), '额外攻击力加成');
   assert.equal(translatePatchLabel('Monster Damage Modifier'), '野怪伤害系数');
   assert.equal(translatePatchLabel('Caustic Wounds'), 'Caustic Wounds');
+});
+
+test('英雄榜场次口径只接受 champion / match，非法值回落到默认口径', () => {
+  assert.deepEqual([...CHAMPION_RANGE_SCOPES], ['champion', 'match']);
+  assert.equal(DEFAULT_PLAYER_RANGE_SCOPE, 'champion', '我的场次默认按英雄截取');
+  assert.equal(DEFAULT_OVERALL_RANGE_SCOPE, 'match', '全体场次默认按对局截取');
+  assert.equal(parseChampionRangeScope('match', DEFAULT_PLAYER_RANGE_SCOPE), 'match');
+  assert.equal(parseChampionRangeScope('champion', DEFAULT_OVERALL_RANGE_SCOPE), 'champion');
+  assert.equal(parseChampionRangeScope('all', DEFAULT_PLAYER_RANGE_SCOPE), 'champion');
+  assert.equal(parseChampionRangeScope('', DEFAULT_OVERALL_RANGE_SCOPE), 'match');
+  assert.equal(parseChampionRangeScope(null, DEFAULT_PLAYER_RANGE_SCOPE), 'champion');
 });
 
 console.log(`\n${passed} 项测试全部通过`);
