@@ -437,8 +437,9 @@ body::before {
 }
 
 .champion-ranking-card .range-tabs .range-tabs-all {
-  margin-left: 0;
-  padding-left: 8px;
+  /* 「我」和「全体」两组之间留出空隙，避免口径下拉和分组标题黏在一起 */
+  margin-left: 16px;
+  padding-left: 16px;
 }
 
 /* 场次口径下拉：沿用页签的圆角样式，高度和页签对齐，不额外撑高这一行 */
