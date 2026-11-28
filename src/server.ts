@@ -99,7 +99,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
 };
 
-const STATIC_FILES = new Set(['/', '/index.html', '/app.js', '/style.css']);
+const STATIC_FILES = new Set(['/', '/index.html', '/app.js', '/style.css', '/favicon.ico']);
 const fileCache = new Map<
   string,
   { body: Buffer; type: string; mtimeMs: number; size: number }
@@ -225,11 +225,6 @@ async function handleRequest(
 
   if (method === 'GET' && STATIC_FILES.has(url.pathname)) {
     await serveStatic(url.pathname === '/' ? '/index.html' : url.pathname, res);
-    return;
-  }
-
-  if (method === 'GET' && url.pathname === '/favicon.ico') {
-    res.writeHead(204).end();
     return;
   }
 
